@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PCBHelper.Cli/PCBHelper.Cli.csproj" />
+    <Project Path="src/PCBHelper.Core/PCBHelper.Core.csproj" />
+    <Project Path="src/PCBHelper.Mcp/PCBHelper.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PCBHelper.Contract.Tests/PCBHelper.Contract.Tests.csproj" />
+    <Project Path="tests/PCBHelper.Core.Tests/PCBHelper.Core.Tests.csproj" />
+    <Project Path="tests/PCBHelper.E2E.Tests/PCBHelper.E2E.Tests.csproj" />
+  </Folder>
+</Solution>

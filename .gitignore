@@ -1,0 +1,38 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# .NET
+bin/
+obj/
+TestResults/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# KiCad generated backups and autosaves
+*-backups/
+*.bak
+*.kicad_prl
+*.kicad_pro-bak
+*.kicad_sch-bak
+*.kicad_pcb-bak
+
+# Generated PCB outputs
+fabrication/
+manufacturing/
+gerbers/
+drill/
+*.zip
+
+# Local scratch
+.scratch/
+.pcbhelper/
