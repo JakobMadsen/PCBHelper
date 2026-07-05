@@ -80,8 +80,16 @@ public sealed class HeadlessKiCadE2ETests
         var dryRun = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--dry-run", "--json");
         Assert.Equal(0, dryRun.ExitCode);
 
-        var move = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--json");
-        Assert.Equal(0, move.ExitCode);
+        var spacing = await RunCliAsync("set-spacing", fixture.Path, "--fixed", "R1", "--moving", "D1", "--distance", "25", "--axis", "x", "--json");
+        Assert.Equal(0, spacing.ExitCode);
+        string changeReportPath;
+        using (var spacingDocument = JsonDocument.Parse(spacing.StandardOutput))
+        {
+            var data = spacingDocument.RootElement.GetProperty("data");
+            changeReportPath = data.GetProperty("changeReportPath").GetString()!;
+            Assert.True(File.Exists(changeReportPath));
+            Assert.NotEmpty(data.GetProperty("checkReportPaths").EnumerateArray());
+        }
 
         var movedSummary = await RunCliAsync("board-summary", fixture.Path, "--json");
         Assert.Equal(0, movedSummary.ExitCode);
@@ -90,7 +98,21 @@ public sealed class HeadlessKiCadE2ETests
             var d1 = document.RootElement.GetProperty("data").GetProperty("footprints")
                 .EnumerateArray()
                 .Single(item => item.GetProperty("reference").GetString() == "D1");
-            Assert.Equal(75, d1.GetProperty("xMillimeters").GetDouble(), precision: 3);
+            Assert.Equal(70, d1.GetProperty("xMillimeters").GetDouble(), precision: 3);
+            Assert.Equal(35, d1.GetProperty("yMillimeters").GetDouble(), precision: 3);
+        }
+
+        var restore = await RunCliAsync("restore-change", fixture.Path, "--change", changeReportPath, "--json");
+        Assert.Equal(0, restore.ExitCode);
+
+        var restoredSummary = await RunCliAsync("board-summary", fixture.Path, "--json");
+        Assert.Equal(0, restoredSummary.ExitCode);
+        using (var document = JsonDocument.Parse(restoredSummary.StandardOutput))
+        {
+            var d1 = document.RootElement.GetProperty("data").GetProperty("footprints")
+                .EnumerateArray()
+                .Single(item => item.GetProperty("reference").GetString() == "D1");
+            Assert.Equal(68, d1.GetProperty("xMillimeters").GetDouble(), precision: 3);
             Assert.Equal(35, d1.GetProperty("yMillimeters").GetDouble(), precision: 3);
         }
 

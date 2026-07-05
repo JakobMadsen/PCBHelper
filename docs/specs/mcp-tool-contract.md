@@ -99,6 +99,8 @@ Outputs:
 
 - previous placement
 - new placement
+- change report path for real moves
+- check summary and generated check report paths for real moves
 - changed files or objects
 
 ### `move_component`
@@ -152,8 +154,28 @@ Outputs:
 - previous distance
 - new distance
 - moved component
+- change report path for real spacing changes
+- check summary and generated check report paths for real spacing changes
 
 First implementation note: spacing is axis-constrained and defaults to the X axis. It updates only the moving footprint's top-level `(at ...)`.
+
+### `restore_change`
+
+Restore a single-footprint placement from a PCBHelper change report.
+
+Inputs:
+
+- `project_path`
+- change id or path to `change.json`
+
+Outputs:
+
+- source change id
+- previous placement before restore
+- restored placement
+- new change report path for real restores
+
+First implementation note: restore supports placement changes from `move_component`, `set_component_spacing`, and previous `restore_change` reports.
 
 ## Visual Review Tools
 
@@ -184,6 +206,22 @@ Outputs:
 
 - highlighted object
 - fallback instructions if live highlighting is unavailable
+
+### `open_project_in_kicad`
+
+Open the local KiCad project in the KiCad GUI.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- project file
+- KiCad executable path
+- process id if started
+
+First implementation note: this launches KiCad with the `.kicad_pro` file and does not automate the GUI.
 
 ## Check Tools
 

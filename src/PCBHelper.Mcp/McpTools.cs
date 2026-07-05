@@ -37,45 +37,67 @@ public static class McpTools
     }
 
     [McpServerTool(Name = "move_component_preview"), Description("Preview moving a footprint without writing the board file.")]
-    public static ToolResponse<ComponentMoveResult> MoveComponentPreview(
+    public static Task<ToolResponse<ComponentMutationResult>> MoveComponentPreview(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
         [Description("Footprint reference, for example D1.")] string reference,
         [Description("Target X coordinate in millimeters.")] double xMillimeters,
-        [Description("Target Y coordinate in millimeters.")] double yMillimeters)
+        [Description("Target Y coordinate in millimeters.")] double yMillimeters,
+        CancellationToken cancellationToken)
     {
-        return Services.Geometry.MoveComponent(projectPath, reference, xMillimeters, yMillimeters, dryRun: true);
+        return Services.GeometryWorkflow.MoveComponentAsync(projectPath, reference, xMillimeters, yMillimeters, dryRun: true, cancellationToken);
     }
 
     [McpServerTool(Name = "move_component"), Description("Move a footprint by updating its top-level KiCad board position.")]
-    public static ToolResponse<ComponentMoveResult> MoveComponent(
+    public static Task<ToolResponse<ComponentMutationResult>> MoveComponent(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
         [Description("Footprint reference, for example D1.")] string reference,
         [Description("Target X coordinate in millimeters.")] double xMillimeters,
-        [Description("Target Y coordinate in millimeters.")] double yMillimeters)
+        [Description("Target Y coordinate in millimeters.")] double yMillimeters,
+        CancellationToken cancellationToken)
     {
-        return Services.Geometry.MoveComponent(projectPath, reference, xMillimeters, yMillimeters, dryRun: false);
+        return Services.GeometryWorkflow.MoveComponentAsync(projectPath, reference, xMillimeters, yMillimeters, dryRun: false, cancellationToken);
     }
 
     [McpServerTool(Name = "set_component_spacing_preview"), Description("Preview moving one footprint so it has target axis spacing from another footprint.")]
-    public static ToolResponse<ComponentSpacingResult> SetComponentSpacingPreview(
+    public static Task<ToolResponse<ComponentSpacingMutationResult>> SetComponentSpacingPreview(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
         [Description("Footprint that stays fixed.")] string fixedReference,
         [Description("Footprint that will move.")] string movingReference,
         [Description("Target distance in millimeters.")] double distanceMillimeters,
-        [Description("Axis to constrain spacing to: x or y. Defaults to x.")] string? axis = "x")
+        [Description("Axis to constrain spacing to: x or y. Defaults to x.")] string? axis = "x",
+        CancellationToken cancellationToken = default)
     {
-        return Services.Geometry.SetComponentSpacing(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: true);
+        return Services.GeometryWorkflow.SetComponentSpacingAsync(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: true, cancellationToken);
     }
 
     [McpServerTool(Name = "set_component_spacing"), Description("Move one footprint so it has target axis spacing from another footprint.")]
-    public static ToolResponse<ComponentSpacingResult> SetComponentSpacing(
+    public static Task<ToolResponse<ComponentSpacingMutationResult>> SetComponentSpacing(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
         [Description("Footprint that stays fixed.")] string fixedReference,
         [Description("Footprint that will move.")] string movingReference,
         [Description("Target distance in millimeters.")] double distanceMillimeters,
-        [Description("Axis to constrain spacing to: x or y. Defaults to x.")] string? axis = "x")
+        [Description("Axis to constrain spacing to: x or y. Defaults to x.")] string? axis = "x",
+        CancellationToken cancellationToken = default)
     {
-        return Services.Geometry.SetComponentSpacing(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: false);
+        return Services.GeometryWorkflow.SetComponentSpacingAsync(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "restore_change_preview"), Description("Preview restoring a single-footprint placement change report.")]
+    public static Task<ToolResponse<ComponentRestoreResult>> RestoreChangePreview(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Change id or path to a change.json report.")] string change,
+        CancellationToken cancellationToken)
+    {
+        return Services.GeometryWorkflow.RestoreChangeAsync(projectPath, change, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "restore_change"), Description("Restore a single-footprint placement change report.")]
+    public static Task<ToolResponse<ComponentRestoreResult>> RestoreChange(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Change id or path to a change.json report.")] string change,
+        CancellationToken cancellationToken)
+    {
+        return Services.GeometryWorkflow.RestoreChangeAsync(projectPath, change, dryRun: false, cancellationToken);
     }
 
     [McpServerTool(Name = "run_erc"), Description("Run KiCad ERC through kicad-cli for the project schematic.")]
@@ -133,6 +155,13 @@ public static class McpTools
     {
         return Services.PackageService.CreateManufacturingZipAsync(projectPath, cancellationToken);
     }
+
+    [McpServerTool(Name = "open_project_in_kicad"), Description("Open the KiCad project in the local KiCad GUI.")]
+    public static ToolResponse<OpenProjectResult> OpenProjectInKiCad(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.OpenKiCad.OpenProject(projectPath, dryRun: false);
+    }
 }
 
 internal static class Services
@@ -150,7 +179,11 @@ internal static class Services
 
     public static CheckRunner CheckRunner { get; } = new(ProjectDiscovery, Locator, Runner);
 
+    public static GeometryWorkflowService GeometryWorkflow { get; } = new(Geometry, CheckRunner, new ChangeReportService(ProjectDiscovery));
+
     public static ExportService ExportService { get; } = new(ProjectDiscovery, Locator, Runner);
 
     public static PackageService PackageService { get; } = new(ProjectDiscovery, Doctor, ExportService);
+
+    public static OpenKiCadService OpenKiCad { get; } = new(ProjectDiscovery, new KiCadExecutableLocator(Locator), new ProcessStarter());
 }

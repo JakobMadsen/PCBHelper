@@ -2,17 +2,27 @@ using System.Text.Json;
 using System.Globalization;
 using PCBHelper.Core;
 
+var projectDiscovery = new ProjectDiscoveryService();
+var cliLocator = new KiCadCliLocator();
+var runner = new ProcessCommandRunner();
+var doctor = new KiCadDoctorService(cliLocator, runner);
+var checkRunner = new CheckRunner(projectDiscovery, cliLocator, runner);
+var exportService = new ExportService(projectDiscovery, cliLocator, runner);
+var geometry = new GeometryService(projectDiscovery);
+
 var app = new CliApp(
-    new KiCadDoctorService(new KiCadCliLocator(), new ProcessCommandRunner()),
-    new ProjectDiscoveryService(),
-    new BoardSummaryService(new ProjectDiscoveryService()),
-    new GeometryService(new ProjectDiscoveryService()),
-    new CheckRunner(new ProjectDiscoveryService(), new KiCadCliLocator(), new ProcessCommandRunner()),
-    new ExportService(new ProjectDiscoveryService(), new KiCadCliLocator(), new ProcessCommandRunner()),
+    doctor,
+    projectDiscovery,
+    new BoardSummaryService(projectDiscovery),
+    geometry,
+    new GeometryWorkflowService(geometry, checkRunner, new ChangeReportService(projectDiscovery)),
+    checkRunner,
+    exportService,
     new PackageService(
-        new ProjectDiscoveryService(),
-        new KiCadDoctorService(new KiCadCliLocator(), new ProcessCommandRunner()),
-        new ExportService(new ProjectDiscoveryService(), new KiCadCliLocator(), new ProcessCommandRunner())));
+        projectDiscovery,
+        doctor,
+        exportService),
+    new OpenKiCadService(projectDiscovery, new KiCadExecutableLocator(cliLocator), new ProcessStarter()));
 
 return await app.RunAsync(args);
 
@@ -27,26 +37,32 @@ public sealed class CliApp
     private readonly ProjectDiscoveryService _projectDiscovery;
     private readonly BoardSummaryService _boardSummary;
     private readonly GeometryService _geometry;
+    private readonly GeometryWorkflowService _geometryWorkflow;
     private readonly CheckRunner _checkRunner;
     private readonly ExportService _exportService;
     private readonly PackageService _packageService;
+    private readonly OpenKiCadService _openKiCad;
 
     public CliApp(
         KiCadDoctorService doctor,
         ProjectDiscoveryService projectDiscovery,
         BoardSummaryService boardSummary,
         GeometryService geometry,
+        GeometryWorkflowService geometryWorkflow,
         CheckRunner checkRunner,
         ExportService exportService,
-        PackageService packageService)
+        PackageService packageService,
+        OpenKiCadService openKiCad)
     {
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
         _boardSummary = boardSummary;
         _geometry = geometry;
+        _geometryWorkflow = geometryWorkflow;
         _checkRunner = checkRunner;
         _exportService = exportService;
         _packageService = packageService;
+        _openKiCad = openKiCad;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -66,11 +82,13 @@ public sealed class CliApp
             "summary" => RunSummary(positional, json),
             "board-summary" => RunBoardSummary(positional, json),
             "measure" => RunMeasure(positional, json),
-            "move" => RunMove(positional, json),
-            "set-spacing" => RunSetSpacing(positional, json),
+            "move" => await RunMoveAsync(positional, json, cancellationToken),
+            "set-spacing" => await RunSetSpacingAsync(positional, json, cancellationToken),
+            "restore-change" => await RunRestoreChangeAsync(positional, json, cancellationToken),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
             "package" => await RunPackageAsync(positional, json, cancellationToken),
+            "open" => RunOpen(positional, json),
             _ => UnknownCommand(positional[0])
         };
     }
@@ -103,11 +121,11 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
-    private int RunMove(IReadOnlyList<string> args, bool json)
+    private async Task<int> RunMoveAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
     {
         if (args.Count < 2)
         {
-            Write(ToolResponse<ComponentMoveResult>.Fail("move requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            Write(ToolResponse<ComponentMutationResult>.Fail("move requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
             return 2;
         }
 
@@ -116,20 +134,20 @@ public sealed class CliApp
             || !TryGetDoubleOption(args, "--x", out var x)
             || !TryGetDoubleOption(args, "--y", out var y))
         {
-            Write(ToolResponse<ComponentMoveResult>.Fail("move requires --ref, --x, and --y.", "MOVE_ARGS_REQUIRED"), json);
+            Write(ToolResponse<ComponentMutationResult>.Fail("move requires --ref, --x, and --y.", "MOVE_ARGS_REQUIRED"), json);
             return 2;
         }
 
-        var result = _geometry.MoveComponent(args[1], reference, x, y, HasFlag(args, "--dry-run"));
+        var result = await _geometryWorkflow.MoveComponentAsync(args[1], reference, x, y, HasFlag(args, "--dry-run"), cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
 
-    private int RunSetSpacing(IReadOnlyList<string> args, bool json)
+    private async Task<int> RunSetSpacingAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
     {
         if (args.Count < 2)
         {
-            Write(ToolResponse<ComponentSpacingResult>.Fail("set-spacing requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            Write(ToolResponse<ComponentSpacingMutationResult>.Fail("set-spacing requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
             return 2;
         }
 
@@ -139,17 +157,38 @@ public sealed class CliApp
             || movingReference is null
             || !TryGetDoubleOption(args, "--distance", out var distance))
         {
-            Write(ToolResponse<ComponentSpacingResult>.Fail("set-spacing requires --fixed, --moving, and --distance.", "SPACING_ARGS_REQUIRED"), json);
+            Write(ToolResponse<ComponentSpacingMutationResult>.Fail("set-spacing requires --fixed, --moving, and --distance.", "SPACING_ARGS_REQUIRED"), json);
             return 2;
         }
 
-        var result = _geometry.SetComponentSpacing(
+        var result = await _geometryWorkflow.SetComponentSpacingAsync(
             args[1],
             fixedReference,
             movingReference,
             distance,
             GetOption(args, "--axis"),
-            HasFlag(args, "--dry-run"));
+            HasFlag(args, "--dry-run"),
+            cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunRestoreChangeAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ComponentRestoreResult>.Fail("restore-change requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var change = GetOption(args, "--change");
+        if (change is null)
+        {
+            Write(ToolResponse<ComponentRestoreResult>.Fail("restore-change requires --change.", "CHANGE_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _geometryWorkflow.RestoreChangeAsync(args[1], change, HasFlag(args, "--dry-run"), cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -219,6 +258,19 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private int RunOpen(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<OpenProjectResult>.Fail("open requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _openKiCad.OpenProject(args[1], HasFlag(args, "--dry-run"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private static int UnknownCommand(string command)
     {
         Console.Error.WriteLine($"Unknown command: {command}");
@@ -282,8 +334,10 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper measure <project-path> --from <ref> --to <ref> [--json]");
         Console.WriteLine("  pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm> [--axis x|y] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper restore-change <project-path> --change <change-id-or-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");
         Console.WriteLine("  pcbhelper package <project-path> [--json]");
+        Console.WriteLine("  pcbhelper open <project-path> [--dry-run] [--json]");
     }
 }

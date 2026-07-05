@@ -32,6 +32,8 @@ First exposed tools:
 - `move_component`
 - `set_component_spacing_preview`
 - `set_component_spacing`
+- `restore_change_preview`
+- `restore_change`
 - `run_erc`
 - `run_drc`
 - `run_checks`
@@ -39,5 +41,8 @@ First exposed tools:
 - `export_drill`
 - `export_manufacturing_files`
 - `export_manufacturing_zip`
+- `open_project_in_kicad`
 
 No AI provider keys are required by PCBHelper itself. Copilot, Codex, Ollama, or any future client is responsible for its own model configuration.
+
+Real mutation tools create `.pcbhelper/changes/<change-id>/change.json` so the human can review exactly what moved and ask the agent to restore the previous footprint placement.

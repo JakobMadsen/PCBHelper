@@ -23,6 +23,8 @@ public sealed class McpContractTests
         Assert.Contains("move_component", toolNames);
         Assert.Contains("set_component_spacing_preview", toolNames);
         Assert.Contains("set_component_spacing", toolNames);
+        Assert.Contains("restore_change_preview", toolNames);
+        Assert.Contains("restore_change", toolNames);
         Assert.Contains("run_erc", toolNames);
         Assert.Contains("run_drc", toolNames);
         Assert.Contains("run_checks", toolNames);
@@ -30,6 +32,7 @@ public sealed class McpContractTests
         Assert.Contains("export_drill", toolNames);
         Assert.Contains("export_manufacturing_files", toolNames);
         Assert.Contains("export_manufacturing_zip", toolNames);
+        Assert.Contains("open_project_in_kicad", toolNames);
     }
 
     private static string GetToolName(MethodInfo method)

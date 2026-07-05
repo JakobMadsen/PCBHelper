@@ -36,7 +36,7 @@
 - Set 15 mm sensor spacing for the Hello World board.
 - Report before and after placement.
 - Add geometry tests.
-- Current placement support covers footprint measuring, dry-run moves, real top-level footprint moves, and axis-constrained spacing.
+- Current placement support covers footprint measuring, dry-run moves, real top-level footprint moves, axis-constrained spacing, change reports, and restore of single-footprint placement changes.
 
 ## Phase 4: Manufacturing Export
 
@@ -56,6 +56,7 @@
 - Explore transaction IDs or rollback support.
 - Document recommended git workflow for board changes.
 - Add local KiCad E2E smoke test procedure for visual review.
+- Current review support can open a project in the local KiCad GUI and records mutation reports under `.pcbhelper/changes/`.
 
 ## Phase 6: Simulation And PCB Tests
 

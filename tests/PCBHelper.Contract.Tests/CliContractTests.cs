@@ -138,6 +138,8 @@ public sealed class CliContractTests
 
         Assert.True(root.GetProperty("success").GetBoolean());
         Assert.False(root.GetProperty("data").GetProperty("dryRun").GetBoolean());
+        Assert.True(File.Exists(root.GetProperty("data").GetProperty("changeReportPath").GetString()));
+        Assert.True(root.GetProperty("data").TryGetProperty("checkSummary", out _));
     }
 
     [Fact]
@@ -153,6 +155,44 @@ public sealed class CliContractTests
         Assert.Equal("R1", data.GetProperty("fixedReference").GetString());
         Assert.Equal("D1", data.GetProperty("movingReference").GetString());
         Assert.Equal("x", data.GetProperty("axis").GetString());
+        Assert.True(File.Exists(data.GetProperty("changeReportPath").GetString()));
+    }
+
+    [Fact]
+    public async Task RestoreChange_DryRun_Json_Returns_Stable_Envelope()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var move = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--json");
+        Assert.Equal(0, move.ExitCode);
+        using var moveDocument = JsonDocument.Parse(move.StandardOutput);
+        var changeReportPath = moveDocument.RootElement.GetProperty("data").GetProperty("changeReportPath").GetString();
+
+        var restore = await RunCliAsync("restore-change", fixture.Path, "--change", changeReportPath!, "--dry-run", "--json");
+
+        Assert.Equal(0, restore.ExitCode);
+        using var restoreDocument = JsonDocument.Parse(restore.StandardOutput);
+        var data = restoreDocument.RootElement.GetProperty("data");
+
+        Assert.True(data.GetProperty("dryRun").GetBoolean());
+        Assert.Equal("D1", data.GetProperty("reference").GetString());
+        Assert.Equal(68, data.GetProperty("after").GetProperty("xMillimeters").GetDouble(), precision: 3);
+    }
+
+    [Fact]
+    public async Task Open_DryRun_Json_Returns_Stable_Envelope()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync("open", fixture.Path, "--dry-run", "--json");
+
+        Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var root = document.RootElement;
+
+        Assert.True(root.TryGetProperty("success", out _));
+        Assert.True(root.TryGetProperty("summary", out _));
+        Assert.True(root.TryGetProperty("data", out _));
+        Assert.True(root.TryGetProperty("warnings", out _));
+        Assert.True(root.TryGetProperty("error", out _));
     }
 
     private static async Task<ProcessResult> RunCliAsync(params string[] args)

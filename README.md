@@ -83,8 +83,10 @@ This repository contains the first implementation slice:
 - `pcbhelper measure <project-path> --from <ref> --to <ref>`
 - `pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm>`
 - `pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm>`
+- `pcbhelper restore-change <project-path> --change <change-id-or-path>`
 - `pcbhelper export <project-path>`
 - `pcbhelper package <project-path>`
+- `pcbhelper open <project-path>`
 - MCP stdio server for VS Code/Copilot-compatible clients
 - unit, contract, and headless E2E test projects
 
@@ -119,11 +121,15 @@ dotnet run --project src/PCBHelper.Cli -- board-summary fixtures/kicad-getting-s
 dotnet run --project src/PCBHelper.Cli -- measure fixtures/kicad-getting-started-led --from R1 --to D1
 dotnet run --project src/PCBHelper.Cli -- move fixtures/kicad-getting-started-led --ref D1 --x 75 --y 35 --dry-run
 dotnet run --project src/PCBHelper.Cli -- set-spacing fixtures/kicad-getting-started-led --fixed R1 --moving D1 --distance 25 --axis x --dry-run
+dotnet run --project src/PCBHelper.Cli -- restore-change fixtures/kicad-getting-started-led --change <change-id-or-path> --dry-run
 dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- package fixtures/kicad-getting-started-led
+dotnet run --project src/PCBHelper.Cli -- open fixtures/kicad-getting-started-led --dry-run
 ```
 
 Add `--json` to any command for structured output.
+
+Real `move`, `set-spacing`, and `restore-change` operations write a review report under `.pcbhelper/changes/<change-id>/change.json` and run KiCad checks after the board edit. Dry-runs report proposed before/after placement without writing the board file or a change report.
 
 ## License
 
