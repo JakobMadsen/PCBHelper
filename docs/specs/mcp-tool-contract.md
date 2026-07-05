@@ -517,8 +517,8 @@ Preview or draw a simple Manhattan wire between two known catalog pins.
 Inputs:
 
 - `project_path`
-- `from`: `<ref.pin>`
-- `to`: `<ref.pin>`
+- `from`: `<ref.pin>` or `<ref:pin>`
+- `to`: `<ref.pin>` or `<ref:pin>`
 - optional `net`
 
 Outputs:
@@ -528,7 +528,7 @@ Outputs:
 - change report path for real changes
 - ERC/DRC report paths for real changes
 
-Stable errors include `SCHEMATIC_PIN_NOT_FOUND` for unknown references or pins.
+Stable errors include `SCHEMATIC_PIN_NOT_FOUND` for unknown references or pins. Dot notation is canonical, and colon notation is accepted for agent/user convenience.
 
 ### `add_net_label_preview` / `add_net_label`
 

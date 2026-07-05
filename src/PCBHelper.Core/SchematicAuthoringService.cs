@@ -84,7 +84,7 @@ public sealed class SchematicAuthoringService
         else
         {
             var propertyText = FormatProperty(field, value, symbol.XMillimeters ?? 0, (symbol.YMillimeters ?? 0) + 5);
-            after = before.Insert(symbol.SourceStart + symbol.SourceLength - 1, propertyText);
+            after = before.Insert(GetSymbolClosingLineStart(before, symbol), propertyText);
         }
 
         if (!dryRun)
@@ -255,10 +255,10 @@ public sealed class SchematicAuthoringService
 
     private static ToolResponse<ResolvedSchematicPin> ResolvePin(KiCadSchematicDocument schematic, string pinReference)
     {
-        var parts = pinReference.Split('.', 2);
+        var parts = pinReference.Split(new[] { '.', ':' }, 2);
         if (parts.Length != 2)
         {
-            return ToolResponse<ResolvedSchematicPin>.Fail($"Pin reference must be <ref.pin>: {pinReference}", "SCHEMATIC_PIN_NOT_FOUND");
+            return ToolResponse<ResolvedSchematicPin>.Fail($"Pin reference must be <ref.pin> or <ref:pin>: {pinReference}", "SCHEMATIC_PIN_NOT_FOUND");
         }
 
         var symbol = FindSymbol(schematic, parts[0]);
@@ -310,6 +310,13 @@ public sealed class SchematicAuthoringService
             && y >= Math.Min(wire.Y1Millimeters, wire.Y2Millimeters) - 0.001
             && y <= Math.Max(wire.Y1Millimeters, wire.Y2Millimeters) + 0.001;
         return horizontal || vertical;
+    }
+
+    private static int GetSymbolClosingLineStart(string text, KiCadSchematicSymbol symbol)
+    {
+        var closingParenthesis = symbol.SourceStart + symbol.SourceLength - 1;
+        var lineStart = text.LastIndexOf('\n', Math.Max(0, closingParenthesis - 1));
+        return lineStart < 0 ? closingParenthesis : lineStart + 1;
     }
 
     private static ToolResponse<SchematicMutationResult> Mutation(string operation, string reference, bool dryRun, IReadOnlyList<ChangeFileSnapshot> snapshots, string? previewText)

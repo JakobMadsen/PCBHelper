@@ -264,7 +264,8 @@ public sealed class CliContractTests
         foreach (var result in new[]
         {
             await RunCliAsync("set-symbol-field", fixture.Path, "--ref", "R1", "--field", "Footprint", "--value", "R_Axial_2Pad", "--dry-run", "--json"),
-            await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "R1.1", "--to", "R1.2", "--net", "LOOP", "--dry-run", "--json")
+            await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "R1.1", "--to", "R1.2", "--net", "LOOP", "--dry-run", "--json"),
+            await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "R1:1", "--to", "R1:2", "--net", "LOOP", "--dry-run", "--json")
         })
         {
             Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);

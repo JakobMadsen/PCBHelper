@@ -72,6 +72,39 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ConnectPins_Accepts_Dot_And_Colon_Pin_References()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 50, 50, "330R", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:LED", "D1", 70, 50, null, null, dryRun: false).Success);
+
+        var dot = service.ConnectPins(fixture.Path, "R1.1", "R1.2", "LOOP", dryRun: true);
+        var colon = service.ConnectPins(fixture.Path, "R1:2", "D1:A", "LED_A", dryRun: false);
+
+        Assert.True(dot.Success);
+        Assert.True(colon.Success);
+        Assert.True(service.ListSymbols(fixture.Path).Data!.WireCount >= 1);
+    }
+
+    [Fact]
+    public void SetSymbolField_Inserts_New_Property_Before_Symbol_Closing_Line()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        var schematicFile = Path.Combine(fixture.Path, "blank-authoring.kicad_sch");
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 50, 50, "330R", null, dryRun: false).Success);
+        Assert.True(service.SetSymbolField(fixture.Path, "R1", "MPN", "ABC-123", dryRun: false).Success);
+
+        var text = File.ReadAllText(schematicFile);
+        Assert.Contains($"{Environment.NewLine}    (property \"MPN\" \"ABC-123\"{Environment.NewLine}", text);
+        Assert.DoesNotContain("      (property", text);
+        Assert.Contains(service.ListSymbols(fixture.Path).Data!.Symbols.Single().Fields, field => field.Name == "MPN" && field.Value == "ABC-123");
+    }
+
+    [Fact]
     public async Task RestoreChange_Restores_Schematic_File_Snapshot()
     {
         using var fixture = CopyBlankFixture();

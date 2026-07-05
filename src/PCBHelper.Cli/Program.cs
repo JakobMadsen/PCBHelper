@@ -888,7 +888,7 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper list-schematic-symbols <project-path> [--json]");
         Console.WriteLine("  pcbhelper create-schematic-symbol <project-path> --symbol <catalog-id> --ref <ref> --x <mm> --y <mm> [--value <value>] [--footprint <id>] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper set-symbol-field <project-path> --ref <ref> --field <name> --value <value> [--dry-run] [--json]");
-        Console.WriteLine("  pcbhelper connect-schematic-pins <project-path> --from <ref.pin> --to <ref.pin> [--net <name>] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper connect-schematic-pins <project-path> --from <ref.pin|ref:pin> --to <ref.pin|ref:pin> [--net <name>] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper update-pcb-from-schematic <project-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
