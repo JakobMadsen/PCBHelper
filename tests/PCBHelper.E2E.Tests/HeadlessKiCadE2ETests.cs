@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text.Json;
 using PCBHelper.Core;
 using Xunit.Abstractions;
@@ -12,6 +13,49 @@ public sealed class HeadlessKiCadE2ETests
     public HeadlessKiCadE2ETests(ITestOutputHelper output)
     {
         _output = output;
+    }
+
+    [Fact]
+    public async Task Tutorial_Fixture_Exports_And_Packages_Through_Cli_Boundary()
+    {
+        var locator = new KiCadCliLocator();
+        var location = locator.Locate();
+        if (!location.Found)
+        {
+            _output.WriteLine("Skipped KiCad-dependent E2E: kicad-cli was not found.");
+            return;
+        }
+
+        using var fixture = TestFixture.CopyTutorialBoard();
+
+        var summary = await RunCliAsync("summary", fixture.Path, "--json");
+        Assert.Equal(0, summary.ExitCode);
+
+        var boardSummary = await RunCliAsync("board-summary", fixture.Path, "--json");
+        Assert.Equal(0, boardSummary.ExitCode);
+
+        var check = await RunCliAsync("check", fixture.Path, "--json");
+        Assert.Equal(0, check.ExitCode);
+
+        var export = await RunCliAsync("export", fixture.Path, "--json");
+        Assert.Equal(0, export.ExitCode);
+        using (var exportDocument = JsonDocument.Parse(export.StandardOutput))
+        {
+            var generatedFiles = exportDocument.RootElement.GetProperty("data").GetProperty("generatedFiles");
+            Assert.Contains(generatedFiles.EnumerateArray(), static item => item.GetString()?.EndsWith(".gm1", StringComparison.OrdinalIgnoreCase) == true);
+            Assert.Contains(generatedFiles.EnumerateArray(), static item => item.GetString()?.EndsWith(".drl", StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        var package = await RunCliAsync("package", fixture.Path, "--json");
+        Assert.Equal(0, package.ExitCode);
+        using var packageDocument = JsonDocument.Parse(package.StandardOutput);
+        var zipPath = packageDocument.RootElement.GetProperty("data").GetProperty("zipPath").GetString();
+        Assert.True(File.Exists(zipPath));
+
+        using var archive = ZipFile.OpenRead(zipPath!);
+        Assert.Contains(archive.Entries, static entry => entry.FullName == "manifest.json");
+        Assert.Contains(archive.Entries, static entry => entry.FullName.EndsWith(".gm1", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(archive.Entries, static entry => entry.FullName.EndsWith(".drl", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

@@ -11,7 +11,17 @@ internal sealed class TestFixture : IDisposable
 
     public static TestFixture CopyMinimalBoard()
     {
-        var source = System.IO.Path.Combine(RepoRoot.Path, "fixtures", "minimal-board");
+        return CopyFixture("minimal-board");
+    }
+
+    public static TestFixture CopyTutorialBoard()
+    {
+        return CopyFixture("kicad-getting-started-led");
+    }
+
+    private static TestFixture CopyFixture(string fixtureName)
+    {
+        var source = System.IO.Path.Combine(RepoRoot.Path, "fixtures", fixtureName);
         var destination = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "pcbhelper-e2e", Guid.NewGuid().ToString("N"));
         CopyDirectory(source, destination);
         return new TestFixture(destination);

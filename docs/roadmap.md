@@ -46,6 +46,7 @@
 - Build manufacturing zip.
 - Validate archive contents.
 - Add headless E2E test for project creation, checks, export, and zip validation.
+- Current generic export/package support covers Gerber, drill, and a manifest-backed manufacturing zip.
 
 ## Phase 5: Human Review Loop
 

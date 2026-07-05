@@ -79,6 +79,9 @@ This repository contains the first implementation slice:
 - `pcbhelper doctor`
 - `pcbhelper summary <project-path>`
 - `pcbhelper check <project-path>`
+- `pcbhelper board-summary <project-path>`
+- `pcbhelper export <project-path>`
+- `pcbhelper package <project-path>`
 - MCP stdio server for VS Code/Copilot-compatible clients
 - unit, contract, and headless E2E test projects
 
@@ -109,6 +112,9 @@ Start with:
 dotnet run --project src/PCBHelper.Cli -- doctor
 dotnet run --project src/PCBHelper.Cli -- summary fixtures/minimal-board
 dotnet run --project src/PCBHelper.Cli -- check fixtures/minimal-board
+dotnet run --project src/PCBHelper.Cli -- board-summary fixtures/kicad-getting-started-led
+dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
+dotnet run --project src/PCBHelper.Cli -- package fixtures/kicad-getting-started-led
 ```
 
 Add `--json` to any command for structured output.

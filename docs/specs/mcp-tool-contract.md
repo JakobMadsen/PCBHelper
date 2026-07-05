@@ -64,6 +64,8 @@ Outputs:
 - design rule summary
 - known warnings
 
+First implementation note: the current board summary is intentionally lightweight and reports fixture-level footprint references, sides, and positions.
+
 ### `get_selected_items`
 
 Return currently selected KiCad objects if supported by the chosen KiCad API or IPC layer.
@@ -302,4 +304,3 @@ Outputs:
 - waveform or measurement outputs
 - failed assertions
 - summary
-

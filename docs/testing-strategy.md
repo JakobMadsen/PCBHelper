@@ -120,6 +120,7 @@ Candidate fixtures:
 
 - empty KiCad project
 - minimal board with two footprints
+- beginner LED/resistor/battery-holder board inspired by KiCad's Getting Started tutorial
 - Hello World optical sensor template
 - board with known DRC violation
 - schematic with known ERC warning
@@ -160,4 +161,3 @@ V1 should not be considered successful until:
 - Keep pure logic isolated so it can be tested quickly.
 - Treat ERC, DRC, export validation, and future SPICE assertions as PCB tests.
 - Prefer clear failure reports over silent automation.
-

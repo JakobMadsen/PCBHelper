@@ -26,8 +26,13 @@ First exposed tools:
 
 - `doctor`
 - `get_project_summary`
+- `get_board_summary`
 - `run_erc`
 - `run_drc`
 - `run_checks`
+- `export_gerbers`
+- `export_drill`
+- `export_manufacturing_files`
+- `export_manufacturing_zip`
 
 No AI provider keys are required by PCBHelper itself. Copilot, Codex, Ollama, or any future client is responsible for its own model configuration.

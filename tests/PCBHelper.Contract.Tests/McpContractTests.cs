@@ -17,9 +17,14 @@ public sealed class McpContractTests
 
         Assert.Contains("doctor", toolNames);
         Assert.Contains("get_project_summary", toolNames);
+        Assert.Contains("get_board_summary", toolNames);
         Assert.Contains("run_erc", toolNames);
         Assert.Contains("run_drc", toolNames);
         Assert.Contains("run_checks", toolNames);
+        Assert.Contains("export_gerbers", toolNames);
+        Assert.Contains("export_drill", toolNames);
+        Assert.Contains("export_manufacturing_files", toolNames);
+        Assert.Contains("export_manufacturing_zip", toolNames);
     }
 
     private static string GetToolName(MethodInfo method)

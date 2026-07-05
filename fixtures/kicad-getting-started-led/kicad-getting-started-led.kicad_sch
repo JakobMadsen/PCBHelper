@@ -1,0 +1,22 @@
+(kicad_sch
+  (version 20241229)
+  (generator "PCBHelper")
+  (generator_version "0.1")
+  (uuid "11111111-1111-1111-1111-111111111111")
+  (paper "A4")
+  (title_block
+    (title "PCBHelper KiCad Getting Started LED Fixture")
+    (comment 1 "Inspired by KiCad's Getting Started LED/resistor/battery tutorial.")
+  )
+  (lib_symbols)
+  (text "BT1 -> R1 -> D1 beginner LED circuit fixture"
+    (exclude_from_sim no)
+    (at 64.77 38.1 0)
+    (effects
+      (font
+        (size 1.27 1.27)
+      )
+    )
+  )
+  (symbol_instances)
+)

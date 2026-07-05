@@ -57,6 +57,45 @@ public sealed class CliContractTests
         Assert.True(root.TryGetProperty("error", out _));
     }
 
+    [Fact]
+    public async Task BoardSummary_Json_Returns_Tutorial_Footprints()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync("board-summary", fixture.Path, "--json");
+
+        Assert.Equal(0, result.ExitCode);
+
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var footprints = document.RootElement.GetProperty("data").GetProperty("footprints");
+        var references = footprints.EnumerateArray()
+            .Select(static item => item.GetProperty("reference").GetString())
+            .ToHashSet();
+
+        Assert.Contains("BT1", references);
+        Assert.Contains("R1", references);
+        Assert.Contains("D1", references);
+    }
+
+    [Theory]
+    [InlineData("export")]
+    [InlineData("package")]
+    public async Task Manufacturing_Commands_Return_Stable_Json_Envelope(string command)
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync(command, fixture.Path, "--json");
+
+        Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);
+
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var root = document.RootElement;
+
+        Assert.True(root.TryGetProperty("success", out _));
+        Assert.True(root.TryGetProperty("summary", out _));
+        Assert.True(root.TryGetProperty("data", out _));
+        Assert.True(root.TryGetProperty("warnings", out _));
+        Assert.True(root.TryGetProperty("error", out _));
+    }
+
     private static async Task<ProcessResult> RunCliAsync(params string[] args)
     {
         var project = Path.Combine(RepoRoot.Path, "src", "PCBHelper.Cli", "PCBHelper.Cli.csproj");

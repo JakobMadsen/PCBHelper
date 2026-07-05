@@ -1,0 +1,16 @@
+{
+  "board": {
+    "design_settings": {
+      "defaults": {
+        "board_outline_line_width": 0.1,
+        "copper_line_width": 0.25
+      }
+    }
+  },
+  "meta": {
+    "version": 1
+  },
+  "project": {
+    "name": "kicad-getting-started-led"
+  }
+}
