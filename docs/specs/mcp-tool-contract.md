@@ -133,6 +133,8 @@ Outputs:
 - dx and dy in millimeters
 - anchor points used
 
+First implementation note: measurements are footprint top-level position to footprint top-level position.
+
 ### `set_component_spacing`
 
 Move one component so two component anchors have a target center-to-center distance.
@@ -150,6 +152,8 @@ Outputs:
 - previous distance
 - new distance
 - moved component
+
+First implementation note: spacing is axis-constrained and defaults to the X axis. It updates only the moving footprint's top-level `(at ...)`.
 
 ## Visual Review Tools
 

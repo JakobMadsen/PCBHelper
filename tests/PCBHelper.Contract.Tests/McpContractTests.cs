@@ -18,6 +18,11 @@ public sealed class McpContractTests
         Assert.Contains("doctor", toolNames);
         Assert.Contains("get_project_summary", toolNames);
         Assert.Contains("get_board_summary", toolNames);
+        Assert.Contains("measure_distance", toolNames);
+        Assert.Contains("move_component_preview", toolNames);
+        Assert.Contains("move_component", toolNames);
+        Assert.Contains("set_component_spacing_preview", toolNames);
+        Assert.Contains("set_component_spacing", toolNames);
         Assert.Contains("run_erc", toolNames);
         Assert.Contains("run_drc", toolNames);
         Assert.Contains("run_checks", toolNames);

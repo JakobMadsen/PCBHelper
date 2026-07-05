@@ -27,6 +27,11 @@ First exposed tools:
 - `doctor`
 - `get_project_summary`
 - `get_board_summary`
+- `measure_distance`
+- `move_component_preview`
+- `move_component`
+- `set_component_spacing_preview`
+- `set_component_spacing`
 - `run_erc`
 - `run_drc`
 - `run_checks`

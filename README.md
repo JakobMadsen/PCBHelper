@@ -80,6 +80,9 @@ This repository contains the first implementation slice:
 - `pcbhelper summary <project-path>`
 - `pcbhelper check <project-path>`
 - `pcbhelper board-summary <project-path>`
+- `pcbhelper measure <project-path> --from <ref> --to <ref>`
+- `pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm>`
+- `pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm>`
 - `pcbhelper export <project-path>`
 - `pcbhelper package <project-path>`
 - MCP stdio server for VS Code/Copilot-compatible clients
@@ -113,6 +116,9 @@ dotnet run --project src/PCBHelper.Cli -- doctor
 dotnet run --project src/PCBHelper.Cli -- summary fixtures/minimal-board
 dotnet run --project src/PCBHelper.Cli -- check fixtures/minimal-board
 dotnet run --project src/PCBHelper.Cli -- board-summary fixtures/kicad-getting-started-led
+dotnet run --project src/PCBHelper.Cli -- measure fixtures/kicad-getting-started-led --from R1 --to D1
+dotnet run --project src/PCBHelper.Cli -- move fixtures/kicad-getting-started-led --ref D1 --x 75 --y 35 --dry-run
+dotnet run --project src/PCBHelper.Cli -- set-spacing fixtures/kicad-getting-started-led --fixed R1 --moving D1 --distance 25 --axis x --dry-run
 dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- package fixtures/kicad-getting-started-led
 ```

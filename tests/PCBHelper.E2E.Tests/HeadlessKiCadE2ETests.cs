@@ -59,6 +59,52 @@ public sealed class HeadlessKiCadE2ETests
     }
 
     [Fact]
+    public async Task Tutorial_Fixture_Measures_Moves_And_Still_Packages()
+    {
+        var locator = new KiCadCliLocator();
+        var location = locator.Locate();
+        if (!location.Found)
+        {
+            _output.WriteLine("Skipped KiCad-dependent E2E: kicad-cli was not found.");
+            return;
+        }
+
+        using var fixture = TestFixture.CopyTutorialBoard();
+
+        var boardSummary = await RunCliAsync("board-summary", fixture.Path, "--json");
+        Assert.Equal(0, boardSummary.ExitCode);
+
+        var measure = await RunCliAsync("measure", fixture.Path, "--from", "R1", "--to", "D1", "--json");
+        Assert.Equal(0, measure.ExitCode);
+
+        var dryRun = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--dry-run", "--json");
+        Assert.Equal(0, dryRun.ExitCode);
+
+        var move = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--json");
+        Assert.Equal(0, move.ExitCode);
+
+        var movedSummary = await RunCliAsync("board-summary", fixture.Path, "--json");
+        Assert.Equal(0, movedSummary.ExitCode);
+        using (var document = JsonDocument.Parse(movedSummary.StandardOutput))
+        {
+            var d1 = document.RootElement.GetProperty("data").GetProperty("footprints")
+                .EnumerateArray()
+                .Single(item => item.GetProperty("reference").GetString() == "D1");
+            Assert.Equal(75, d1.GetProperty("xMillimeters").GetDouble(), precision: 3);
+            Assert.Equal(35, d1.GetProperty("yMillimeters").GetDouble(), precision: 3);
+        }
+
+        var check = await RunCliAsync("check", fixture.Path, "--json");
+        Assert.Equal(0, check.ExitCode);
+
+        var export = await RunCliAsync("export", fixture.Path, "--json");
+        Assert.Equal(0, export.ExitCode);
+
+        var package = await RunCliAsync("package", fixture.Path, "--json");
+        Assert.Equal(0, package.ExitCode);
+    }
+
+    [Fact]
     public async Task Doctor_Summary_Check_Run_Through_Cli_Boundary()
     {
         var locator = new KiCadCliLocator();

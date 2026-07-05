@@ -36,6 +36,7 @@
 - Set 15 mm sensor spacing for the Hello World board.
 - Report before and after placement.
 - Add geometry tests.
+- Current placement support covers footprint measuring, dry-run moves, real top-level footprint moves, and axis-constrained spacing.
 
 ## Phase 4: Manufacturing Export
 

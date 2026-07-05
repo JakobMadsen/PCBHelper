@@ -17,6 +17,7 @@ Good candidates:
 - geometry calculations
 - unit conversion
 - component spacing logic
+- dry-run versus mutating footprint placement
 - path validation
 - ERC and DRC report parsing
 - manufacturing zip validation

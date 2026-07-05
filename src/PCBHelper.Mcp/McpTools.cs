@@ -27,6 +27,57 @@ public static class McpTools
         return Services.BoardSummary.GetSummary(projectPath);
     }
 
+    [McpServerTool(Name = "measure_distance"), Description("Measure center-to-center distance between two board footprints.")]
+    public static ToolResponse<MeasurementResult> MeasureDistance(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Reference of the starting footprint, for example R1.")] string fromReference,
+        [Description("Reference of the ending footprint, for example D1.")] string toReference)
+    {
+        return Services.Geometry.MeasureDistance(projectPath, fromReference, toReference);
+    }
+
+    [McpServerTool(Name = "move_component_preview"), Description("Preview moving a footprint without writing the board file.")]
+    public static ToolResponse<ComponentMoveResult> MoveComponentPreview(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Footprint reference, for example D1.")] string reference,
+        [Description("Target X coordinate in millimeters.")] double xMillimeters,
+        [Description("Target Y coordinate in millimeters.")] double yMillimeters)
+    {
+        return Services.Geometry.MoveComponent(projectPath, reference, xMillimeters, yMillimeters, dryRun: true);
+    }
+
+    [McpServerTool(Name = "move_component"), Description("Move a footprint by updating its top-level KiCad board position.")]
+    public static ToolResponse<ComponentMoveResult> MoveComponent(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Footprint reference, for example D1.")] string reference,
+        [Description("Target X coordinate in millimeters.")] double xMillimeters,
+        [Description("Target Y coordinate in millimeters.")] double yMillimeters)
+    {
+        return Services.Geometry.MoveComponent(projectPath, reference, xMillimeters, yMillimeters, dryRun: false);
+    }
+
+    [McpServerTool(Name = "set_component_spacing_preview"), Description("Preview moving one footprint so it has target axis spacing from another footprint.")]
+    public static ToolResponse<ComponentSpacingResult> SetComponentSpacingPreview(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Footprint that stays fixed.")] string fixedReference,
+        [Description("Footprint that will move.")] string movingReference,
+        [Description("Target distance in millimeters.")] double distanceMillimeters,
+        [Description("Axis to constrain spacing to: x or y. Defaults to x.")] string? axis = "x")
+    {
+        return Services.Geometry.SetComponentSpacing(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: true);
+    }
+
+    [McpServerTool(Name = "set_component_spacing"), Description("Move one footprint so it has target axis spacing from another footprint.")]
+    public static ToolResponse<ComponentSpacingResult> SetComponentSpacing(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Footprint that stays fixed.")] string fixedReference,
+        [Description("Footprint that will move.")] string movingReference,
+        [Description("Target distance in millimeters.")] double distanceMillimeters,
+        [Description("Axis to constrain spacing to: x or y. Defaults to x.")] string? axis = "x")
+    {
+        return Services.Geometry.SetComponentSpacing(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: false);
+    }
+
     [McpServerTool(Name = "run_erc"), Description("Run KiCad ERC through kicad-cli for the project schematic.")]
     public static Task<ToolResponse<SingleCheckResult>> RunErc(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
@@ -92,6 +143,8 @@ internal static class Services
     public static ProjectDiscoveryService ProjectDiscovery { get; } = new();
 
     public static BoardSummaryService BoardSummary { get; } = new(ProjectDiscovery);
+
+    public static GeometryService Geometry { get; } = new(ProjectDiscovery);
 
     public static KiCadDoctorService Doctor { get; } = new(Locator, Runner);
 

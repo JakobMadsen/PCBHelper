@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Globalization;
 using PCBHelper.Core;
 
 var app = new CliApp(
     new KiCadDoctorService(new KiCadCliLocator(), new ProcessCommandRunner()),
     new ProjectDiscoveryService(),
     new BoardSummaryService(new ProjectDiscoveryService()),
+    new GeometryService(new ProjectDiscoveryService()),
     new CheckRunner(new ProjectDiscoveryService(), new KiCadCliLocator(), new ProcessCommandRunner()),
     new ExportService(new ProjectDiscoveryService(), new KiCadCliLocator(), new ProcessCommandRunner()),
     new PackageService(
@@ -24,6 +26,7 @@ public sealed class CliApp
     private readonly KiCadDoctorService _doctor;
     private readonly ProjectDiscoveryService _projectDiscovery;
     private readonly BoardSummaryService _boardSummary;
+    private readonly GeometryService _geometry;
     private readonly CheckRunner _checkRunner;
     private readonly ExportService _exportService;
     private readonly PackageService _packageService;
@@ -32,6 +35,7 @@ public sealed class CliApp
         KiCadDoctorService doctor,
         ProjectDiscoveryService projectDiscovery,
         BoardSummaryService boardSummary,
+        GeometryService geometry,
         CheckRunner checkRunner,
         ExportService exportService,
         PackageService packageService)
@@ -39,6 +43,7 @@ public sealed class CliApp
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
         _boardSummary = boardSummary;
+        _geometry = geometry;
         _checkRunner = checkRunner;
         _exportService = exportService;
         _packageService = packageService;
@@ -60,6 +65,9 @@ public sealed class CliApp
             "doctor" => await RunDoctorAsync(json, cancellationToken),
             "summary" => RunSummary(positional, json),
             "board-summary" => RunBoardSummary(positional, json),
+            "measure" => RunMeasure(positional, json),
+            "move" => RunMove(positional, json),
+            "set-spacing" => RunSetSpacing(positional, json),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
             "package" => await RunPackageAsync(positional, json, cancellationToken),
@@ -70,6 +78,78 @@ public sealed class CliApp
     private async Task<int> RunDoctorAsync(bool json, CancellationToken cancellationToken)
     {
         var result = await _doctor.RunAsync(cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunMeasure(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<MeasurementResult>.Fail("measure requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var from = GetOption(args, "--from");
+        var to = GetOption(args, "--to");
+        if (from is null || to is null)
+        {
+            Write(ToolResponse<MeasurementResult>.Fail("measure requires --from and --to.", "MEASURE_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _geometry.MeasureDistance(args[1], from, to);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunMove(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ComponentMoveResult>.Fail("move requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        if (reference is null
+            || !TryGetDoubleOption(args, "--x", out var x)
+            || !TryGetDoubleOption(args, "--y", out var y))
+        {
+            Write(ToolResponse<ComponentMoveResult>.Fail("move requires --ref, --x, and --y.", "MOVE_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _geometry.MoveComponent(args[1], reference, x, y, HasFlag(args, "--dry-run"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunSetSpacing(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ComponentSpacingResult>.Fail("set-spacing requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var fixedReference = GetOption(args, "--fixed");
+        var movingReference = GetOption(args, "--moving");
+        if (fixedReference is null
+            || movingReference is null
+            || !TryGetDoubleOption(args, "--distance", out var distance))
+        {
+            Write(ToolResponse<ComponentSpacingResult>.Fail("set-spacing requires --fixed, --moving, and --distance.", "SPACING_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _geometry.SetComponentSpacing(
+            args[1],
+            fixedReference,
+            movingReference,
+            distance,
+            GetOption(args, "--axis"),
+            HasFlag(args, "--dry-run"));
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -146,6 +226,30 @@ public sealed class CliApp
         return 2;
     }
 
+    private static string? GetOption(IReadOnlyList<string> args, string optionName)
+    {
+        for (var index = 0; index < args.Count - 1; index++)
+        {
+            if (args[index].Equals(optionName, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[index + 1];
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryGetDoubleOption(IReadOnlyList<string> args, string optionName, out double value)
+    {
+        var raw = GetOption(args, optionName);
+        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool HasFlag(IReadOnlyList<string> args, string flagName)
+    {
+        return args.Any(arg => arg.Equals(flagName, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static void Write<T>(ToolResponse<T> response, bool json)
     {
         if (json)
@@ -175,6 +279,9 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper doctor [--json]");
         Console.WriteLine("  pcbhelper summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper board-summary <project-path> [--json]");
+        Console.WriteLine("  pcbhelper measure <project-path> --from <ref> --to <ref> [--json]");
+        Console.WriteLine("  pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm> [--axis x|y] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");
         Console.WriteLine("  pcbhelper package <project-path> [--json]");

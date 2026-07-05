@@ -96,6 +96,65 @@ public sealed class CliContractTests
         Assert.True(root.TryGetProperty("error", out _));
     }
 
+    [Fact]
+    public async Task Measure_Json_Returns_Distance_Data()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync("measure", fixture.Path, "--from", "R1", "--to", "D1", "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal("R1", data.GetProperty("fromReference").GetString());
+        Assert.Equal("D1", data.GetProperty("toReference").GetString());
+        Assert.Equal(23, data.GetProperty("distanceMillimeters").GetDouble(), precision: 3);
+    }
+
+    [Fact]
+    public async Task Move_DryRun_Json_Returns_Stable_Envelope()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--dry-run", "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var root = document.RootElement;
+
+        Assert.True(root.GetProperty("success").GetBoolean());
+        Assert.True(root.GetProperty("data").GetProperty("dryRun").GetBoolean());
+        Assert.Equal(75, root.GetProperty("data").GetProperty("after").GetProperty("xMillimeters").GetDouble(), precision: 3);
+    }
+
+    [Fact]
+    public async Task Move_Json_Returns_Stable_Envelope()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync("move", fixture.Path, "--ref", "D1", "--x", "75", "--y", "35", "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var root = document.RootElement;
+
+        Assert.True(root.GetProperty("success").GetBoolean());
+        Assert.False(root.GetProperty("data").GetProperty("dryRun").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SetSpacing_Json_Returns_Stable_Envelope()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var result = await RunCliAsync("set-spacing", fixture.Path, "--fixed", "R1", "--moving", "D1", "--distance", "25", "--axis", "x", "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal("R1", data.GetProperty("fixedReference").GetString());
+        Assert.Equal("D1", data.GetProperty("movingReference").GetString());
+        Assert.Equal("x", data.GetProperty("axis").GetString());
+    }
+
     private static async Task<ProcessResult> RunCliAsync(params string[] args)
     {
         var project = Path.Combine(RepoRoot.Path, "src", "PCBHelper.Cli", "PCBHelper.Cli.csproj");

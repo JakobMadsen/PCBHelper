@@ -26,6 +26,7 @@ npm-debug.log*
 *.kicad_sch-bak
 *.kicad_pcb-bak
 ~*.kicad_pro.lck
+fp-info-cache
 
 # Generated PCB outputs
 fabrication/
