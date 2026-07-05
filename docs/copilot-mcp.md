@@ -2,7 +2,9 @@
 
 PCBHelper exposes its first agent integration as a local MCP stdio server.
 
-Use this with VS Code Copilot Agent Mode by adding an MCP server entry similar to this in `.vscode/mcp.json`:
+This repository includes `.vscode/mcp.json`, so opening the repository root in VS Code should make a `pcbhelper` MCP server available to VS Code-compatible MCP clients.
+
+The checked-in config is:
 
 ```json
 {
@@ -21,6 +23,8 @@ Use this with VS Code Copilot Agent Mode by adding an MCP server entry similar t
 ```
 
 Then start the server from VS Code's MCP UI and use Copilot Agent Mode.
+
+For the first end-to-end agent trial, follow [Agent smoke test](agent-smoke-test.md).
 
 First exposed tools:
 

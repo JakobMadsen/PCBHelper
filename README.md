@@ -101,6 +101,7 @@ Start with:
 - [Testing strategy](docs/testing-strategy.md)
 - [Implementation decisions](docs/decisions.md)
 - [VS Code / Copilot MCP setup](docs/copilot-mcp.md)
+- [Agent smoke test](docs/agent-smoke-test.md)
 - [Security and secrets](docs/security.md)
 - [Open questions](docs/open-questions.md)
 

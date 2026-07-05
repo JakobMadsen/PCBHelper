@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "pcbhelper": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/PCBHelper.Mcp"
+      ]
+    }
+  }
+}
