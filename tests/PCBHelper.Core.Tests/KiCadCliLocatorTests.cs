@@ -47,9 +47,34 @@ public sealed class KiCadCliLocatorTests
     }
 
     [Fact]
+    public void Locate_Finds_KicadCli_In_Install_Root_Bin()
+    {
+        using var temp = new TempDirectory();
+        var bin = Path.Combine(temp.Path, "bin");
+        Directory.CreateDirectory(bin);
+        var executable = Path.Combine(bin, OperatingSystem.IsWindows() ? "kicad-cli.exe" : "kicad-cli");
+        File.WriteAllText(executable, string.Empty);
+
+        var locator = new KiCadCliLocator(
+            name => name switch
+            {
+                "KICAD_CLI" => null,
+                "PATH" => string.Empty,
+                _ => null
+            },
+            () => new[] { temp.Path });
+
+        var result = locator.Locate();
+
+        Assert.True(result.Found);
+        Assert.Equal(Path.GetFullPath(executable), result.ExecutablePath);
+        Assert.Equal("KiCad install location", result.Source);
+    }
+
+    [Fact]
     public void Locate_Returns_Missing_When_Not_Configured()
     {
-        var locator = new KiCadCliLocator(_ => null);
+        var locator = new KiCadCliLocator(_ => null, static () => Array.Empty<string>());
 
         var result = locator.Locate();
 

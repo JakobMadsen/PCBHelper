@@ -23,8 +23,8 @@ public sealed class CliContractTests
     [Fact]
     public async Task Summary_Json_Returns_Project_Shape()
     {
-        var fixture = Path.Combine(RepoRoot.Path, "fixtures", "minimal-board");
-        var result = await RunCliAsync("summary", fixture, "--json");
+        using var fixture = TestFixture.CopyMinimalBoard();
+        var result = await RunCliAsync("summary", fixture.Path, "--json");
 
         Assert.Equal(0, result.ExitCode);
 
@@ -40,10 +40,12 @@ public sealed class CliContractTests
     }
 
     [Fact]
-    public async Task Check_Json_Returns_Stable_Envelope_When_KiCad_Is_Missing()
+    public async Task Check_Json_Returns_Stable_Envelope()
     {
-        var fixture = Path.Combine(RepoRoot.Path, "fixtures", "minimal-board");
-        var result = await RunCliAsync("check", fixture, "--json");
+        using var fixture = TestFixture.CopyMinimalBoard();
+        var result = await RunCliAsync("check", fixture.Path, "--json");
+
+        Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);
 
         using var document = JsonDocument.Parse(result.StandardOutput);
         var root = document.RootElement;

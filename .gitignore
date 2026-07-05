@@ -25,6 +25,7 @@ npm-debug.log*
 *.kicad_pro-bak
 *.kicad_sch-bak
 *.kicad_pcb-bak
+~*.kicad_pro.lck
 
 # Generated PCB outputs
 fabrication/

@@ -3,15 +3,22 @@ namespace PCBHelper.Core;
 public sealed class KiCadCliLocator
 {
     private readonly Func<string, string?> _getEnvironmentVariable;
+    private readonly Func<IEnumerable<string>> _getInstallRoots;
 
     public KiCadCliLocator()
-        : this(Environment.GetEnvironmentVariable)
+        : this(Environment.GetEnvironmentVariable, KiCadInstallRootDiscovery.GetInstallRoots)
     {
     }
 
     public KiCadCliLocator(Func<string, string?> getEnvironmentVariable)
+        : this(getEnvironmentVariable, static () => Array.Empty<string>())
+    {
+    }
+
+    public KiCadCliLocator(Func<string, string?> getEnvironmentVariable, Func<IEnumerable<string>> getInstallRoots)
     {
         _getEnvironmentVariable = getEnvironmentVariable;
+        _getInstallRoots = getInstallRoots;
     }
 
     public KiCadCliLocation Locate()
@@ -41,7 +48,22 @@ public sealed class KiCadCliLocator
             }
         }
 
-        return new KiCadCliLocation(false, null, "PATH", "kicad-cli was not found on PATH and KICAD_CLI is not set.");
+        foreach (var installRoot in _getInstallRoots())
+        {
+            foreach (var candidateDirectory in GetInstallCandidateDirectories(installRoot))
+            {
+                foreach (var executableName in GetExecutableNames())
+                {
+                    var candidate = Path.Combine(candidateDirectory, executableName);
+                    if (File.Exists(candidate))
+                    {
+                        return new KiCadCliLocation(true, Path.GetFullPath(candidate), "KiCad install location", null);
+                    }
+                }
+            }
+        }
+
+        return new KiCadCliLocation(false, null, "PATH", "kicad-cli was not found on PATH, KICAD_CLI is not set, and no KiCad install location was detected.");
     }
 
     private static IEnumerable<string> GetExecutableNames()
@@ -54,6 +76,17 @@ public sealed class KiCadCliLocator
         }
 
         yield return "kicad-cli";
+    }
+
+    private static IEnumerable<string> GetInstallCandidateDirectories(string installRoot)
+    {
+        if (string.IsNullOrWhiteSpace(installRoot))
+        {
+            yield break;
+        }
+
+        yield return installRoot;
+        yield return Path.Combine(installRoot, "bin");
     }
 }
 

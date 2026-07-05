@@ -28,11 +28,11 @@ public sealed class HeadlessKiCadE2ETests
         var doctor = await RunCliAsync("doctor", "--json");
         Assert.Equal(0, doctor.ExitCode);
 
-        var fixture = Path.Combine(RepoRoot.Path, "fixtures", "minimal-board");
-        var summary = await RunCliAsync("summary", fixture, "--json");
+        using var fixture = TestFixture.CopyMinimalBoard();
+        var summary = await RunCliAsync("summary", fixture.Path, "--json");
         Assert.Equal(0, summary.ExitCode);
 
-        var check = await RunCliAsync("check", fixture, "--json");
+        var check = await RunCliAsync("check", fixture.Path, "--json");
         using var document = JsonDocument.Parse(check.StandardOutput);
         var data = document.RootElement.GetProperty("data");
         if (data.ValueKind == JsonValueKind.Null)
