@@ -296,6 +296,96 @@ public sealed class HeadlessKiCadE2ETests
     }
 
     [Fact]
+    public async Task Blank_Project_Can_Author_Schematic_Update_Pcb_And_Package()
+    {
+        var locator = new KiCadCliLocator();
+        var location = locator.Locate();
+        if (!location.Found)
+        {
+            _output.WriteLine("Skipped KiCad-dependent E2E: kicad-cli was not found.");
+            return;
+        }
+
+        using var fixture = TestFixture.CopyBlankAuthoring();
+
+        Assert.Equal(0, (await RunCliAsync("create-schematic-symbol", fixture.Path, "--symbol", "Device:Battery_Cell", "--ref", "BT1", "--x", "30", "--y", "50", "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("create-schematic-symbol", fixture.Path, "--symbol", "Device:R", "--ref", "R1", "--x", "50", "--y", "50", "--value", "330R", "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("create-schematic-symbol", fixture.Path, "--symbol", "Device:LED", "--ref", "D1", "--x", "70", "--y", "50", "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("set-symbol-field", fixture.Path, "--ref", "R1", "--field", "Footprint", "--value", "R_Axial_2Pad", "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "BT1.+", "--to", "R1.1", "--net", "VCC", "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "R1.2", "--to", "D1.A", "--net", "LED_A", "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "D1.K", "--to", "BT1.-", "--net", "GND", "--json")).ExitCode);
+
+        var schematic = await RunCliAsync("list-schematic-symbols", fixture.Path, "--json");
+        Assert.Equal(0, schematic.ExitCode);
+        using (var document = JsonDocument.Parse(schematic.StandardOutput))
+        {
+            var data = document.RootElement.GetProperty("data");
+            Assert.Equal(3, data.GetProperty("symbols").GetArrayLength());
+            Assert.True(data.GetProperty("wireCount").GetInt32() >= 3);
+            Assert.True(data.GetProperty("labelCount").GetInt32() >= 3);
+        }
+
+        var update = await RunCliAsync("update-pcb-from-schematic", fixture.Path, "--json");
+        Assert.Equal(0, update.ExitCode);
+        using (var document = JsonDocument.Parse(update.StandardOutput))
+        {
+            var data = document.RootElement.GetProperty("data");
+            Assert.True(File.Exists(data.GetProperty("changeReportPath").GetString()));
+        }
+
+        var board = await RunCliAsync("board-summary", fixture.Path, "--json");
+        Assert.Equal(0, board.ExitCode);
+        using (var document = JsonDocument.Parse(board.StandardOutput))
+        {
+            var references = document.RootElement.GetProperty("data").GetProperty("footprints")
+                .EnumerateArray()
+                .Select(static item => item.GetProperty("reference").GetString())
+                .ToHashSet();
+
+            Assert.Contains("BT1", references);
+            Assert.Contains("R1", references);
+            Assert.Contains("D1", references);
+        }
+
+        var nets = await RunCliAsync("list-nets", fixture.Path, "--json");
+        Assert.Equal(0, nets.ExitCode);
+        using (var document = JsonDocument.Parse(nets.StandardOutput))
+        {
+            var names = document.RootElement.GetProperty("data").GetProperty("nets")
+                .EnumerateArray()
+                .Select(static item => item.GetProperty("name").GetString())
+                .ToHashSet();
+
+            Assert.Contains("VCC", names);
+            Assert.Contains("LED_A", names);
+            Assert.Contains("GND", names);
+        }
+
+        var extraLabel = await RunCliAsync("add-net-label", fixture.Path, "--net", "EXTRA", "--x", "85", "--y", "60", "--json");
+        Assert.Equal(0, extraLabel.ExitCode);
+        string labelChange;
+        using (var document = JsonDocument.Parse(extraLabel.StandardOutput))
+        {
+            labelChange = document.RootElement.GetProperty("data").GetProperty("changeReportPath").GetString()!;
+            Assert.True(File.Exists(labelChange));
+        }
+
+        var restore = await RunCliAsync("restore-change", fixture.Path, "--change", labelChange, "--json");
+        Assert.Equal(0, restore.ExitCode);
+        var restoredSchematic = await RunCliAsync("list-schematic-symbols", fixture.Path, "--json");
+        Assert.Equal(0, restoredSchematic.ExitCode);
+        using (var document = JsonDocument.Parse(restoredSchematic.StandardOutput))
+        {
+            Assert.Equal(3, document.RootElement.GetProperty("data").GetProperty("labelCount").GetInt32());
+        }
+
+        Assert.Equal(0, (await RunCliAsync("check", fixture.Path, "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("export", fixture.Path, "--json")).ExitCode);
+        Assert.Equal(0, (await RunCliAsync("package", fixture.Path, "--json")).ExitCode);
+    }
+
+    [Fact]
     public async Task Doctor_Summary_Check_Run_Through_Cli_Boundary()
     {
         var locator = new KiCadCliLocator();

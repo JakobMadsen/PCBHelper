@@ -293,6 +293,123 @@ public static class McpTools
         return Services.RoutingWorkflow.DeleteViaAsync(projectPath, via, dryRun: false, cancellationToken);
     }
 
+    [McpServerTool(Name = "list_schematic_symbols"), Description("List schematic symbols, fields, wires, and labels.")]
+    public static ToolResponse<SchematicSymbolListResult> ListSchematicSymbols(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.SchematicWorkflow.ListSymbols(projectPath);
+    }
+
+    [McpServerTool(Name = "create_schematic_symbol_preview"), Description("Preview placing an approved catalog schematic symbol.")]
+    public static Task<ToolResponse<SchematicMutationResult>> CreateSchematicSymbolPreview(
+        string projectPath,
+        string symbol,
+        string reference,
+        double xMillimeters,
+        double yMillimeters,
+        string? value = null,
+        string? footprint = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.CreateSymbolAsync(projectPath, symbol, reference, xMillimeters, yMillimeters, value, footprint, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "create_schematic_symbol"), Description("Place an approved catalog schematic symbol and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> CreateSchematicSymbol(
+        string projectPath,
+        string symbol,
+        string reference,
+        double xMillimeters,
+        double yMillimeters,
+        string? value = null,
+        string? footprint = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.CreateSymbolAsync(projectPath, symbol, reference, xMillimeters, yMillimeters, value, footprint, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "set_symbol_field_preview"), Description("Preview setting a schematic symbol field.")]
+    public static Task<ToolResponse<SchematicMutationResult>> SetSymbolFieldPreview(
+        string projectPath,
+        string reference,
+        string field,
+        string value,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.SetSymbolFieldAsync(projectPath, reference, field, value, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "set_symbol_field"), Description("Set a schematic symbol field and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> SetSymbolField(
+        string projectPath,
+        string reference,
+        string field,
+        string value,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.SetSymbolFieldAsync(projectPath, reference, field, value, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "connect_schematic_pins_preview"), Description("Preview wiring two approved catalog schematic pins.")]
+    public static Task<ToolResponse<SchematicMutationResult>> ConnectSchematicPinsPreview(
+        string projectPath,
+        string from,
+        string to,
+        string? net = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.ConnectPinsAsync(projectPath, from, to, net, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "connect_schematic_pins"), Description("Wire two approved catalog schematic pins and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> ConnectSchematicPins(
+        string projectPath,
+        string from,
+        string to,
+        string? net = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.ConnectPinsAsync(projectPath, from, to, net, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_net_label_preview"), Description("Preview adding a schematic net label.")]
+    public static Task<ToolResponse<SchematicMutationResult>> AddNetLabelPreview(
+        string projectPath,
+        string net,
+        double xMillimeters,
+        double yMillimeters,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.AddNetLabelAsync(projectPath, net, xMillimeters, yMillimeters, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_net_label"), Description("Add a schematic net label and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> AddNetLabel(
+        string projectPath,
+        string net,
+        double xMillimeters,
+        double yMillimeters,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.AddNetLabelAsync(projectPath, net, xMillimeters, yMillimeters, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "update_pcb_from_schematic_preview"), Description("Preview creating missing board footprints from approved schematic symbols.")]
+    public static Task<ToolResponse<SchematicMutationResult>> UpdatePcbFromSchematicPreview(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.UpdatePcbFromSchematicAsync(projectPath, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "update_pcb_from_schematic"), Description("Create missing board footprints from approved schematic symbols and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> UpdatePcbFromSchematic(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.UpdatePcbFromSchematicAsync(projectPath, dryRun: false, cancellationToken);
+    }
+
     [McpServerTool(Name = "run_erc"), Description("Run KiCad ERC through kicad-cli for the project schematic.")]
     public static Task<ToolResponse<SingleCheckResult>> RunErc(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
@@ -435,7 +552,11 @@ internal static class Services
 
     public static RoutingWorkflowService RoutingWorkflow { get; } = new(RoutingService, CheckRunner, ChangeReports);
 
-    public static ChangeReviewService ChangeReview { get; } = new(ProjectDiscovery, ChangeReports, GeometryWorkflow, ComponentWorkflow, RoutingWorkflow);
+    public static SchematicAuthoringService SchematicService { get; } = new(ProjectDiscovery);
+
+    public static SchematicAuthoringWorkflowService SchematicWorkflow { get; } = new(SchematicService, CheckRunner, ChangeReports);
+
+    public static ChangeReviewService ChangeReview { get; } = new(ProjectDiscovery, ChangeReports, GeometryWorkflow, ComponentWorkflow, RoutingWorkflow, SchematicWorkflow);
 
     public static CheckSummaryService CheckSummary { get; } = new(CheckRunner);
 

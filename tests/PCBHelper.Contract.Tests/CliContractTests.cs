@@ -200,6 +200,7 @@ public sealed class CliContractTests
     [InlineData("list-nets")]
     [InlineData("list-tracks")]
     [InlineData("list-vias")]
+    [InlineData("list-schematic-symbols")]
     [InlineData("check-summary")]
     [InlineData("export-bom")]
     [InlineData("export-position-files")]
@@ -228,6 +229,9 @@ public sealed class CliContractTests
     [InlineData("get-net-routing", "--net", "LED_A")]
     [InlineData("add-track", "--net", "LED_A", "--start-x", "10", "--start-y", "10", "--end-x", "20", "--end-y", "10", "--layer", "F.Cu", "--width", "0.25", "--dry-run")]
     [InlineData("add-via", "--net", "GND", "--x", "30", "--y", "30", "--size", "1.2", "--drill", "0.6", "--layers", "F.Cu,B.Cu", "--dry-run")]
+    [InlineData("create-schematic-symbol", "--symbol", "Device:R", "--ref", "R99", "--x", "50", "--y", "50", "--value", "330R", "--dry-run")]
+    [InlineData("add-net-label", "--net", "VCC", "--x", "40", "--y", "50", "--dry-run")]
+    [InlineData("update-pcb-from-schematic", "--dry-run")]
     [InlineData("focus-component", "--ref", "R1")]
     public async Task New_Option_Commands_Return_Stable_Json_Envelope(string command, params string[] commandArgs)
     {
@@ -247,6 +251,31 @@ public sealed class CliContractTests
         Assert.True(root.TryGetProperty("data", out _));
         Assert.True(root.TryGetProperty("warnings", out _));
         Assert.True(root.TryGetProperty("error", out _));
+    }
+
+    [Fact]
+    public async Task Schematic_Authoring_Commands_Return_Stable_Json_Envelope()
+    {
+        using var fixture = TestFixture.CopyBlankAuthoring();
+
+        var create = await RunCliAsync("create-schematic-symbol", fixture.Path, "--symbol", "Device:R", "--ref", "R1", "--x", "50", "--y", "50", "--value", "330R", "--json");
+        Assert.Equal(0, create.ExitCode);
+
+        foreach (var result in new[]
+        {
+            await RunCliAsync("set-symbol-field", fixture.Path, "--ref", "R1", "--field", "Footprint", "--value", "R_Axial_2Pad", "--dry-run", "--json"),
+            await RunCliAsync("connect-schematic-pins", fixture.Path, "--from", "R1.1", "--to", "R1.2", "--net", "LOOP", "--dry-run", "--json")
+        })
+        {
+            Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            var root = document.RootElement;
+            Assert.True(root.TryGetProperty("success", out _));
+            Assert.True(root.TryGetProperty("summary", out _));
+            Assert.True(root.TryGetProperty("data", out _));
+            Assert.True(root.TryGetProperty("warnings", out _));
+            Assert.True(root.TryGetProperty("error", out _));
+        }
     }
 
     [Fact]

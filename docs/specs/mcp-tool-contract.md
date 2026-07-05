@@ -454,6 +454,116 @@ Outputs:
 
 First implementation note: routing V1 is not an autorouter. It supports only straight segments and through vias.
 
+## Schematic Authoring Tools
+
+### `list_schematic_symbols`
+
+List placed schematic symbols and lightweight schematic counts.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- schematic file
+- symbol references, catalog ids, values, footprints, positions, and fields
+- wire count
+- label count
+
+### `create_schematic_symbol_preview` / `create_schematic_symbol`
+
+Preview or place one approved catalog symbol instance.
+
+Inputs:
+
+- `project_path`
+- `symbol`: `Device:R`, `Device:LED`, `Device:D`, or `Device:Battery_Cell`
+- `reference`
+- `x` / `y` in millimeters
+- optional `value`
+- optional `footprint`
+
+Outputs:
+
+- proposed or written schematic text
+- changed file snapshot
+- change report path for real changes
+- ERC/DRC report paths for real changes
+
+First implementation note: this places an instance of an approved catalog symbol. It does not create a reusable KiCad library symbol.
+
+### `set_symbol_field_preview` / `set_symbol_field`
+
+Preview or set a field/property on a placed schematic symbol.
+
+Inputs:
+
+- `project_path`
+- `reference`
+- `field`
+- `value`
+
+Outputs:
+
+- before/after file snapshot
+- change report path for real changes
+- ERC/DRC report paths for real changes
+
+### `connect_schematic_pins_preview` / `connect_schematic_pins`
+
+Preview or draw a simple Manhattan wire between two known catalog pins.
+
+Inputs:
+
+- `project_path`
+- `from`: `<ref.pin>`
+- `to`: `<ref.pin>`
+- optional `net`
+
+Outputs:
+
+- proposed or written wire and optional label text
+- changed file snapshot
+- change report path for real changes
+- ERC/DRC report paths for real changes
+
+Stable errors include `SCHEMATIC_PIN_NOT_FOUND` for unknown references or pins.
+
+### `add_net_label_preview` / `add_net_label`
+
+Preview or add a schematic net label at a coordinate.
+
+Inputs:
+
+- `project_path`
+- `net`
+- `x` / `y` in millimeters
+
+Outputs:
+
+- proposed or written label text
+- changed file snapshot
+- change report path for real changes
+- ERC/DRC report paths for real changes
+
+### `update_pcb_from_schematic_preview` / `update_pcb_from_schematic`
+
+Preview or create missing board footprints and board net declarations from the approved-catalog schematic.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- changed board file snapshot
+- number of created footprints in the summary
+- change report path for real changes
+- ERC/DRC report paths for real changes
+
+First implementation note: PCB update lite preserves existing board placement/routing and creates only missing template footprints. It does not route, annotate, or run arbitrary KiCad library lookup.
+
 ## Visual Review Tools
 
 ### `highlight_net`

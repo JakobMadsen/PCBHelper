@@ -45,6 +45,17 @@ public sealed class McpContractTests
         Assert.Contains("add_via", toolNames);
         Assert.Contains("delete_via_preview", toolNames);
         Assert.Contains("delete_via", toolNames);
+        Assert.Contains("list_schematic_symbols", toolNames);
+        Assert.Contains("create_schematic_symbol_preview", toolNames);
+        Assert.Contains("create_schematic_symbol", toolNames);
+        Assert.Contains("set_symbol_field_preview", toolNames);
+        Assert.Contains("set_symbol_field", toolNames);
+        Assert.Contains("connect_schematic_pins_preview", toolNames);
+        Assert.Contains("connect_schematic_pins", toolNames);
+        Assert.Contains("add_net_label_preview", toolNames);
+        Assert.Contains("add_net_label", toolNames);
+        Assert.Contains("update_pcb_from_schematic_preview", toolNames);
+        Assert.Contains("update_pcb_from_schematic", toolNames);
         Assert.Contains("run_erc", toolNames);
         Assert.Contains("run_drc", toolNames);
         Assert.Contains("run_checks", toolNames);

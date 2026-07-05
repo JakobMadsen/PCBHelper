@@ -19,6 +19,11 @@ internal sealed class TestFixture : IDisposable
         return CopyFixture("kicad-getting-started-led");
     }
 
+    public static TestFixture CopyBlankAuthoring()
+    {
+        return CopyFixture("blank-authoring");
+    }
+
     private static TestFixture CopyFixture(string fixtureName)
     {
         var source = System.IO.Path.Combine(RepoRoot.Path, "fixtures", fixtureName);

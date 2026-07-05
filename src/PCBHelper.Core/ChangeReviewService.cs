@@ -7,19 +7,22 @@ public sealed class ChangeReviewService
     private readonly GeometryWorkflowService _geometryWorkflow;
     private readonly ComponentValueWorkflowService _valueWorkflow;
     private readonly RoutingWorkflowService? _routingWorkflow;
+    private readonly SchematicAuthoringWorkflowService? _schematicWorkflow;
 
     public ChangeReviewService(
         ProjectDiscoveryService projectDiscovery,
         ChangeReportService changeReports,
         GeometryWorkflowService geometryWorkflow,
         ComponentValueWorkflowService valueWorkflow,
-        RoutingWorkflowService? routingWorkflow = null)
+        RoutingWorkflowService? routingWorkflow = null,
+        SchematicAuthoringWorkflowService? schematicWorkflow = null)
     {
         _projectDiscovery = projectDiscovery;
         _changeReports = changeReports;
         _geometryWorkflow = geometryWorkflow;
         _valueWorkflow = valueWorkflow;
         _routingWorkflow = routingWorkflow;
+        _schematicWorkflow = schematicWorkflow;
     }
 
     public ToolResponse<ChangeListResult> ListChanges(string projectPath)
@@ -87,6 +90,19 @@ public sealed class ChangeReviewService
             }
 
             var restored = await _routingWorkflow.RestoreRoutingChangeAsync(projectPath, report.Data, dryRun, cancellationToken);
+            return restored.Success && restored.Data is not null
+                ? ToolResponse<object>.Ok(restored.Summary, restored.Data, restored.Warnings)
+                : ToolResponse<object>.Fail(restored.Summary, restored.Error?.Code ?? "RESTORE_FAILED", restored.Error?.Message);
+        }
+
+        if (report.Data.FileSnapshots is not null && report.Data.FileSnapshots.Count > 0)
+        {
+            if (_schematicWorkflow is null)
+            {
+                return ToolResponse<object>.Fail("File snapshot restore is not configured.", "FILE_RESTORE_UNAVAILABLE");
+            }
+
+            var restored = await _schematicWorkflow.RestoreFileSnapshotsAsync(report.Data, dryRun, cancellationToken);
             return restored.Success && restored.Data is not null
                 ? ToolResponse<object>.Ok(restored.Summary, restored.Data, restored.Warnings)
                 : ToolResponse<object>.Fail(restored.Summary, restored.Error?.Code ?? "RESTORE_FAILED", restored.Error?.Message);

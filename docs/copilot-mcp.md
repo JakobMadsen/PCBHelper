@@ -58,6 +58,17 @@ First exposed tools:
 - `add_via`
 - `delete_via_preview`
 - `delete_via`
+- `list_schematic_symbols`
+- `create_schematic_symbol_preview`
+- `create_schematic_symbol`
+- `set_symbol_field_preview`
+- `set_symbol_field`
+- `connect_schematic_pins_preview`
+- `connect_schematic_pins`
+- `add_net_label_preview`
+- `add_net_label`
+- `update_pcb_from_schematic_preview`
+- `update_pcb_from_schematic`
 - `run_erc`
 - `run_drc`
 - `run_checks`
@@ -75,8 +86,10 @@ First exposed tools:
 
 No AI provider keys are required by PCBHelper itself. Copilot, Codex, Ollama, or any future client is responsible for its own model configuration.
 
-Real mutation tools create `.pcbhelper/changes/<change-id>/change.json` so the human can review exactly what changed and ask the agent to restore the previous footprint placement, component value, track, or via.
+Real mutation tools create `.pcbhelper/changes/<change-id>/change.json` so the human can review exactly what changed and ask the agent to restore the previous footprint placement, component value, track, via, schematic edit, or PCB update.
 
 Routing tools are primitive V1 operations. They inspect tracks/vias and can add/delete straight segments or through vias; they do not autoroute.
+
+Schematic authoring tools are primitive V1 operations. They can place approved catalog symbols, set symbol fields, connect known pins, add labels, and create missing template footprints from the schematic; they do not synthesize arbitrary KiCad libraries.
 
 Current KiCad 10.0.4 Windows builds tested here do not expose `kicad-cli api-server`. PCBHelper therefore reports `KICAD_IPC_UNAVAILABLE` for live GUI refresh/focus instead of pretending that file edits were pushed into the running KiCad window. The fallback is to reload or reopen the project in KiCad.

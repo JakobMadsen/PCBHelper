@@ -99,6 +99,12 @@ This repository contains the first implementation slice:
 - `pcbhelper delete-track <project-path> --track <uuid-or-id>`
 - `pcbhelper add-via <project-path> --net <name-or-code> --x <mm> --y <mm> --size <mm> --drill <mm> --layers F.Cu,B.Cu`
 - `pcbhelper delete-via <project-path> --via <uuid-or-id>`
+- `pcbhelper list-schematic-symbols <project-path>`
+- `pcbhelper create-schematic-symbol <project-path> --symbol <catalog-id> --ref <ref> --x <mm> --y <mm>`
+- `pcbhelper set-symbol-field <project-path> --ref <ref> --field <name> --value <value>`
+- `pcbhelper connect-schematic-pins <project-path> --from <ref.pin> --to <ref.pin> --net <name>`
+- `pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm>`
+- `pcbhelper update-pcb-from-schematic <project-path>`
 - `pcbhelper export <project-path>`
 - `pcbhelper export-bom <project-path>`
 - `pcbhelper export-position-files <project-path>`
@@ -150,6 +156,10 @@ dotnet run --project src/PCBHelper.Cli -- list-nets fixtures/kicad-getting-start
 dotnet run --project src/PCBHelper.Cli -- get-net-routing fixtures/kicad-getting-started-led --net LED_A
 dotnet run --project src/PCBHelper.Cli -- add-track fixtures/kicad-getting-started-led --net LED_A --start-x 10 --start-y 10 --end-x 20 --end-y 10 --layer F.Cu --width 0.25 --dry-run
 dotnet run --project src/PCBHelper.Cli -- add-via fixtures/kicad-getting-started-led --net GND --x 73 --y 45 --size 1.2 --drill 0.6 --layers F.Cu,B.Cu --dry-run
+dotnet run --project src/PCBHelper.Cli -- list-schematic-symbols fixtures/blank-authoring
+dotnet run --project src/PCBHelper.Cli -- create-schematic-symbol fixtures/blank-authoring --symbol Device:R --ref R1 --x 50 --y 50 --value 330R --dry-run
+dotnet run --project src/PCBHelper.Cli -- connect-schematic-pins fixtures/blank-authoring --from R1.1 --to R1.2 --net LOOP --dry-run
+dotnet run --project src/PCBHelper.Cli -- update-pcb-from-schematic fixtures/blank-authoring --dry-run
 dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- export-bom fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- export-position-files fixtures/kicad-getting-started-led
@@ -160,9 +170,11 @@ dotnet run --project src/PCBHelper.Cli -- open fixtures/kicad-getting-started-le
 
 Add `--json` to any command for structured output.
 
-Real `move`, `set-spacing`, `set-value`, routing add/delete, and `restore-change` operations write a review report under `.pcbhelper/changes/<change-id>/change.json` and run KiCad checks after the edit. Dry-runs report proposed before/after values without writing project files or a change report.
+Real `move`, `set-spacing`, `set-value`, routing add/delete, schematic authoring, PCB update, and `restore-change` operations write a review report under `.pcbhelper/changes/<change-id>/change.json` and run KiCad checks after the edit. Dry-runs report proposed before/after values without writing project files or a change report.
 
 Routing V1 is intentionally primitive: it can inspect tracks/vias and add/delete straight segments or through vias. It is not an autorouter.
+
+Schematic authoring V1 is intentionally catalog-based: it can place approved LED/resistor/battery symbols, set fields, draw simple wires/labels, and create missing template footprints. It is not arbitrary KiCad library synthesis.
 
 ## License
 

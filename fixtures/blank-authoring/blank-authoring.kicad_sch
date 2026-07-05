@@ -1,0 +1,12 @@
+(kicad_sch
+  (version 20241229)
+  (generator "PCBHelper")
+  (generator_version "0.1")
+  (uuid "22222222-2222-2222-2222-222222222222")
+  (paper "A4")
+  (title_block
+    (title "PCBHelper Blank Authoring Fixture")
+  )
+  (lib_symbols)
+  (symbol_instances)
+)

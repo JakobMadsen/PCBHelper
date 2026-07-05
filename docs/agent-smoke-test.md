@@ -150,6 +150,33 @@ Expected result:
 - `restore_change` removes the added track.
 - The agent describes this as primitive routing, not autorouting.
 
+## Schematic Authoring Prompt
+
+Try the approved-catalog schematic workflow from a blank project:
+
+```text
+Use PCBHelper on fixtures/blank-authoring.
+
+Create the beginner LED circuit from approved catalog symbols only:
+BT1 as Device:Battery_Cell, R1 as Device:R with value 330R, and D1 as Device:LED.
+Connect BT1.+ to R1.1 as VCC, R1.2 to D1.A as LED_A, and D1.K to BT1.- as GND.
+Then preview update_pcb_from_schematic and wait for my approval before applying.
+```
+
+If approved, ask:
+
+```text
+Apply update_pcb_from_schematic, summarize the board and nets, run checks, export, package, and show the change report path.
+```
+
+Expected result:
+
+- The agent uses `create_schematic_symbol`, `set_symbol_field` when needed, `connect_schematic_pins`, and `update_pcb_from_schematic`.
+- The created board contains footprints `BT1`, `R1`, and `D1`.
+- Nets include `VCC`, `LED_A`, and `GND`.
+- The agent describes this as approved-catalog schematic authoring, not arbitrary KiCad library generation.
+- The human reloads or reopens KiCad to visually inspect the file-based changes.
+
 ## Pass Criteria
 
 The smoke test passes when:

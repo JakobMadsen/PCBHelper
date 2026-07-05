@@ -15,6 +15,8 @@ var componentService = new ComponentService(projectDiscovery);
 var componentWorkflow = new ComponentValueWorkflowService(componentService, checkRunner, changeReports);
 var routingService = new RoutingService(projectDiscovery);
 var routingWorkflow = new RoutingWorkflowService(routingService, checkRunner, changeReports);
+var schematicService = new SchematicAuthoringService(projectDiscovery);
+var schematicWorkflow = new SchematicAuthoringWorkflowService(schematicService, checkRunner, changeReports);
 
 var app = new CliApp(
     doctor,
@@ -24,7 +26,8 @@ var app = new CliApp(
     geometryWorkflow,
     componentWorkflow,
     routingWorkflow,
-    new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow, routingWorkflow),
+    schematicWorkflow,
+    new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow, routingWorkflow, schematicWorkflow),
     new BoardInspectionService(projectDiscovery),
     new CheckSummaryService(checkRunner),
     new GuiReviewService(cliLocator, new KiCadExecutableLocator(cliLocator), runner),
@@ -52,6 +55,7 @@ public sealed class CliApp
     private readonly GeometryWorkflowService _geometryWorkflow;
     private readonly ComponentValueWorkflowService _componentWorkflow;
     private readonly RoutingWorkflowService _routingWorkflow;
+    private readonly SchematicAuthoringWorkflowService _schematicWorkflow;
     private readonly ChangeReviewService _changeReview;
     private readonly BoardInspectionService _boardInspection;
     private readonly CheckSummaryService _checkSummary;
@@ -69,6 +73,7 @@ public sealed class CliApp
         GeometryWorkflowService geometryWorkflow,
         ComponentValueWorkflowService componentWorkflow,
         RoutingWorkflowService routingWorkflow,
+        SchematicAuthoringWorkflowService schematicWorkflow,
         ChangeReviewService changeReview,
         BoardInspectionService boardInspection,
         CheckSummaryService checkSummary,
@@ -85,6 +90,7 @@ public sealed class CliApp
         _geometryWorkflow = geometryWorkflow;
         _componentWorkflow = componentWorkflow;
         _routingWorkflow = routingWorkflow;
+        _schematicWorkflow = schematicWorkflow;
         _changeReview = changeReview;
         _boardInspection = boardInspection;
         _checkSummary = checkSummary;
@@ -130,6 +136,12 @@ public sealed class CliApp
             "delete-track" => await RunDeleteTrackAsync(positional, json, cancellationToken),
             "add-via" => await RunAddViaAsync(positional, json, cancellationToken),
             "delete-via" => await RunDeleteViaAsync(positional, json, cancellationToken),
+            "list-schematic-symbols" => RunListSchematicSymbols(positional, json),
+            "create-schematic-symbol" => await RunCreateSchematicSymbolAsync(positional, json, cancellationToken),
+            "set-symbol-field" => await RunSetSymbolFieldAsync(positional, json, cancellationToken),
+            "connect-schematic-pins" => await RunConnectSchematicPinsAsync(positional, json, cancellationToken),
+            "add-net-label" => await RunAddNetLabelAsync(positional, json, cancellationToken),
+            "update-pcb-from-schematic" => await RunUpdatePcbFromSchematicAsync(positional, json, cancellationToken),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "check-summary" => await RunCheckSummaryAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
@@ -521,6 +533,116 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private int RunListSchematicSymbols(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicSymbolListResult>.Fail("list-schematic-symbols requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _schematicWorkflow.ListSymbols(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunCreateSchematicSymbolAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("create-schematic-symbol requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var symbol = GetOption(args, "--symbol");
+        var reference = GetOption(args, "--ref");
+        if (symbol is null || reference is null || !TryGetDoubleOption(args, "--x", out var x) || !TryGetDoubleOption(args, "--y", out var y))
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("create-schematic-symbol requires --symbol, --ref, --x, and --y.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.CreateSymbolAsync(args[1], symbol, reference, x, y, GetOption(args, "--value"), GetOption(args, "--footprint"), HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunSetSymbolFieldAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("set-symbol-field requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        var field = GetOption(args, "--field");
+        var value = GetOption(args, "--value");
+        if (reference is null || field is null || value is null)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("set-symbol-field requires --ref, --field, and --value.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.SetSymbolFieldAsync(args[1], reference, field, value, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunConnectSchematicPinsAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("connect-schematic-pins requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var from = GetOption(args, "--from");
+        var to = GetOption(args, "--to");
+        if (from is null || to is null)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("connect-schematic-pins requires --from and --to.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.ConnectPinsAsync(args[1], from, to, GetOption(args, "--net"), HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunAddNetLabelAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("add-net-label requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        if (net is null || !TryGetDoubleOption(args, "--x", out var x) || !TryGetDoubleOption(args, "--y", out var y))
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("add-net-label requires --net, --x, and --y.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.AddNetLabelAsync(args[1], net, x, y, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunUpdatePcbFromSchematicAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("update-pcb-from-schematic requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.UpdatePcbFromSchematicAsync(args[1], HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private int RunSummary(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 2)
@@ -763,6 +885,12 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper delete-track <project-path> --track <uuid-or-id> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper add-via <project-path> --net <name-or-code> --x <mm> --y <mm> --size <mm> --drill <mm> --layers F.Cu,B.Cu [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper delete-via <project-path> --via <uuid-or-id> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper list-schematic-symbols <project-path> [--json]");
+        Console.WriteLine("  pcbhelper create-schematic-symbol <project-path> --symbol <catalog-id> --ref <ref> --x <mm> --y <mm> [--value <value>] [--footprint <id>] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper set-symbol-field <project-path> --ref <ref> --field <name> --value <value> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper connect-schematic-pins <project-path> --from <ref.pin> --to <ref.pin> [--net <name>] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper update-pcb-from-schematic <project-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper check-summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");
