@@ -53,7 +53,7 @@ internal static partial class KiCadBoardParser
             searchIndex = footprintEnd + 1;
         }
 
-        return new KiCadBoardDocument(boardFile, text, ParseNets(text), footprints);
+        return new KiCadBoardDocument(boardFile, text, ParseNets(text), footprints, ParseSegments(text), ParseVias(text));
     }
 
     public static string FormatTopLevelAt(Placement placement)
@@ -67,6 +67,11 @@ internal static partial class KiCadBoardParser
 
         var rotation = placement.RotationDegrees.Value.ToString("0.###", CultureInfo.InvariantCulture);
         return $"(at {x} {y} {rotation})";
+    }
+
+    public static string FormatNumber(double value)
+    {
+        return value.ToString("0.###", CultureInfo.InvariantCulture);
     }
 
     private static int FindMatchingParenthesis(string text, int openIndex)
@@ -202,6 +207,101 @@ internal static partial class KiCadBoardParser
             .ToArray();
     }
 
+    private static IReadOnlyList<KiCadSegment> ParseSegments(string text)
+    {
+        var segments = new List<KiCadSegment>();
+        var searchIndex = 0;
+        while (searchIndex < text.Length)
+        {
+            var start = text.IndexOf("(segment", searchIndex, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                break;
+            }
+
+            var end = FindMatchingParenthesis(text, start);
+            if (end < 0)
+            {
+                break;
+            }
+
+            var block = text.Substring(start, end - start + 1);
+            var startMatch = StartRegex().Match(block);
+            var endMatch = EndRegex().Match(block);
+            var widthMatch = WidthRegex().Match(block);
+            var layerMatch = LayerRegex().Match(block);
+            var netMatch = NetCodeRegex().Match(block);
+            var uuidMatch = UuidRegex().Match(block);
+
+            segments.Add(new KiCadSegment(
+                uuidMatch.Success ? uuidMatch.Groups["uuid"].Value : $"segment-{segments.Count + 1}",
+                uuidMatch.Success ? uuidMatch.Groups["uuid"].Value : null,
+                startMatch.Success ? double.Parse(startMatch.Groups["x"].Value, CultureInfo.InvariantCulture) : null,
+                startMatch.Success ? double.Parse(startMatch.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
+                endMatch.Success ? double.Parse(endMatch.Groups["x"].Value, CultureInfo.InvariantCulture) : null,
+                endMatch.Success ? double.Parse(endMatch.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
+                widthMatch.Success ? double.Parse(widthMatch.Groups["width"].Value, CultureInfo.InvariantCulture) : null,
+                layerMatch.Success ? layerMatch.Groups["layer"].Value : null,
+                netMatch.Success ? int.Parse(netMatch.Groups["code"].Value, CultureInfo.InvariantCulture) : null,
+                start,
+                end - start + 1,
+                block));
+
+            searchIndex = end + 1;
+        }
+
+        return segments;
+    }
+
+    private static IReadOnlyList<KiCadVia> ParseVias(string text)
+    {
+        var vias = new List<KiCadVia>();
+        var searchIndex = 0;
+        while (searchIndex < text.Length)
+        {
+            var start = text.IndexOf("(via", searchIndex, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                break;
+            }
+
+            var end = FindMatchingParenthesis(text, start);
+            if (end < 0)
+            {
+                break;
+            }
+
+            var block = text.Substring(start, end - start + 1);
+            var atMatch = AtRegex().Match(block);
+            var sizeMatch = SizeRegex().Match(block);
+            var drillMatch = DrillRegex().Match(block);
+            var layersMatch = PadLayersRegex().Match(block);
+            var netMatch = NetCodeRegex().Match(block);
+            var uuidMatch = UuidRegex().Match(block);
+
+            vias.Add(new KiCadVia(
+                uuidMatch.Success ? uuidMatch.Groups["uuid"].Value : $"via-{vias.Count + 1}",
+                uuidMatch.Success ? uuidMatch.Groups["uuid"].Value : null,
+                atMatch.Success ? double.Parse(atMatch.Groups["x"].Value, CultureInfo.InvariantCulture) : null,
+                atMatch.Success ? double.Parse(atMatch.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
+                sizeMatch.Success ? double.Parse(sizeMatch.Groups["size"].Value, CultureInfo.InvariantCulture) : null,
+                drillMatch.Success ? double.Parse(drillMatch.Groups["drill"].Value, CultureInfo.InvariantCulture) : null,
+                layersMatch.Success
+                    ? layersMatch.Groups["layers"].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(static layer => layer.Trim('"'))
+                        .ToArray()
+                    : Array.Empty<string>(),
+                netMatch.Success ? int.Parse(netMatch.Groups["code"].Value, CultureInfo.InvariantCulture) : null,
+                start,
+                end - start + 1,
+                block));
+
+            searchIndex = end + 1;
+        }
+
+        return vias;
+    }
+
     [GeneratedRegex(@"\(footprint\s+""(?<name>[^""]+)""")]
     private static partial Regex FootprintNameRegex();
 
@@ -217,8 +317,26 @@ internal static partial class KiCadBoardParser
     [GeneratedRegex(@"\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+(?<rotation>-?\d+(?:\.\d+)?))?\)")]
     private static partial Regex AtRegex();
 
+    [GeneratedRegex(@"\(start\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex StartRegex();
+
+    [GeneratedRegex(@"\(end\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex EndRegex();
+
+    [GeneratedRegex(@"\(width\s+(?<width>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex WidthRegex();
+
+    [GeneratedRegex(@"\(size\s+(?<size>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex SizeRegex();
+
+    [GeneratedRegex(@"\(drill\s+(?<drill>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex DrillRegex();
+
     [GeneratedRegex(@"\(net\s+(?<code>\d+)\s+""(?<name>[^""]*)""\)")]
     private static partial Regex NetRegex();
+
+    [GeneratedRegex(@"\(net\s+(?<code>\d+)\)")]
+    private static partial Regex NetCodeRegex();
 
     [GeneratedRegex(@"\(pad\s+""(?<name>[^""]*)""")]
     private static partial Regex PadNameRegex();
@@ -234,13 +352,18 @@ internal static partial class KiCadBoardParser
 
     [GeneratedRegex(@"\(pinfunction\s+""(?<pinfunction>[^""]*)""\)")]
     private static partial Regex PinFunctionRegex();
+
+    [GeneratedRegex(@"\(uuid\s+""?(?<uuid>[0-9a-fA-F-]+)""?\)")]
+    private static partial Regex UuidRegex();
 }
 
 internal sealed record KiCadBoardDocument(
     string BoardFile,
     string Text,
     IReadOnlyList<KiCadNet> Nets,
-    IReadOnlyList<KiCadFootprint> Footprints);
+    IReadOnlyList<KiCadFootprint> Footprints,
+    IReadOnlyList<KiCadSegment> Segments,
+    IReadOnlyList<KiCadVia> Vias);
 
 internal sealed record KiCadFootprint(
     string? Reference,
@@ -278,3 +401,30 @@ internal sealed record KiCadPad(
     int SourceLength);
 
 internal sealed record KiCadNet(int Code, string Name);
+
+internal sealed record KiCadSegment(
+    string Id,
+    string? Uuid,
+    double? StartXMillimeters,
+    double? StartYMillimeters,
+    double? EndXMillimeters,
+    double? EndYMillimeters,
+    double? WidthMillimeters,
+    string? Layer,
+    int? NetCode,
+    int SourceStart,
+    int SourceLength,
+    string SourceText);
+
+internal sealed record KiCadVia(
+    string Id,
+    string? Uuid,
+    double? XMillimeters,
+    double? YMillimeters,
+    double? SizeMillimeters,
+    double? DrillMillimeters,
+    IReadOnlyList<string> Layers,
+    int? NetCode,
+    int SourceStart,
+    int SourceLength,
+    string SourceText);

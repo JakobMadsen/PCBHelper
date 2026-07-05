@@ -92,6 +92,13 @@ This repository contains the first implementation slice:
 - `pcbhelper list-nets <project-path>`
 - `pcbhelper get-net <project-path> --net <name-or-code>`
 - `pcbhelper list-footprint-pads <project-path> --ref <ref>`
+- `pcbhelper list-tracks <project-path>`
+- `pcbhelper list-vias <project-path>`
+- `pcbhelper get-net-routing <project-path> --net <name-or-code>`
+- `pcbhelper add-track <project-path> --net <name-or-code> --start-x <mm> --start-y <mm> --end-x <mm> --end-y <mm> --layer F.Cu|B.Cu --width <mm>`
+- `pcbhelper delete-track <project-path> --track <uuid-or-id>`
+- `pcbhelper add-via <project-path> --net <name-or-code> --x <mm> --y <mm> --size <mm> --drill <mm> --layers F.Cu,B.Cu`
+- `pcbhelper delete-via <project-path> --via <uuid-or-id>`
 - `pcbhelper export <project-path>`
 - `pcbhelper export-bom <project-path>`
 - `pcbhelper export-position-files <project-path>`
@@ -140,6 +147,9 @@ dotnet run --project src/PCBHelper.Cli -- list-components fixtures/kicad-getting
 dotnet run --project src/PCBHelper.Cli -- get-value fixtures/kicad-getting-started-led --ref R1
 dotnet run --project src/PCBHelper.Cli -- set-value fixtures/kicad-getting-started-led --ref R1 --value 300R --dry-run
 dotnet run --project src/PCBHelper.Cli -- list-nets fixtures/kicad-getting-started-led
+dotnet run --project src/PCBHelper.Cli -- get-net-routing fixtures/kicad-getting-started-led --net LED_A
+dotnet run --project src/PCBHelper.Cli -- add-track fixtures/kicad-getting-started-led --net LED_A --start-x 10 --start-y 10 --end-x 20 --end-y 10 --layer F.Cu --width 0.25 --dry-run
+dotnet run --project src/PCBHelper.Cli -- add-via fixtures/kicad-getting-started-led --net GND --x 73 --y 45 --size 1.2 --drill 0.6 --layers F.Cu,B.Cu --dry-run
 dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- export-bom fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- export-position-files fixtures/kicad-getting-started-led
@@ -150,7 +160,9 @@ dotnet run --project src/PCBHelper.Cli -- open fixtures/kicad-getting-started-le
 
 Add `--json` to any command for structured output.
 
-Real `move`, `set-spacing`, `set-value`, and `restore-change` operations write a review report under `.pcbhelper/changes/<change-id>/change.json` and run KiCad checks after the edit. Dry-runs report proposed before/after values without writing project files or a change report.
+Real `move`, `set-spacing`, `set-value`, routing add/delete, and `restore-change` operations write a review report under `.pcbhelper/changes/<change-id>/change.json` and run KiCad checks after the edit. Dry-runs report proposed before/after values without writing project files or a change report.
+
+Routing V1 is intentionally primitive: it can inspect tracks/vias and add/delete straight segments or through vias. It is not an autorouter.
 
 ## License
 

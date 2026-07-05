@@ -126,6 +126,30 @@ Expected result on the current Windows KiCad 10.0.4 setup:
 - `refresh_project_in_kicad` and `focus_component_in_kicad` return `KICAD_IPC_UNAVAILABLE`.
 - The agent tells the human to reload or reopen KiCad instead of claiming live refresh happened.
 
+## Routing Primitive Prompt
+
+Try a routing-only workflow:
+
+```text
+Use PCBHelper on fixtures/kicad-getting-started-led.
+
+List tracks and vias, summarize routing for net LED_A, preview adding a simple F.Cu track segment on LED_A, then wait for my approval.
+```
+
+If approved, ask:
+
+```text
+Apply the track, run DRC, show the change report, restore it, then verify track count is back to the original value.
+```
+
+Expected result:
+
+- The agent uses `get_net_routing` before mutation.
+- The preview uses `add_track_preview`.
+- The real change writes a routing change report.
+- `restore_change` removes the added track.
+- The agent describes this as primitive routing, not autorouting.
+
 ## Pass Criteria
 
 The smoke test passes when:

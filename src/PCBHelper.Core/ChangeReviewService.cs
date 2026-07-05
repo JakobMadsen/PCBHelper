@@ -6,17 +6,20 @@ public sealed class ChangeReviewService
     private readonly ChangeReportService _changeReports;
     private readonly GeometryWorkflowService _geometryWorkflow;
     private readonly ComponentValueWorkflowService _valueWorkflow;
+    private readonly RoutingWorkflowService? _routingWorkflow;
 
     public ChangeReviewService(
         ProjectDiscoveryService projectDiscovery,
         ChangeReportService changeReports,
         GeometryWorkflowService geometryWorkflow,
-        ComponentValueWorkflowService valueWorkflow)
+        ComponentValueWorkflowService valueWorkflow,
+        RoutingWorkflowService? routingWorkflow = null)
     {
         _projectDiscovery = projectDiscovery;
         _changeReports = changeReports;
         _geometryWorkflow = geometryWorkflow;
         _valueWorkflow = valueWorkflow;
+        _routingWorkflow = routingWorkflow;
     }
 
     public ToolResponse<ChangeListResult> ListChanges(string projectPath)
@@ -70,6 +73,20 @@ public sealed class ChangeReviewService
             || (report.Data.Operation == "restore-change" && report.Data.ValueBefore is not null))
         {
             var restored = await _valueWorkflow.RestoreValueAsync(projectPath, report.Data, dryRun, cancellationToken);
+            return restored.Success && restored.Data is not null
+                ? ToolResponse<object>.Ok(restored.Summary, restored.Data, restored.Warnings)
+                : ToolResponse<object>.Fail(restored.Summary, restored.Error?.Code ?? "RESTORE_FAILED", restored.Error?.Message);
+        }
+
+        if (report.Data.Operation is "add-track" or "delete-track" or "add-via" or "delete-via"
+            || (report.Data.Operation == "restore-change" && report.Data.RoutingItemKind is not null))
+        {
+            if (_routingWorkflow is null)
+            {
+                return ToolResponse<object>.Fail("Routing restore is not configured.", "ROUTING_RESTORE_UNAVAILABLE");
+            }
+
+            var restored = await _routingWorkflow.RestoreRoutingChangeAsync(projectPath, report.Data, dryRun, cancellationToken);
             return restored.Success && restored.Data is not null
                 ? ToolResponse<object>.Ok(restored.Summary, restored.Data, restored.Warnings)
                 : ToolResponse<object>.Fail(restored.Summary, restored.Error?.Code ?? "RESTORE_FAILED", restored.Error?.Message);

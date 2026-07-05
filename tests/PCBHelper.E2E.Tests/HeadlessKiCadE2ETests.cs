@@ -202,6 +202,100 @@ public sealed class HeadlessKiCadE2ETests
     }
 
     [Fact]
+    public async Task Tutorial_Fixture_Routing_Primitives_Restore_And_Still_Package()
+    {
+        var locator = new KiCadCliLocator();
+        var location = locator.Locate();
+        if (!location.Found)
+        {
+            _output.WriteLine("Skipped KiCad-dependent E2E: kicad-cli was not found.");
+            return;
+        }
+
+        using var fixture = TestFixture.CopyTutorialBoard();
+
+        var tracks = await RunCliAsync("list-tracks", fixture.Path, "--json");
+        Assert.Equal(0, tracks.ExitCode);
+        int initialTrackCount;
+        using (var document = JsonDocument.Parse(tracks.StandardOutput))
+        {
+            initialTrackCount = document.RootElement.GetProperty("data").GetProperty("tracks").GetArrayLength();
+        }
+
+        var vias = await RunCliAsync("list-vias", fixture.Path, "--json");
+        Assert.Equal(0, vias.ExitCode);
+        int initialViaCount;
+        using (var document = JsonDocument.Parse(vias.StandardOutput))
+        {
+            initialViaCount = document.RootElement.GetProperty("data").GetProperty("vias").GetArrayLength();
+        }
+
+        var routing = await RunCliAsync("get-net-routing", fixture.Path, "--net", "LED_A", "--json");
+        Assert.Equal(0, routing.ExitCode);
+
+        var previewTrack = await RunCliAsync("add-track", fixture.Path, "--net", "LED_A", "--start-x", "10", "--start-y", "10", "--end-x", "20", "--end-y", "10", "--layer", "F.Cu", "--width", "0.25", "--dry-run", "--json");
+        Assert.Equal(0, previewTrack.ExitCode);
+
+        var addTrack = await RunCliAsync("add-track", fixture.Path, "--net", "LED_A", "--start-x", "10", "--start-y", "10", "--end-x", "20", "--end-y", "10", "--layer", "F.Cu", "--width", "0.25", "--json");
+        Assert.Equal(0, addTrack.ExitCode);
+        string trackChange;
+        using (var document = JsonDocument.Parse(addTrack.StandardOutput))
+        {
+            trackChange = document.RootElement.GetProperty("data").GetProperty("changeReportPath").GetString()!;
+            Assert.True(File.Exists(trackChange));
+        }
+
+        var afterTrackAdd = await RunCliAsync("list-tracks", fixture.Path, "--json");
+        using (var document = JsonDocument.Parse(afterTrackAdd.StandardOutput))
+        {
+            Assert.Equal(initialTrackCount + 1, document.RootElement.GetProperty("data").GetProperty("tracks").GetArrayLength());
+        }
+
+        var restoreTrack = await RunCliAsync("restore-change", fixture.Path, "--change", trackChange, "--json");
+        Assert.Equal(0, restoreTrack.ExitCode);
+        var afterTrackRestore = await RunCliAsync("list-tracks", fixture.Path, "--json");
+        using (var document = JsonDocument.Parse(afterTrackRestore.StandardOutput))
+        {
+            Assert.Equal(initialTrackCount, document.RootElement.GetProperty("data").GetProperty("tracks").GetArrayLength());
+        }
+
+        var previewVia = await RunCliAsync("add-via", fixture.Path, "--net", "GND", "--x", "73", "--y", "45", "--size", "1.2", "--drill", "0.6", "--layers", "F.Cu,B.Cu", "--dry-run", "--json");
+        Assert.Equal(0, previewVia.ExitCode);
+
+        var addVia = await RunCliAsync("add-via", fixture.Path, "--net", "GND", "--x", "73", "--y", "45", "--size", "1.2", "--drill", "0.6", "--layers", "F.Cu,B.Cu", "--json");
+        Assert.Equal(0, addVia.ExitCode);
+        string viaChange;
+        using (var document = JsonDocument.Parse(addVia.StandardOutput))
+        {
+            viaChange = document.RootElement.GetProperty("data").GetProperty("changeReportPath").GetString()!;
+            Assert.True(File.Exists(viaChange));
+        }
+
+        var afterViaAdd = await RunCliAsync("list-vias", fixture.Path, "--json");
+        using (var document = JsonDocument.Parse(afterViaAdd.StandardOutput))
+        {
+            Assert.Equal(initialViaCount + 1, document.RootElement.GetProperty("data").GetProperty("vias").GetArrayLength());
+        }
+
+        var restoreVia = await RunCliAsync("restore-change", fixture.Path, "--change", viaChange, "--json");
+        Assert.Equal(0, restoreVia.ExitCode);
+        var afterViaRestore = await RunCliAsync("list-vias", fixture.Path, "--json");
+        using (var document = JsonDocument.Parse(afterViaRestore.StandardOutput))
+        {
+            Assert.Equal(initialViaCount, document.RootElement.GetProperty("data").GetProperty("vias").GetArrayLength());
+        }
+
+        var check = await RunCliAsync("check", fixture.Path, "--json");
+        Assert.Equal(0, check.ExitCode);
+
+        var export = await RunCliAsync("export", fixture.Path, "--json");
+        Assert.Equal(0, export.ExitCode);
+
+        var package = await RunCliAsync("package", fixture.Path, "--json");
+        Assert.Equal(0, package.ExitCode);
+    }
+
+    [Fact]
     public async Task Doctor_Summary_Check_Run_Through_Cli_Boundary()
     {
         var locator = new KiCadCliLocator();

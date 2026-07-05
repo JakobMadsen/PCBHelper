@@ -142,6 +142,59 @@ Outputs:
 - local pad positions when detectable
 - net names/codes
 - pin functions when detectable
+- absolute board position when detectable
+
+### `list_tracks`
+
+List top-level board track segments.
+
+Inputs:
+
+- `project_path`
+- optional `net`
+
+Outputs:
+
+- id/uuid
+- net name/code
+- start/end coordinates
+- layer
+- width
+
+### `list_vias`
+
+List top-level board vias.
+
+Inputs:
+
+- `project_path`
+- optional `net`
+
+Outputs:
+
+- id/uuid
+- net name/code
+- at coordinate
+- size and drill
+- layers
+
+### `get_net_routing`
+
+Return pads, tracks, and vias for one board net.
+
+Inputs:
+
+- `project_path`
+- `net`
+
+Outputs:
+
+- resolved net
+- connected pads with absolute board position
+- matching tracks
+- matching vias
+
+First implementation note: routing inspection reads top-level `segment` and `via` objects only.
 
 ### `get_selected_items`
 
@@ -324,6 +377,82 @@ Outputs:
 - check summary and generated check report paths
 
 First implementation note: PCBHelper preserves the exact value string; it does not normalize `300` to `300R`.
+
+## Routing Mutation Tools
+
+### `add_track_preview` / `add_track`
+
+Preview or add one straight top-level track segment.
+
+Inputs:
+
+- `project_path`
+- `net`
+- `start_x_mm`, `start_y_mm`
+- `end_x_mm`, `end_y_mm`
+- `layer`: `F.Cu` or `B.Cu`
+- `width_mm`
+
+Outputs:
+
+- proposed or written segment text
+- changed file
+- change report path for real changes
+- DRC summary for real changes
+
+### `delete_track_preview` / `delete_track`
+
+Preview or delete one top-level track segment.
+
+Inputs:
+
+- `project_path`
+- `track`
+
+Outputs:
+
+- original segment text
+- changed file
+- change report path for real changes
+- DRC summary for real changes
+
+### `add_via_preview` / `add_via`
+
+Preview or add one through via.
+
+Inputs:
+
+- `project_path`
+- `net`
+- `x_mm`, `y_mm`
+- `size_mm`
+- `drill_mm`
+- `layers`: currently `F.Cu,B.Cu`
+
+Outputs:
+
+- proposed or written via text
+- changed file
+- change report path for real changes
+- DRC summary for real changes
+
+### `delete_via_preview` / `delete_via`
+
+Preview or delete one via.
+
+Inputs:
+
+- `project_path`
+- `via`
+
+Outputs:
+
+- original via text
+- changed file
+- change report path for real changes
+- DRC summary for real changes
+
+First implementation note: routing V1 is not an autorouter. It supports only straight segments and through vias.
 
 ## Visual Review Tools
 

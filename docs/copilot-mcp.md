@@ -47,6 +47,17 @@ First exposed tools:
 - `list_nets`
 - `get_net_summary`
 - `list_footprint_pads`
+- `list_tracks`
+- `list_vias`
+- `get_net_routing`
+- `add_track_preview`
+- `add_track`
+- `delete_track_preview`
+- `delete_track`
+- `add_via_preview`
+- `add_via`
+- `delete_via_preview`
+- `delete_via`
 - `run_erc`
 - `run_drc`
 - `run_checks`
@@ -64,6 +75,8 @@ First exposed tools:
 
 No AI provider keys are required by PCBHelper itself. Copilot, Codex, Ollama, or any future client is responsible for its own model configuration.
 
-Real mutation tools create `.pcbhelper/changes/<change-id>/change.json` so the human can review exactly what changed and ask the agent to restore the previous footprint placement or component value.
+Real mutation tools create `.pcbhelper/changes/<change-id>/change.json` so the human can review exactly what changed and ask the agent to restore the previous footprint placement, component value, track, or via.
+
+Routing tools are primitive V1 operations. They inspect tracks/vias and can add/delete straight segments or through vias; they do not autoroute.
 
 Current KiCad 10.0.4 Windows builds tested here do not expose `kicad-cli api-server`. PCBHelper therefore reports `KICAD_IPC_UNAVAILABLE` for live GUI refresh/focus instead of pretending that file edits were pushed into the running KiCad window. The fallback is to reload or reopen the project in KiCad.

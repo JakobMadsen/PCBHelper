@@ -13,6 +13,8 @@ var changeReports = new ChangeReportService(projectDiscovery);
 var geometryWorkflow = new GeometryWorkflowService(geometry, checkRunner, changeReports);
 var componentService = new ComponentService(projectDiscovery);
 var componentWorkflow = new ComponentValueWorkflowService(componentService, checkRunner, changeReports);
+var routingService = new RoutingService(projectDiscovery);
+var routingWorkflow = new RoutingWorkflowService(routingService, checkRunner, changeReports);
 
 var app = new CliApp(
     doctor,
@@ -21,7 +23,8 @@ var app = new CliApp(
     geometry,
     geometryWorkflow,
     componentWorkflow,
-    new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow),
+    routingWorkflow,
+    new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow, routingWorkflow),
     new BoardInspectionService(projectDiscovery),
     new CheckSummaryService(checkRunner),
     new GuiReviewService(cliLocator, new KiCadExecutableLocator(cliLocator), runner),
@@ -48,6 +51,7 @@ public sealed class CliApp
     private readonly GeometryService _geometry;
     private readonly GeometryWorkflowService _geometryWorkflow;
     private readonly ComponentValueWorkflowService _componentWorkflow;
+    private readonly RoutingWorkflowService _routingWorkflow;
     private readonly ChangeReviewService _changeReview;
     private readonly BoardInspectionService _boardInspection;
     private readonly CheckSummaryService _checkSummary;
@@ -64,6 +68,7 @@ public sealed class CliApp
         GeometryService geometry,
         GeometryWorkflowService geometryWorkflow,
         ComponentValueWorkflowService componentWorkflow,
+        RoutingWorkflowService routingWorkflow,
         ChangeReviewService changeReview,
         BoardInspectionService boardInspection,
         CheckSummaryService checkSummary,
@@ -79,6 +84,7 @@ public sealed class CliApp
         _geometry = geometry;
         _geometryWorkflow = geometryWorkflow;
         _componentWorkflow = componentWorkflow;
+        _routingWorkflow = routingWorkflow;
         _changeReview = changeReview;
         _boardInspection = boardInspection;
         _checkSummary = checkSummary;
@@ -117,6 +123,13 @@ public sealed class CliApp
             "list-nets" => RunListNets(positional, json),
             "get-net" => RunGetNet(positional, json),
             "list-footprint-pads" => RunListFootprintPads(positional, json),
+            "list-tracks" => RunListTracks(positional, json),
+            "list-vias" => RunListVias(positional, json),
+            "get-net-routing" => RunGetNetRouting(positional, json),
+            "add-track" => await RunAddTrackAsync(positional, json, cancellationToken),
+            "delete-track" => await RunDeleteTrackAsync(positional, json, cancellationToken),
+            "add-via" => await RunAddViaAsync(positional, json, cancellationToken),
+            "delete-via" => await RunDeleteViaAsync(positional, json, cancellationToken),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "check-summary" => await RunCheckSummaryAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
@@ -371,6 +384,143 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private int RunListTracks(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<TrackListResult>.Fail("list-tracks requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _routingWorkflow.ListTracks(args[1], GetOption(args, "--net"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunListVias(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ViaListResult>.Fail("list-vias requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _routingWorkflow.ListVias(args[1], GetOption(args, "--net"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunGetNetRouting(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<NetRoutingResult>.Fail("get-net-routing requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        if (net is null)
+        {
+            Write(ToolResponse<NetRoutingResult>.Fail("get-net-routing requires --net.", "NET_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _routingWorkflow.GetNetRouting(args[1], net);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunAddTrackAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("add-track requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        var layer = GetOption(args, "--layer");
+        if (net is null || layer is null
+            || !TryGetDoubleOption(args, "--start-x", out var startX)
+            || !TryGetDoubleOption(args, "--start-y", out var startY)
+            || !TryGetDoubleOption(args, "--end-x", out var endX)
+            || !TryGetDoubleOption(args, "--end-y", out var endY)
+            || !TryGetDoubleOption(args, "--width", out var width))
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("add-track requires --net, --start-x, --start-y, --end-x, --end-y, --layer, and --width.", "ROUTING_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _routingWorkflow.AddTrackAsync(args[1], net, startX, startY, endX, endY, layer, width, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunDeleteTrackAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("delete-track requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var track = GetOption(args, "--track");
+        if (track is null)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("delete-track requires --track.", "ROUTING_ITEM_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _routingWorkflow.DeleteTrackAsync(args[1], track, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunAddViaAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("add-via requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        var layers = GetOption(args, "--layers");
+        if (net is null || layers is null
+            || !TryGetDoubleOption(args, "--x", out var x)
+            || !TryGetDoubleOption(args, "--y", out var y)
+            || !TryGetDoubleOption(args, "--size", out var size)
+            || !TryGetDoubleOption(args, "--drill", out var drill))
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("add-via requires --net, --x, --y, --size, --drill, and --layers.", "ROUTING_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _routingWorkflow.AddViaAsync(args[1], net, x, y, size, drill, layers, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunDeleteViaAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("delete-via requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var via = GetOption(args, "--via");
+        if (via is null)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("delete-via requires --via.", "ROUTING_ITEM_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _routingWorkflow.DeleteViaAsync(args[1], via, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private int RunSummary(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 2)
@@ -606,6 +756,13 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper list-nets <project-path> [--json]");
         Console.WriteLine("  pcbhelper get-net <project-path> --net <name-or-code> [--json]");
         Console.WriteLine("  pcbhelper list-footprint-pads <project-path> --ref <ref> [--json]");
+        Console.WriteLine("  pcbhelper list-tracks <project-path> [--net <name-or-code>] [--json]");
+        Console.WriteLine("  pcbhelper list-vias <project-path> [--net <name-or-code>] [--json]");
+        Console.WriteLine("  pcbhelper get-net-routing <project-path> --net <name-or-code> [--json]");
+        Console.WriteLine("  pcbhelper add-track <project-path> --net <name-or-code> --start-x <mm> --start-y <mm> --end-x <mm> --end-y <mm> --layer F.Cu|B.Cu --width <mm> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper delete-track <project-path> --track <uuid-or-id> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper add-via <project-path> --net <name-or-code> --x <mm> --y <mm> --size <mm> --drill <mm> --layers F.Cu,B.Cu [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper delete-via <project-path> --via <uuid-or-id> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper check-summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");

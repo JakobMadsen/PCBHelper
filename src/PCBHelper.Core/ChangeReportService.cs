@@ -59,7 +59,11 @@ public sealed class ChangeReportService
             input.ValueBefore,
             input.ValueAfter,
             input.ChangedFiles,
-            input.ValueLocations);
+            input.ValueLocations,
+            input.RoutingItemKind,
+            input.RoutingItemId,
+            input.RoutingItemBefore,
+            input.RoutingItemAfter);
 
         var reportPath = Path.Combine(changeRoot, "change.json");
         await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, JsonOptions), cancellationToken);
@@ -170,7 +174,11 @@ public sealed record ChangeReportInput(
     string? ValueBefore = null,
     string? ValueAfter = null,
     IReadOnlyList<string>? ChangedFiles = null,
-    IReadOnlyList<ChangeValueLocation>? ValueLocations = null);
+    IReadOnlyList<ChangeValueLocation>? ValueLocations = null,
+    string? RoutingItemKind = null,
+    string? RoutingItemId = null,
+    string? RoutingItemBefore = null,
+    string? RoutingItemAfter = null);
 
 public sealed record ChangeReport(
     string ChangeId,
@@ -190,7 +198,11 @@ public sealed record ChangeReport(
     string? ValueBefore = null,
     string? ValueAfter = null,
     IReadOnlyList<string>? ChangedFiles = null,
-    IReadOnlyList<ChangeValueLocation>? ValueLocations = null);
+    IReadOnlyList<ChangeValueLocation>? ValueLocations = null,
+    string? RoutingItemKind = null,
+    string? RoutingItemId = null,
+    string? RoutingItemBefore = null,
+    string? RoutingItemAfter = null);
 
 public sealed record ChangeReportWriteResult(string ChangeId, string ReportPath, ChangeReport Report);
 

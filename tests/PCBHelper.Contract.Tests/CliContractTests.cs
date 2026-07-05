@@ -198,6 +198,8 @@ public sealed class CliContractTests
     [Theory]
     [InlineData("list-components")]
     [InlineData("list-nets")]
+    [InlineData("list-tracks")]
+    [InlineData("list-vias")]
     [InlineData("check-summary")]
     [InlineData("export-bom")]
     [InlineData("export-position-files")]
@@ -223,6 +225,9 @@ public sealed class CliContractTests
     [InlineData("set-value", "--ref", "R1", "--value", "300R", "--dry-run")]
     [InlineData("get-net", "--net", "LED_A")]
     [InlineData("list-footprint-pads", "--ref", "R1")]
+    [InlineData("get-net-routing", "--net", "LED_A")]
+    [InlineData("add-track", "--net", "LED_A", "--start-x", "10", "--start-y", "10", "--end-x", "20", "--end-y", "10", "--layer", "F.Cu", "--width", "0.25", "--dry-run")]
+    [InlineData("add-via", "--net", "GND", "--x", "30", "--y", "30", "--size", "1.2", "--drill", "0.6", "--layers", "F.Cu,B.Cu", "--dry-run")]
     [InlineData("focus-component", "--ref", "R1")]
     public async Task New_Option_Commands_Return_Stable_Json_Envelope(string command, params string[] commandArgs)
     {
@@ -260,6 +265,35 @@ public sealed class CliContractTests
             await RunCliAsync("list-changes", fixture.Path, "--json"),
             await RunCliAsync("show-change", fixture.Path, "--change", changeReportPath!, "--json"),
             await RunCliAsync("restore-change", fixture.Path, "--change", changeReportPath!, "--json")
+        })
+        {
+            Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            var root = document.RootElement;
+            Assert.True(root.TryGetProperty("success", out _));
+            Assert.True(root.TryGetProperty("summary", out _));
+            Assert.True(root.TryGetProperty("data", out _));
+            Assert.True(root.TryGetProperty("warnings", out _));
+            Assert.True(root.TryGetProperty("error", out _));
+        }
+    }
+
+    [Fact]
+    public async Task Routing_Delete_Commands_Return_Stable_Json_Envelope()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var tracks = await RunCliAsync("list-tracks", fixture.Path, "--json");
+        using var tracksDocument = JsonDocument.Parse(tracks.StandardOutput);
+        var track = tracksDocument.RootElement.GetProperty("data").GetProperty("tracks")[0].GetProperty("id").GetString();
+
+        var vias = await RunCliAsync("list-vias", fixture.Path, "--json");
+        using var viasDocument = JsonDocument.Parse(vias.StandardOutput);
+        var via = viasDocument.RootElement.GetProperty("data").GetProperty("vias")[0].GetProperty("id").GetString();
+
+        foreach (var result in new[]
+        {
+            await RunCliAsync("delete-track", fixture.Path, "--track", track!, "--dry-run", "--json"),
+            await RunCliAsync("delete-via", fixture.Path, "--via", via!, "--dry-run", "--json")
         })
         {
             Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);

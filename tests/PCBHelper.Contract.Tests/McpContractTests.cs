@@ -34,6 +34,17 @@ public sealed class McpContractTests
         Assert.Contains("list_nets", toolNames);
         Assert.Contains("get_net_summary", toolNames);
         Assert.Contains("list_footprint_pads", toolNames);
+        Assert.Contains("list_tracks", toolNames);
+        Assert.Contains("list_vias", toolNames);
+        Assert.Contains("get_net_routing", toolNames);
+        Assert.Contains("add_track_preview", toolNames);
+        Assert.Contains("add_track", toolNames);
+        Assert.Contains("delete_track_preview", toolNames);
+        Assert.Contains("delete_track", toolNames);
+        Assert.Contains("add_via_preview", toolNames);
+        Assert.Contains("add_via", toolNames);
+        Assert.Contains("delete_via_preview", toolNames);
+        Assert.Contains("delete_via", toolNames);
         Assert.Contains("run_erc", toolNames);
         Assert.Contains("run_drc", toolNames);
         Assert.Contains("run_checks", toolNames);

@@ -175,6 +175,124 @@ public static class McpTools
         return Services.BoardInspection.ListFootprintPads(projectPath, reference);
     }
 
+    [McpServerTool(Name = "list_tracks"), Description("List board track segments, optionally filtered by net.")]
+    public static ToolResponse<TrackListResult> ListTracks(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Optional net name or code.")] string? net = null)
+    {
+        return Services.RoutingWorkflow.ListTracks(projectPath, net);
+    }
+
+    [McpServerTool(Name = "list_vias"), Description("List board vias, optionally filtered by net.")]
+    public static ToolResponse<ViaListResult> ListVias(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Optional net name or code.")] string? net = null)
+    {
+        return Services.RoutingWorkflow.ListVias(projectPath, net);
+    }
+
+    [McpServerTool(Name = "get_net_routing"), Description("Read pads, tracks, and vias for one board net.")]
+    public static ToolResponse<NetRoutingResult> GetNetRouting(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Net name or code.")] string net)
+    {
+        return Services.RoutingWorkflow.GetNetRouting(projectPath, net);
+    }
+
+    [McpServerTool(Name = "add_track_preview"), Description("Preview adding a straight track segment without writing files.")]
+    public static Task<ToolResponse<RoutingMutationResult>> AddTrackPreview(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Net name or code.")] string net,
+        [Description("Start X coordinate in millimeters.")] double startXMillimeters,
+        [Description("Start Y coordinate in millimeters.")] double startYMillimeters,
+        [Description("End X coordinate in millimeters.")] double endXMillimeters,
+        [Description("End Y coordinate in millimeters.")] double endYMillimeters,
+        [Description("Copper layer: F.Cu or B.Cu.")] string layer,
+        [Description("Track width in millimeters.")] double widthMillimeters,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.AddTrackAsync(projectPath, net, startXMillimeters, startYMillimeters, endXMillimeters, endYMillimeters, layer, widthMillimeters, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_track"), Description("Add a straight track segment and write a PCBHelper change report.")]
+    public static Task<ToolResponse<RoutingMutationResult>> AddTrack(
+        string projectPath,
+        string net,
+        double startXMillimeters,
+        double startYMillimeters,
+        double endXMillimeters,
+        double endYMillimeters,
+        string layer,
+        double widthMillimeters,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.AddTrackAsync(projectPath, net, startXMillimeters, startYMillimeters, endXMillimeters, endYMillimeters, layer, widthMillimeters, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_track_preview"), Description("Preview deleting a track segment without writing files.")]
+    public static Task<ToolResponse<RoutingMutationResult>> DeleteTrackPreview(
+        string projectPath,
+        string track,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.DeleteTrackAsync(projectPath, track, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_track"), Description("Delete a track segment and write a PCBHelper change report.")]
+    public static Task<ToolResponse<RoutingMutationResult>> DeleteTrack(
+        string projectPath,
+        string track,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.DeleteTrackAsync(projectPath, track, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_via_preview"), Description("Preview adding a through via without writing files.")]
+    public static Task<ToolResponse<RoutingMutationResult>> AddViaPreview(
+        string projectPath,
+        string net,
+        double xMillimeters,
+        double yMillimeters,
+        double sizeMillimeters,
+        double drillMillimeters,
+        string layers,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.AddViaAsync(projectPath, net, xMillimeters, yMillimeters, sizeMillimeters, drillMillimeters, layers, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_via"), Description("Add a through via and write a PCBHelper change report.")]
+    public static Task<ToolResponse<RoutingMutationResult>> AddVia(
+        string projectPath,
+        string net,
+        double xMillimeters,
+        double yMillimeters,
+        double sizeMillimeters,
+        double drillMillimeters,
+        string layers,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.AddViaAsync(projectPath, net, xMillimeters, yMillimeters, sizeMillimeters, drillMillimeters, layers, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_via_preview"), Description("Preview deleting a via without writing files.")]
+    public static Task<ToolResponse<RoutingMutationResult>> DeleteViaPreview(
+        string projectPath,
+        string via,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.DeleteViaAsync(projectPath, via, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_via"), Description("Delete a via and write a PCBHelper change report.")]
+    public static Task<ToolResponse<RoutingMutationResult>> DeleteVia(
+        string projectPath,
+        string via,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.DeleteViaAsync(projectPath, via, dryRun: false, cancellationToken);
+    }
+
     [McpServerTool(Name = "run_erc"), Description("Run KiCad ERC through kicad-cli for the project schematic.")]
     public static Task<ToolResponse<SingleCheckResult>> RunErc(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
@@ -311,9 +429,13 @@ internal static class Services
 
     public static ComponentValueWorkflowService ComponentWorkflow { get; } = new(ComponentService, CheckRunner, ChangeReports);
 
-    public static ChangeReviewService ChangeReview { get; } = new(ProjectDiscovery, ChangeReports, GeometryWorkflow, ComponentWorkflow);
-
     public static BoardInspectionService BoardInspection { get; } = new(ProjectDiscovery);
+
+    public static RoutingService RoutingService { get; } = new(ProjectDiscovery);
+
+    public static RoutingWorkflowService RoutingWorkflow { get; } = new(RoutingService, CheckRunner, ChangeReports);
+
+    public static ChangeReviewService ChangeReview { get; } = new(ProjectDiscovery, ChangeReports, GeometryWorkflow, ComponentWorkflow, RoutingWorkflow);
 
     public static CheckSummaryService CheckSummary { get; } = new(CheckRunner);
 

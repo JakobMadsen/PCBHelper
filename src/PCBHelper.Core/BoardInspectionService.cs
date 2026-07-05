@@ -54,15 +54,21 @@ public sealed class BoardInspectionService
             return ToolResponse<FootprintPadsResult>.Fail($"Footprint not found: {reference}", "FOOTPRINT_NOT_FOUND");
         }
 
-        var pads = footprint.Pads.Select(pad => new PadSummary(
+        var pads = footprint.Pads.Select(pad =>
+        {
+            var absolute = CalculateAbsolutePadPosition(footprint, pad);
+            return new PadSummary(
             pad.Name,
             pad.Type,
             pad.XMillimeters,
             pad.YMillimeters,
+            absolute.X,
+            absolute.Y,
             pad.Layers,
             pad.NetCode,
             pad.NetName,
-            pad.PinFunction)).ToArray();
+            pad.PinFunction);
+        }).ToArray();
         return ToolResponse<FootprintPadsResult>.Ok($"Found {pads.Length} pad(s) for {reference}.", new FootprintPadsResult(reference, pads));
     }
 
@@ -88,19 +94,41 @@ public sealed class BoardInspectionService
             .Where(static footprint => footprint.Reference is not null)
             .SelectMany(footprint => footprint.Pads
                 .Where(pad => pad.NetCode == net.Code)
-                .Select(pad => new NetPadSummary(
-                    footprint.Reference!,
-                    pad.Name,
-                    pad.PinFunction,
-                    footprint.Side,
-                    pad.XMillimeters,
-                    pad.YMillimeters,
-                    pad.Layers,
-                    footprint.XMillimeters,
-                    footprint.YMillimeters)))
+                .Select(pad =>
+                {
+                    var absolute = CalculateAbsolutePadPosition(footprint, pad);
+                    return new NetPadSummary(
+                        footprint.Reference!,
+                        pad.Name,
+                        pad.PinFunction,
+                        footprint.Side,
+                        pad.XMillimeters,
+                        pad.YMillimeters,
+                        absolute.X,
+                        absolute.Y,
+                        pad.Layers,
+                        footprint.XMillimeters,
+                        footprint.YMillimeters);
+                }))
             .ToArray();
 
         return new NetSummary(net.Code, net.Name, pads);
+    }
+
+    internal static (double? X, double? Y) CalculateAbsolutePadPosition(KiCadFootprint footprint, KiCadPad pad)
+    {
+        if (footprint.XMillimeters is null || footprint.YMillimeters is null || pad.XMillimeters is null || pad.YMillimeters is null)
+        {
+            return (null, null);
+        }
+
+        var rotation = footprint.RotationDegrees ?? 0;
+        var radians = rotation * Math.PI / 180;
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var x = footprint.XMillimeters.Value + pad.XMillimeters.Value * cos - pad.YMillimeters.Value * sin;
+        var y = footprint.YMillimeters.Value + pad.XMillimeters.Value * sin + pad.YMillimeters.Value * cos;
+        return (x, y);
     }
 }
 
@@ -115,6 +143,8 @@ public sealed record NetPadSummary(
     string FootprintSide,
     double? PadXMillimeters,
     double? PadYMillimeters,
+    double? AbsoluteXMillimeters,
+    double? AbsoluteYMillimeters,
     IReadOnlyList<string> PadLayers,
     double? FootprintXMillimeters,
     double? FootprintYMillimeters);
@@ -126,6 +156,8 @@ public sealed record PadSummary(
     string? Type,
     double? XMillimeters,
     double? YMillimeters,
+    double? AbsoluteXMillimeters,
+    double? AbsoluteYMillimeters,
     IReadOnlyList<string> Layers,
     int? NetCode,
     string? NetName,
