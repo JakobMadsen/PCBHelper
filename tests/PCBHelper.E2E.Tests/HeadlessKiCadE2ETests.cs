@@ -73,6 +73,16 @@ public sealed class HeadlessKiCadE2ETests
 
         var boardSummary = await RunCliAsync("board-summary", fixture.Path, "--json");
         Assert.Equal(0, boardSummary.ExitCode);
+        double originalD1X;
+        double originalD1Y;
+        using (var document = JsonDocument.Parse(boardSummary.StandardOutput))
+        {
+            var d1 = document.RootElement.GetProperty("data").GetProperty("footprints")
+                .EnumerateArray()
+                .Single(item => item.GetProperty("reference").GetString() == "D1");
+            originalD1X = d1.GetProperty("xMillimeters").GetDouble();
+            originalD1Y = d1.GetProperty("yMillimeters").GetDouble();
+        }
 
         var measure = await RunCliAsync("measure", fixture.Path, "--from", "R1", "--to", "D1", "--json");
         Assert.Equal(0, measure.ExitCode);
@@ -112,8 +122,8 @@ public sealed class HeadlessKiCadE2ETests
             var d1 = document.RootElement.GetProperty("data").GetProperty("footprints")
                 .EnumerateArray()
                 .Single(item => item.GetProperty("reference").GetString() == "D1");
-            Assert.Equal(68, d1.GetProperty("xMillimeters").GetDouble(), precision: 3);
-            Assert.Equal(35, d1.GetProperty("yMillimeters").GetDouble(), precision: 3);
+            Assert.Equal(originalD1X, d1.GetProperty("xMillimeters").GetDouble(), precision: 3);
+            Assert.Equal(originalD1Y, d1.GetProperty("yMillimeters").GetDouble(), precision: 3);
         }
 
         var check = await RunCliAsync("check", fixture.Path, "--json");
@@ -124,6 +134,71 @@ public sealed class HeadlessKiCadE2ETests
 
         var package = await RunCliAsync("package", fixture.Path, "--json");
         Assert.Equal(0, package.ExitCode);
+    }
+
+    [Fact]
+    public async Task Tutorial_Fixture_Changes_Value_Exports_And_Restores_Through_Cli_Boundary()
+    {
+        var locator = new KiCadCliLocator();
+        var location = locator.Locate();
+        if (!location.Found)
+        {
+            _output.WriteLine("Skipped KiCad-dependent E2E: kicad-cli was not found.");
+            return;
+        }
+
+        using var fixture = TestFixture.CopyTutorialBoard();
+
+        var components = await RunCliAsync("list-components", fixture.Path, "--json");
+        Assert.Equal(0, components.ExitCode);
+
+        var before = await RunCliAsync("get-value", fixture.Path, "--ref", "R1", "--json");
+        Assert.Equal(0, before.ExitCode);
+        using (var document = JsonDocument.Parse(before.StandardOutput))
+        {
+            var locations = document.RootElement.GetProperty("data").GetProperty("locations");
+            Assert.Contains(locations.EnumerateArray(), static item => item.GetProperty("value").GetString() == "330R");
+        }
+
+        var set = await RunCliAsync("set-value", fixture.Path, "--ref", "R1", "--value", "300R", "--json");
+        Assert.Equal(0, set.ExitCode);
+        string changeReportPath;
+        using (var document = JsonDocument.Parse(set.StandardOutput))
+        {
+            var data = document.RootElement.GetProperty("data");
+            changeReportPath = data.GetProperty("changeReportPath").GetString()!;
+            Assert.True(File.Exists(changeReportPath));
+        }
+
+        var changed = await RunCliAsync("get-value", fixture.Path, "--ref", "R1", "--json");
+        Assert.Equal(0, changed.ExitCode);
+        using (var document = JsonDocument.Parse(changed.StandardOutput))
+        {
+            Assert.Contains(
+                document.RootElement.GetProperty("data").GetProperty("locations").EnumerateArray(),
+                static item => item.GetProperty("value").GetString() == "300R");
+        }
+
+        var check = await RunCliAsync("check", fixture.Path, "--json");
+        Assert.Equal(0, check.ExitCode);
+
+        var export = await RunCliAsync("export", fixture.Path, "--json");
+        Assert.Equal(0, export.ExitCode);
+
+        var package = await RunCliAsync("package", fixture.Path, "--json");
+        Assert.Equal(0, package.ExitCode);
+
+        var restore = await RunCliAsync("restore-change", fixture.Path, "--change", changeReportPath, "--json");
+        Assert.Equal(0, restore.ExitCode);
+
+        var restored = await RunCliAsync("get-value", fixture.Path, "--ref", "R1", "--json");
+        Assert.Equal(0, restored.ExitCode);
+        using (var document = JsonDocument.Parse(restored.StandardOutput))
+        {
+            Assert.Contains(
+                document.RootElement.GetProperty("data").GetProperty("locations").EnumerateArray(),
+                static item => item.GetProperty("value").GetString() == "330R");
+        }
     }
 
     [Fact]

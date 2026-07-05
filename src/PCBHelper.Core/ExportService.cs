@@ -71,6 +71,20 @@ public sealed class ExportService
         return RunExportAsync(projectPath, "drill", cancellationToken);
     }
 
+    public Task<ToolResponse<SingleExportResult>> ExportBomAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        return RunExportAsync(projectPath, "bom", cancellationToken);
+    }
+
+    public Task<ToolResponse<SingleExportResult>> ExportPositionFilesAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        return RunExportAsync(projectPath, "position", cancellationToken);
+    }
+
     private async Task<ToolResponse<SingleExportResult>> RunExportAsync(
         string projectPath,
         string kind,
@@ -88,7 +102,15 @@ public sealed class ExportService
             return ToolResponse<SingleExportResult>.Fail(project.Summary, project.Error?.Code ?? "PROJECT_NOT_FOUND", project.Error?.Message);
         }
 
-        if (project.Data.BoardFile is null)
+        if (kind is "bom" && project.Data.SchematicFile is null)
+        {
+            return ToolResponse<SingleExportResult>.Fail(
+                "BOM export requires a .kicad_sch file.",
+                "SCHEMATIC_FILE_MISSING",
+                $"Project root: {project.Data.ProjectRoot}");
+        }
+
+        if (kind is not "bom" && project.Data.BoardFile is null)
         {
             return ToolResponse<SingleExportResult>.Fail(
                 $"{kind} export requires a .kicad_pcb file.",
@@ -101,9 +123,20 @@ public sealed class ExportService
         Directory.CreateDirectory(outputDirectory);
 
         var before = Directory.GetFiles(outputDirectory, "*", SearchOption.AllDirectories).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var arguments = kind == "gerbers"
-            ? new[] { "pcb", "export", "gerbers", "--output", outputDirectory, project.Data.BoardFile }
-            : new[] { "pcb", "export", "drill", "--output", outputDirectory, project.Data.BoardFile };
+        var outputFile = kind switch
+        {
+            "bom" => Path.Combine(outputDirectory, $"{project.Data.ProjectName}-bom.csv"),
+            "position" => Path.Combine(outputDirectory, $"{project.Data.ProjectName}-positions.csv"),
+            _ => outputDirectory
+        };
+        var arguments = kind switch
+        {
+            "gerbers" => new[] { "pcb", "export", "gerbers", "--output", outputDirectory, project.Data.BoardFile! },
+            "drill" => new[] { "pcb", "export", "drill", "--output", outputDirectory, project.Data.BoardFile! },
+            "bom" => new[] { "sch", "export", "bom", "--output", outputFile, project.Data.SchematicFile! },
+            "position" => new[] { "pcb", "export", "pos", "--format", "csv", "--units", "mm", "--output", outputFile, project.Data.BoardFile! },
+            _ => throw new InvalidOperationException($"Unknown export kind: {kind}")
+        };
 
         var execution = await _runner.RunAsync(cli.ExecutablePath, arguments, project.Data.ProjectRoot, cancellationToken);
         var stdoutPath = Path.Combine(outputDirectory, $"{kind}.stdout.txt");

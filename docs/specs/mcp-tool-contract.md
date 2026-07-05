@@ -66,6 +66,83 @@ Outputs:
 
 First implementation note: the current board summary is intentionally lightweight and reports fixture-level footprint references, sides, and positions.
 
+### `list_components`
+
+List components detected from the board and schematic files.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- reference
+- value, board value, and schematic value when available
+- footprint name
+- side and position when available
+- pad count
+
+### `get_component_value`
+
+Read the value locations for one component.
+
+Inputs:
+
+- `project_path`
+- `reference`
+
+Outputs:
+
+- matching board and/or schematic value locations
+- exact value strings
+- source file paths
+
+### `list_nets`
+
+List board nets and connected pads.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- net code
+- net name
+- connected footprint pads
+
+### `get_net_summary`
+
+Read one board net by name or numeric code.
+
+Inputs:
+
+- `project_path`
+- `net`
+
+Outputs:
+
+- net code
+- net name
+- connected pads
+
+### `list_footprint_pads`
+
+List pad-level data for one footprint.
+
+Inputs:
+
+- `project_path`
+- `reference`
+
+Outputs:
+
+- pad names
+- pad types
+- local pad positions when detectable
+- net names/codes
+- pin functions when detectable
+
 ### `get_selected_items`
 
 Return currently selected KiCad objects if supported by the chosen KiCad API or IPC layer.
@@ -161,7 +238,7 @@ First implementation note: spacing is axis-constrained and defaults to the X axi
 
 ### `restore_change`
 
-Restore a single-footprint placement from a PCBHelper change report.
+Restore a placement or component value from a PCBHelper change report.
 
 Inputs:
 
@@ -171,11 +248,82 @@ Inputs:
 Outputs:
 
 - source change id
-- previous placement before restore
-- restored placement
+- previous placement or value before restore
+- restored placement or value
 - new change report path for real restores
 
-First implementation note: restore supports placement changes from `move_component`, `set_component_spacing`, and previous `restore_change` reports.
+First implementation note: restore supports placement changes from `move_component`, `set_component_spacing`, value changes from `set_component_value`, and previous `restore_change` reports.
+
+### `list_recent_changes`
+
+List PCBHelper change reports for a project.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- change ids
+- operations
+- references
+- report paths
+- restore commands
+
+### `get_change_report`
+
+Read one PCBHelper change report by id or path.
+
+Inputs:
+
+- `project_path`
+- `change`
+
+Outputs:
+
+- full change report JSON model
+- placement fields when present
+- value fields when present
+
+## Component Value Mutation Tools
+
+### `set_component_value_preview`
+
+Preview a component value edit without writing project files.
+
+Inputs:
+
+- `project_path`
+- `reference`
+- `value`
+- optional `scope`: `available`, `schematic`, `board`, or `both`
+
+Outputs:
+
+- before value locations
+- after value locations
+- changed files that would be touched
+
+### `set_component_value`
+
+Change a component value and write a change report.
+
+Inputs:
+
+- `project_path`
+- `reference`
+- `value`
+- optional `scope`: `available`, `schematic`, `board`, or `both`
+
+Outputs:
+
+- before value locations
+- after value locations
+- changed files
+- change report path
+- check summary and generated check report paths
+
+First implementation note: PCBHelper preserves the exact value string; it does not normalize `300` to `300R`.
 
 ## Visual Review Tools
 
@@ -223,6 +371,50 @@ Outputs:
 
 First implementation note: this launches KiCad with the `.kicad_pro` file and does not automate the GUI.
 
+### `get_kicad_gui_capabilities`
+
+Detect whether live KiCad GUI refresh/focus is available.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- detected `kicad-cli` path
+- detected KiCad GUI path
+- whether IPC/API server support is available
+- fallback guidance
+
+### `refresh_project_in_kicad`
+
+Request a live GUI refresh if supported by the installed KiCad build.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- whether a live action was performed
+- fallback guidance when unsupported
+
+First implementation note: when IPC is unavailable this returns `KICAD_IPC_UNAVAILABLE` and does not pretend that file edits were refreshed in the GUI.
+
+### `focus_component_in_kicad`
+
+Focus a component in the KiCad GUI if supported by the installed KiCad build.
+
+Inputs:
+
+- `project_path`
+- `reference`
+
+Outputs:
+
+- whether a live action was performed
+- fallback guidance when unsupported
+
 ## Check Tools
 
 ### `run_erc`
@@ -254,6 +446,21 @@ Outputs:
 - report path
 - structured findings
 - summary
+
+### `get_check_summary`
+
+Run available KiCad checks and return compact parsed findings plus raw report metadata.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- raw check result model
+- finding kind
+- severity when present
+- message
 
 ## Export Tools
 
@@ -312,6 +519,8 @@ Outputs:
 
 - generated files
 - warnings
+
+First implementation note: position files are generic KiCad CSV output, not manufacturer-specific.
 
 ### `export_manufacturing_zip`
 

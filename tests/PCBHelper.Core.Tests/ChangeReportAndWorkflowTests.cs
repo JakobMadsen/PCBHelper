@@ -44,6 +44,8 @@ public sealed class ChangeReportAndWorkflowTests
     {
         using var fixture = CopyTutorialFixture();
         var workflow = CreateWorkflow();
+        var original = new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path)
+            .Data!.Footprints.Single(footprint => footprint.Reference == "D1");
         var move = await workflow.MoveComponentAsync(fixture.Path, "D1", 75, 35, dryRun: false);
         var boardFile = Path.Combine(fixture.Path, "kicad-getting-started-led.kicad_pcb");
         var movedText = File.ReadAllText(boardFile);
@@ -54,7 +56,7 @@ public sealed class ChangeReportAndWorkflowTests
         Assert.Equal(movedText, File.ReadAllText(boardFile));
         Assert.True(restore.Data?.DryRun);
         Assert.Null(restore.Data?.ChangeReportPath);
-        Assert.Equal(68, restore.Data?.After.XMillimeters);
+        Assert.Equal(original.XMillimeters, restore.Data?.After.XMillimeters);
     }
 
     [Fact]
@@ -62,6 +64,8 @@ public sealed class ChangeReportAndWorkflowTests
     {
         using var fixture = CopyTutorialFixture();
         var workflow = CreateWorkflow();
+        var original = new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path)
+            .Data!.Footprints.Single(footprint => footprint.Reference == "D1");
         var move = await workflow.MoveComponentAsync(fixture.Path, "D1", 75, 35, dryRun: false);
 
         var restore = await workflow.RestoreChangeAsync(fixture.Path, move.Data!.ChangeReportPath!, dryRun: false);
@@ -71,8 +75,8 @@ public sealed class ChangeReportAndWorkflowTests
         Assert.True(restore.Success);
         Assert.NotNull(restore.Data?.ChangeReportPath);
         Assert.True(File.Exists(restore.Data.ChangeReportPath));
-        Assert.Equal(68, d1.XMillimeters);
-        Assert.Equal(35, d1.YMillimeters);
+        Assert.Equal(original.XMillimeters, d1.XMillimeters);
+        Assert.Equal(original.YMillimeters, d1.YMillimeters);
     }
 
     private static GeometryWorkflowService CreateWorkflow()

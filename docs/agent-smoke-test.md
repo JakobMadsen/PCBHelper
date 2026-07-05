@@ -89,6 +89,43 @@ Expected result:
 - A new restore change report is written.
 - Checks still run.
 
+## Component Value Prompt
+
+After the placement flow works, try a value-only mutation:
+
+```text
+Use PCBHelper on fixtures/kicad-getting-started-led.
+
+List components, read R1's value, preview changing R1 from 330R to 300R, then wait for my approval before applying.
+```
+
+If approved, ask:
+
+```text
+Apply the R1 value change to 300R, run checks, show the change report, then restore the change.
+```
+
+Expected result:
+
+- The agent uses `get_component_value` before mutation.
+- The preview uses `set_component_value_preview`.
+- The real change writes a `.pcbhelper/changes/<change-id>/change.json` report.
+- `restore_change` returns R1 to `330R`.
+
+## GUI Refresh Check
+
+Ask:
+
+```text
+Check whether PCBHelper can refresh or focus KiCad's GUI live for this project.
+```
+
+Expected result on the current Windows KiCad 10.0.4 setup:
+
+- `get_kicad_gui_capabilities` reports `canRefreshLive = false`.
+- `refresh_project_in_kicad` and `focus_component_in_kicad` return `KICAD_IPC_UNAVAILABLE`.
+- The agent tells the human to reload or reopen KiCad instead of claiming live refresh happened.
+
 ## Pass Criteria
 
 The smoke test passes when:
@@ -103,4 +140,4 @@ The smoke test passes when:
 
 ## Known Limitation
 
-PCBHelper currently edits the KiCad board file and relies on KiCad reload behavior. It does not yet use KiCad IPC to move footprints live inside the running GUI.
+PCBHelper currently edits KiCad project files and relies on KiCad reload behavior. It does not yet use KiCad IPC to move, refresh, or focus items live inside the running GUI when the installed KiCad build does not expose IPC.

@@ -9,13 +9,22 @@ var doctor = new KiCadDoctorService(cliLocator, runner);
 var checkRunner = new CheckRunner(projectDiscovery, cliLocator, runner);
 var exportService = new ExportService(projectDiscovery, cliLocator, runner);
 var geometry = new GeometryService(projectDiscovery);
+var changeReports = new ChangeReportService(projectDiscovery);
+var geometryWorkflow = new GeometryWorkflowService(geometry, checkRunner, changeReports);
+var componentService = new ComponentService(projectDiscovery);
+var componentWorkflow = new ComponentValueWorkflowService(componentService, checkRunner, changeReports);
 
 var app = new CliApp(
     doctor,
     projectDiscovery,
     new BoardSummaryService(projectDiscovery),
     geometry,
-    new GeometryWorkflowService(geometry, checkRunner, new ChangeReportService(projectDiscovery)),
+    geometryWorkflow,
+    componentWorkflow,
+    new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow),
+    new BoardInspectionService(projectDiscovery),
+    new CheckSummaryService(checkRunner),
+    new GuiReviewService(cliLocator, new KiCadExecutableLocator(cliLocator), runner),
     checkRunner,
     exportService,
     new PackageService(
@@ -38,6 +47,11 @@ public sealed class CliApp
     private readonly BoardSummaryService _boardSummary;
     private readonly GeometryService _geometry;
     private readonly GeometryWorkflowService _geometryWorkflow;
+    private readonly ComponentValueWorkflowService _componentWorkflow;
+    private readonly ChangeReviewService _changeReview;
+    private readonly BoardInspectionService _boardInspection;
+    private readonly CheckSummaryService _checkSummary;
+    private readonly GuiReviewService _guiReview;
     private readonly CheckRunner _checkRunner;
     private readonly ExportService _exportService;
     private readonly PackageService _packageService;
@@ -49,6 +63,11 @@ public sealed class CliApp
         BoardSummaryService boardSummary,
         GeometryService geometry,
         GeometryWorkflowService geometryWorkflow,
+        ComponentValueWorkflowService componentWorkflow,
+        ChangeReviewService changeReview,
+        BoardInspectionService boardInspection,
+        CheckSummaryService checkSummary,
+        GuiReviewService guiReview,
         CheckRunner checkRunner,
         ExportService exportService,
         PackageService packageService,
@@ -59,6 +78,11 @@ public sealed class CliApp
         _boardSummary = boardSummary;
         _geometry = geometry;
         _geometryWorkflow = geometryWorkflow;
+        _componentWorkflow = componentWorkflow;
+        _changeReview = changeReview;
+        _boardInspection = boardInspection;
+        _checkSummary = checkSummary;
+        _guiReview = guiReview;
         _checkRunner = checkRunner;
         _exportService = exportService;
         _packageService = packageService;
@@ -85,10 +109,24 @@ public sealed class CliApp
             "move" => await RunMoveAsync(positional, json, cancellationToken),
             "set-spacing" => await RunSetSpacingAsync(positional, json, cancellationToken),
             "restore-change" => await RunRestoreChangeAsync(positional, json, cancellationToken),
+            "list-changes" => RunListChanges(positional, json),
+            "show-change" => RunShowChange(positional, json),
+            "list-components" => RunListComponents(positional, json),
+            "get-value" => RunGetValue(positional, json),
+            "set-value" => await RunSetValueAsync(positional, json, cancellationToken),
+            "list-nets" => RunListNets(positional, json),
+            "get-net" => RunGetNet(positional, json),
+            "list-footprint-pads" => RunListFootprintPads(positional, json),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
+            "check-summary" => await RunCheckSummaryAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
+            "export-bom" => await RunExportBomAsync(positional, json, cancellationToken),
+            "export-position-files" => await RunExportPositionFilesAsync(positional, json, cancellationToken),
             "package" => await RunPackageAsync(positional, json, cancellationToken),
             "open" => RunOpen(positional, json),
+            "kicad-gui-status" => await RunGuiStatusAsync(positional, json, cancellationToken),
+            "refresh-gui" => await RunRefreshGuiAsync(positional, json, cancellationToken),
+            "focus-component" => await RunFocusComponentAsync(positional, json, cancellationToken),
             _ => UnknownCommand(positional[0])
         };
     }
@@ -188,7 +226,147 @@ public sealed class CliApp
             return 2;
         }
 
-        var result = await _geometryWorkflow.RestoreChangeAsync(args[1], change, HasFlag(args, "--dry-run"), cancellationToken);
+        var result = await _changeReview.RestoreChangeAsync(args[1], change, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunListChanges(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ChangeListResult>.Fail("list-changes requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _changeReview.ListChanges(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunShowChange(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ChangeReport>.Fail("show-change requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var change = GetOption(args, "--change");
+        if (change is null)
+        {
+            Write(ToolResponse<ChangeReport>.Fail("show-change requires --change.", "CHANGE_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _changeReview.GetChange(args[1], change);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunListComponents(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ComponentListResult>.Fail("list-components requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _componentWorkflow.ListComponents(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunGetValue(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ComponentValueResult>.Fail("get-value requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        if (reference is null)
+        {
+            Write(ToolResponse<ComponentValueResult>.Fail("get-value requires --ref.", "REFERENCE_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _componentWorkflow.GetValue(args[1], reference);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunSetValueAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<ComponentValueMutationResult>.Fail("set-value requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        var value = GetOption(args, "--value");
+        if (reference is null || value is null)
+        {
+            Write(ToolResponse<ComponentValueMutationResult>.Fail("set-value requires --ref and --value.", "VALUE_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _componentWorkflow.SetValueAsync(args[1], reference, value, GetOption(args, "--scope"), HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunListNets(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<NetListResult>.Fail("list-nets requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _boardInspection.ListNets(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunGetNet(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<NetSummary>.Fail("get-net requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        if (net is null)
+        {
+            Write(ToolResponse<NetSummary>.Fail("get-net requires --net.", "NET_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _boardInspection.GetNet(args[1], net);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunListFootprintPads(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<FootprintPadsResult>.Fail("list-footprint-pads requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        if (reference is null)
+        {
+            Write(ToolResponse<FootprintPadsResult>.Fail("list-footprint-pads requires --ref.", "REFERENCE_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _boardInspection.ListFootprintPads(args[1], reference);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -232,6 +410,19 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private async Task<int> RunCheckSummaryAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<CheckSummaryResult>.Fail("check-summary requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _checkSummary.RunAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private async Task<int> RunExportAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
     {
         if (args.Count < 2)
@@ -241,6 +432,32 @@ public sealed class CliApp
         }
 
         var result = await _exportService.ExportManufacturingFilesAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunExportBomAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SingleExportResult>.Fail("export-bom requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _exportService.ExportBomAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunExportPositionFilesAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SingleExportResult>.Fail("export-position-files requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _exportService.ExportPositionFilesAsync(args[1], cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -267,6 +484,52 @@ public sealed class CliApp
         }
 
         var result = _openKiCad.OpenProject(args[1], HasFlag(args, "--dry-run"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunGuiStatusAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<KiCadGuiCapabilities>.Fail("kicad-gui-status requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _guiReview.GetCapabilitiesAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunRefreshGuiAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<KiCadGuiActionResult>.Fail("refresh-gui requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _guiReview.RefreshProjectAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunFocusComponentAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<KiCadGuiActionResult>.Fail("focus-component requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        if (reference is null)
+        {
+            Write(ToolResponse<KiCadGuiActionResult>.Fail("focus-component requires --ref.", "REFERENCE_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _guiReview.FocusComponentAsync(args[1], reference, cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -335,9 +598,23 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm> [--axis x|y] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper restore-change <project-path> --change <change-id-or-path> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper list-changes <project-path> [--json]");
+        Console.WriteLine("  pcbhelper show-change <project-path> --change <change-id-or-path> [--json]");
+        Console.WriteLine("  pcbhelper list-components <project-path> [--json]");
+        Console.WriteLine("  pcbhelper get-value <project-path> --ref <ref> [--json]");
+        Console.WriteLine("  pcbhelper set-value <project-path> --ref <ref> --value <value> [--scope available|schematic|board|both] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper list-nets <project-path> [--json]");
+        Console.WriteLine("  pcbhelper get-net <project-path> --net <name-or-code> [--json]");
+        Console.WriteLine("  pcbhelper list-footprint-pads <project-path> --ref <ref> [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
+        Console.WriteLine("  pcbhelper check-summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");
+        Console.WriteLine("  pcbhelper export-bom <project-path> [--json]");
+        Console.WriteLine("  pcbhelper export-position-files <project-path> [--json]");
         Console.WriteLine("  pcbhelper package <project-path> [--json]");
         Console.WriteLine("  pcbhelper open <project-path> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper kicad-gui-status <project-path> [--json]");
+        Console.WriteLine("  pcbhelper refresh-gui <project-path> [--json]");
+        Console.WriteLine("  pcbhelper focus-component <project-path> --ref <ref> [--json]");
     }
 }

@@ -82,22 +82,97 @@ public static class McpTools
         return Services.GeometryWorkflow.SetComponentSpacingAsync(projectPath, fixedReference, movingReference, distanceMillimeters, axis, dryRun: false, cancellationToken);
     }
 
-    [McpServerTool(Name = "restore_change_preview"), Description("Preview restoring a single-footprint placement change report.")]
-    public static Task<ToolResponse<ComponentRestoreResult>> RestoreChangePreview(
+    [McpServerTool(Name = "restore_change_preview"), Description("Preview restoring a placement or value change report.")]
+    public static Task<ToolResponse<object>> RestoreChangePreview(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
         [Description("Change id or path to a change.json report.")] string change,
         CancellationToken cancellationToken)
     {
-        return Services.GeometryWorkflow.RestoreChangeAsync(projectPath, change, dryRun: true, cancellationToken);
+        return Services.ChangeReview.RestoreChangeAsync(projectPath, change, dryRun: true, cancellationToken);
     }
 
-    [McpServerTool(Name = "restore_change"), Description("Restore a single-footprint placement change report.")]
-    public static Task<ToolResponse<ComponentRestoreResult>> RestoreChange(
+    [McpServerTool(Name = "restore_change"), Description("Restore a placement or value change report.")]
+    public static Task<ToolResponse<object>> RestoreChange(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
         [Description("Change id or path to a change.json report.")] string change,
         CancellationToken cancellationToken)
     {
-        return Services.GeometryWorkflow.RestoreChangeAsync(projectPath, change, dryRun: false, cancellationToken);
+        return Services.ChangeReview.RestoreChangeAsync(projectPath, change, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "list_recent_changes"), Description("List PCBHelper change reports for a project.")]
+    public static ToolResponse<ChangeListResult> ListRecentChanges(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.ChangeReview.ListChanges(projectPath);
+    }
+
+    [McpServerTool(Name = "get_change_report"), Description("Read a PCBHelper change report by id or path.")]
+    public static ToolResponse<ChangeReport> GetChangeReport(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Change id or path to a change.json report.")] string change)
+    {
+        return Services.ChangeReview.GetChange(projectPath, change);
+    }
+
+    [McpServerTool(Name = "list_components"), Description("List component references and values from board and schematic files.")]
+    public static ToolResponse<ComponentListResult> ListComponents(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.ComponentWorkflow.ListComponents(projectPath);
+    }
+
+    [McpServerTool(Name = "get_component_value"), Description("Read a component value from board and schematic files.")]
+    public static ToolResponse<ComponentValueResult> GetComponentValue(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Component reference, for example R1.")] string reference)
+    {
+        return Services.ComponentWorkflow.GetValue(projectPath, reference);
+    }
+
+    [McpServerTool(Name = "set_component_value_preview"), Description("Preview changing a component value without writing files.")]
+    public static Task<ToolResponse<ComponentValueMutationResult>> SetComponentValuePreview(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Component reference, for example R1.")] string reference,
+        [Description("Exact value string to write, for example 300R.")] string value,
+        [Description("Scope: available, schematic, board, or both. Defaults to available.")] string? scope = "available",
+        CancellationToken cancellationToken = default)
+    {
+        return Services.ComponentWorkflow.SetValueAsync(projectPath, reference, value, scope, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "set_component_value"), Description("Change a component value and write a PCBHelper change report.")]
+    public static Task<ToolResponse<ComponentValueMutationResult>> SetComponentValue(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Component reference, for example R1.")] string reference,
+        [Description("Exact value string to write, for example 300R.")] string value,
+        [Description("Scope: available, schematic, board, or both. Defaults to available.")] string? scope = "available",
+        CancellationToken cancellationToken = default)
+    {
+        return Services.ComponentWorkflow.SetValueAsync(projectPath, reference, value, scope, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "list_nets"), Description("List board nets and their connected footprint pads.")]
+    public static ToolResponse<NetListResult> ListNets(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.BoardInspection.ListNets(projectPath);
+    }
+
+    [McpServerTool(Name = "get_net_summary"), Description("Read one board net by name or numeric code.")]
+    public static ToolResponse<NetSummary> GetNetSummary(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Net name or code.")] string net)
+    {
+        return Services.BoardInspection.GetNet(projectPath, net);
+    }
+
+    [McpServerTool(Name = "list_footprint_pads"), Description("List pads and net assignments for one footprint.")]
+    public static ToolResponse<FootprintPadsResult> ListFootprintPads(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Footprint reference, for example R1.")] string reference)
+    {
+        return Services.BoardInspection.ListFootprintPads(projectPath, reference);
     }
 
     [McpServerTool(Name = "run_erc"), Description("Run KiCad ERC through kicad-cli for the project schematic.")]
@@ -122,6 +197,14 @@ public static class McpTools
         CancellationToken cancellationToken)
     {
         return Services.CheckRunner.RunChecksAsync(projectPath, cancellationToken);
+    }
+
+    [McpServerTool(Name = "get_check_summary"), Description("Run KiCad checks and return compact parsed findings plus raw report paths.")]
+    public static Task<ToolResponse<CheckSummaryResult>> GetCheckSummary(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.CheckSummary.RunAsync(projectPath, cancellationToken);
     }
 
     [McpServerTool(Name = "export_gerbers"), Description("Export Gerber files through kicad-cli.")]
@@ -156,11 +239,52 @@ public static class McpTools
         return Services.PackageService.CreateManufacturingZipAsync(projectPath, cancellationToken);
     }
 
+    [McpServerTool(Name = "export_bom"), Description("Export a BOM file through kicad-cli.")]
+    public static Task<ToolResponse<SingleExportResult>> ExportBom(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.ExportService.ExportBomAsync(projectPath, cancellationToken);
+    }
+
+    [McpServerTool(Name = "export_position_files"), Description("Export footprint position files through kicad-cli.")]
+    public static Task<ToolResponse<SingleExportResult>> ExportPositionFiles(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.ExportService.ExportPositionFilesAsync(projectPath, cancellationToken);
+    }
+
     [McpServerTool(Name = "open_project_in_kicad"), Description("Open the KiCad project in the local KiCad GUI.")]
     public static ToolResponse<OpenProjectResult> OpenProjectInKiCad(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
     {
         return Services.OpenKiCad.OpenProject(projectPath, dryRun: false);
+    }
+
+    [McpServerTool(Name = "get_kicad_gui_capabilities"), Description("Detect whether KiCad GUI refresh/focus capabilities are available.")]
+    public static Task<ToolResponse<KiCadGuiCapabilities>> GetKiCadGuiCapabilities(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.GuiReview.GetCapabilitiesAsync(projectPath, cancellationToken);
+    }
+
+    [McpServerTool(Name = "refresh_project_in_kicad"), Description("Refresh the KiCad project in the GUI if live IPC is available.")]
+    public static Task<ToolResponse<KiCadGuiActionResult>> RefreshProjectInKiCad(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.GuiReview.RefreshProjectAsync(projectPath, cancellationToken);
+    }
+
+    [McpServerTool(Name = "focus_component_in_kicad"), Description("Focus a component in the KiCad GUI if live IPC is available.")]
+    public static Task<ToolResponse<KiCadGuiActionResult>> FocusComponentInKiCad(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Footprint/component reference, for example R1.")] string reference,
+        CancellationToken cancellationToken)
+    {
+        return Services.GuiReview.FocusComponentAsync(projectPath, reference, cancellationToken);
     }
 }
 
@@ -179,11 +303,25 @@ internal static class Services
 
     public static CheckRunner CheckRunner { get; } = new(ProjectDiscovery, Locator, Runner);
 
-    public static GeometryWorkflowService GeometryWorkflow { get; } = new(Geometry, CheckRunner, new ChangeReportService(ProjectDiscovery));
+    public static ChangeReportService ChangeReports { get; } = new(ProjectDiscovery);
+
+    public static GeometryWorkflowService GeometryWorkflow { get; } = new(Geometry, CheckRunner, ChangeReports);
+
+    public static ComponentService ComponentService { get; } = new(ProjectDiscovery);
+
+    public static ComponentValueWorkflowService ComponentWorkflow { get; } = new(ComponentService, CheckRunner, ChangeReports);
+
+    public static ChangeReviewService ChangeReview { get; } = new(ProjectDiscovery, ChangeReports, GeometryWorkflow, ComponentWorkflow);
+
+    public static BoardInspectionService BoardInspection { get; } = new(ProjectDiscovery);
+
+    public static CheckSummaryService CheckSummary { get; } = new(CheckRunner);
 
     public static ExportService ExportService { get; } = new(ProjectDiscovery, Locator, Runner);
 
     public static PackageService PackageService { get; } = new(ProjectDiscovery, Doctor, ExportService);
 
     public static OpenKiCadService OpenKiCad { get; } = new(ProjectDiscovery, new KiCadExecutableLocator(Locator), new ProcessStarter());
+
+    public static GuiReviewService GuiReview { get; } = new(Locator, new KiCadExecutableLocator(Locator), Runner);
 }

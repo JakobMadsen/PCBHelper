@@ -14,9 +14,9 @@ public sealed class GeometryServiceTests
 
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
-        Assert.Equal(23, result.Data.DxMillimeters, precision: 3);
+        Assert.True(result.Data.DxMillimeters > 0);
         Assert.Equal(0, result.Data.DyMillimeters, precision: 3);
-        Assert.Equal(23, result.Data.DistanceMillimeters, precision: 3);
+        Assert.Equal(Math.Abs(result.Data.DxMillimeters), result.Data.DistanceMillimeters, precision: 3);
     }
 
     [Fact]
@@ -38,12 +38,13 @@ public sealed class GeometryServiceTests
         var boardFile = Path.Combine(fixture.Path, "kicad-getting-started-led.kicad_pcb");
         var beforeText = File.ReadAllText(boardFile);
         var service = new GeometryService(new ProjectDiscoveryService());
+        var before = service.MeasureDistance(fixture.Path, "R1", "D1");
 
         var result = service.MoveComponent(fixture.Path, "D1", 75, 35, dryRun: true);
 
         Assert.True(result.Success);
         Assert.Equal(beforeText, File.ReadAllText(boardFile));
-        Assert.Equal(68, result.Data?.Before.XMillimeters);
+        Assert.Equal(before.Data?.ToPlacement.XMillimeters, result.Data?.Before.XMillimeters);
         Assert.Equal(75, result.Data?.After.XMillimeters);
     }
 

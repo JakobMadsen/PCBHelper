@@ -25,14 +25,29 @@ public sealed class McpContractTests
         Assert.Contains("set_component_spacing", toolNames);
         Assert.Contains("restore_change_preview", toolNames);
         Assert.Contains("restore_change", toolNames);
+        Assert.Contains("list_recent_changes", toolNames);
+        Assert.Contains("get_change_report", toolNames);
+        Assert.Contains("list_components", toolNames);
+        Assert.Contains("get_component_value", toolNames);
+        Assert.Contains("set_component_value_preview", toolNames);
+        Assert.Contains("set_component_value", toolNames);
+        Assert.Contains("list_nets", toolNames);
+        Assert.Contains("get_net_summary", toolNames);
+        Assert.Contains("list_footprint_pads", toolNames);
         Assert.Contains("run_erc", toolNames);
         Assert.Contains("run_drc", toolNames);
         Assert.Contains("run_checks", toolNames);
+        Assert.Contains("get_check_summary", toolNames);
         Assert.Contains("export_gerbers", toolNames);
         Assert.Contains("export_drill", toolNames);
         Assert.Contains("export_manufacturing_files", toolNames);
         Assert.Contains("export_manufacturing_zip", toolNames);
+        Assert.Contains("export_bom", toolNames);
+        Assert.Contains("export_position_files", toolNames);
         Assert.Contains("open_project_in_kicad", toolNames);
+        Assert.Contains("get_kicad_gui_capabilities", toolNames);
+        Assert.Contains("refresh_project_in_kicad", toolNames);
+        Assert.Contains("focus_component_in_kicad", toolNames);
     }
 
     private static string GetToolName(MethodInfo method)
