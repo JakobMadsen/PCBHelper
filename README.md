@@ -122,6 +122,7 @@ Start with:
 - [Product requirements](docs/specs/prd.md)
 - [Architecture sketch](docs/specs/architecture.md)
 - [MCP tool contract](docs/specs/mcp-tool-contract.md)
+- [Simulation assertion tests](docs/specs/simulation-assertion-tests.md)
 - [Hello World board spec](docs/specs/hello-world-optical-board.md)
 - [Roadmap](docs/roadmap.md)
 - [Testing strategy](docs/testing-strategy.md)
