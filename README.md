@@ -105,6 +105,9 @@ This repository contains the first implementation slice:
 - `pcbhelper connect-schematic-pins <project-path> --from <ref.pin|ref:pin> --to <ref.pin|ref:pin> --net <name>`
 - `pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm>`
 - `pcbhelper update-pcb-from-schematic <project-path>`
+- `pcbhelper list-tests <project-path>`
+- `pcbhelper validate-tests <project-path>`
+- `pcbhelper evaluate-test-results <project-path> --results <path>`
 - `pcbhelper export <project-path>`
 - `pcbhelper export-bom <project-path>`
 - `pcbhelper export-position-files <project-path>`
@@ -162,6 +165,8 @@ dotnet run --project src/PCBHelper.Cli -- create-schematic-symbol fixtures/blank
 dotnet run --project src/PCBHelper.Cli -- connect-schematic-pins fixtures/blank-authoring --from R1.1 --to R1.2 --net LOOP --dry-run
 dotnet run --project src/PCBHelper.Cli -- connect-schematic-pins fixtures/blank-authoring --from R1:1 --to R1:2 --net LOOP --dry-run
 dotnet run --project src/PCBHelper.Cli -- update-pcb-from-schematic fixtures/blank-authoring --dry-run
+dotnet run --project src/PCBHelper.Cli -- validate-tests fixtures/simulation-assertions
+dotnet run --project src/PCBHelper.Cli -- evaluate-test-results fixtures/simulation-assertions --results fixtures/simulation-assertions/measurements-pass.json
 dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- export-bom fixtures/kicad-getting-started-led
 dotnet run --project src/PCBHelper.Cli -- export-position-files fixtures/kicad-getting-started-led

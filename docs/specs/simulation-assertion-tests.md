@@ -36,10 +36,13 @@ Simulation tests should be written as intent-level assertions, not as arbitrary 
 
 Good:
 
-```yaml
-assert:
-  measurement: gain_at_100hz_db
-  between: [-3.0, 0.5]
+```json
+{
+  "assert": {
+    "measurement": "gain_at_100hz_db",
+    "between": [-3.0, 0.5]
+  }
+}
 ```
 
 Risky:
@@ -58,65 +61,53 @@ Store tests in the project, for example:
 
 ```text
 .pcbhelper/tests/
-  circuit-tests.yaml
+  circuit-tests.json
 ```
 
 V0 example:
 
-```yaml
-version: 1
-tests:
-  - id: rc_lowpass_gain_100hz
-    type: simulation.ac
-    description: Low-pass output should be nearly unchanged at 100 Hz.
-    circuit:
-      schematic: auto
-      netlistFormat: spice
-    stimulus:
-      sourceRef: VIN
-      kind: ac
-      amplitude: 1
-    analysis:
-      kind: ac
-      sweep: dec
-      pointsPerDecade: 20
-      startHz: 10
-      stopHz: 100000
-    measurements:
-      - name: gain_at_100hz_db
-        kind: gainDb
-        inputNet: IN
-        outputNet: OUT
-        atHz: 100
-    asserts:
-      - measurement: gain_at_100hz_db
-        between: [-3.0, 0.5]
-
-  - id: filter_rejects_10khz
-    type: simulation.ac
-    description: Low-pass output should be attenuated at 10 kHz.
-    circuit:
-      schematic: auto
-      netlistFormat: spice
-    stimulus:
-      sourceRef: VIN
-      kind: ac
-      amplitude: 1
-    analysis:
-      kind: ac
-      sweep: dec
-      pointsPerDecade: 20
-      startHz: 10
-      stopHz: 100000
-    measurements:
-      - name: gain_at_10khz_db
-        kind: gainDb
-        inputNet: IN
-        outputNet: OUT
-        atHz: 10000
-    asserts:
-      - measurement: gain_at_10khz_db
-        lessThan: -20
+```json
+{
+  "version": 1,
+  "tests": [
+    {
+      "id": "rc_lowpass_gain_100hz",
+      "type": "simulation.ac",
+      "description": "Low-pass output should be nearly unchanged at 100 Hz.",
+      "measurements": [
+        {
+          "name": "gain_at_100hz_db",
+          "kind": "gainDb",
+          "unit": "dB"
+        }
+      ],
+      "asserts": [
+        {
+          "measurement": "gain_at_100hz_db",
+          "between": [-3.0, 0.5]
+        }
+      ]
+    },
+    {
+      "id": "filter_rejects_10khz",
+      "type": "simulation.ac",
+      "description": "Low-pass output should be attenuated at 10 kHz.",
+      "measurements": [
+        {
+          "name": "gain_at_10khz_db",
+          "kind": "gainDb",
+          "unit": "dB"
+        }
+      ],
+      "asserts": [
+        {
+          "measurement": "gain_at_10khz_db",
+          "lessThan": -20
+        }
+      ]
+    }
+  ]
+}
 ```
 
 The test file is intentionally declarative. The agent can propose or edit it, but PCBHelper validates it before execution.
@@ -137,12 +128,19 @@ Use for:
 
 Example assertions:
 
-```yaml
-asserts:
-  - measurement: led_current_ma
-    between: [2, 15]
-  - measurement: opamp_output_v
-    between: [0.2, 4.8]
+```json
+{
+  "asserts": [
+    {
+      "measurement": "led_current_ma",
+      "between": [2, 15]
+    },
+    {
+      "measurement": "opamp_output_v",
+      "between": [0.2, 4.8]
+    }
+  ]
+}
 ```
 
 ### `simulation.ac`
@@ -158,12 +156,19 @@ Use for:
 
 Example assertions:
 
-```yaml
-asserts:
-  - measurement: gain_at_100hz_db
-    between: [-3, 1]
-  - measurement: gain_at_10khz_db
-    lessThan: -20
+```json
+{
+  "asserts": [
+    {
+      "measurement": "gain_at_100hz_db",
+      "between": [-3, 1]
+    },
+    {
+      "measurement": "gain_at_10khz_db",
+      "lessThan": -20
+    }
+  ]
+}
 ```
 
 ### `simulation.tran`
@@ -180,12 +185,19 @@ Use for:
 
 Example assertions:
 
-```yaml
-asserts:
-  - measurement: out_vpp
-    between: [0.65, 0.75]
-  - measurement: settling_time_ms
-    lessThan: 10
+```json
+{
+  "asserts": [
+    {
+      "measurement": "out_vpp",
+      "between": [0.65, 0.75]
+    },
+    {
+      "measurement": "settling_time_ms",
+      "lessThan": 10
+    }
+  ]
+}
 ```
 
 ### Non-Simulation Assertions
@@ -332,7 +344,7 @@ Start with a narrow, testable path:
 
 ### Slice A: Test Spec And Assertion Engine
 
-- Add `.pcbhelper/tests/*.yaml`.
+- Add `.pcbhelper/tests/*.json`.
 - Implement schema validation.
 - Implement assertion evaluator.
 - Use fake measurement input in unit tests.
@@ -377,7 +389,7 @@ Do not apply the test file until I approve it.
 Expected agent behavior:
 
 1. Inspect nets and components.
-2. Propose a `.pcbhelper/tests/filter.yaml` test.
+2. Propose a `.pcbhelper/tests/filter.json` test.
 3. Call `validate_test_spec`.
 4. Wait for approval.
 5. Write the test file.
@@ -403,7 +415,7 @@ Therefore, PCBHelper should report simulation as one test layer, not as proof th
 ## Open Questions
 
 - Should test specs live in `.pcbhelper/tests/` or `tests/pcbhelper/` for easier CI discovery?
-- Should the first format be YAML or JSON?
+- Should YAML be added later for easier authoring, or should JSON remain the only committed format?
 - Should PCBHelper own a tiny expression language for measurements, or only offer named measurement kinds?
 - Should ngspice be optional local dependency, bundled adapter, or documented prerequisite?
 - How should manufacturer/datasheet SPICE models be tracked without committing questionable license material?

@@ -17,6 +17,7 @@ var routingService = new RoutingService(projectDiscovery);
 var routingWorkflow = new RoutingWorkflowService(routingService, checkRunner, changeReports);
 var schematicService = new SchematicAuthoringService(projectDiscovery);
 var schematicWorkflow = new SchematicAuthoringWorkflowService(schematicService, checkRunner, changeReports);
+var testSpecService = new TestSpecService(projectDiscovery);
 
 var app = new CliApp(
     doctor,
@@ -27,6 +28,7 @@ var app = new CliApp(
     componentWorkflow,
     routingWorkflow,
     schematicWorkflow,
+    testSpecService,
     new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow, routingWorkflow, schematicWorkflow),
     new BoardInspectionService(projectDiscovery),
     new CheckSummaryService(checkRunner),
@@ -56,6 +58,7 @@ public sealed class CliApp
     private readonly ComponentValueWorkflowService _componentWorkflow;
     private readonly RoutingWorkflowService _routingWorkflow;
     private readonly SchematicAuthoringWorkflowService _schematicWorkflow;
+    private readonly TestSpecService _testSpecService;
     private readonly ChangeReviewService _changeReview;
     private readonly BoardInspectionService _boardInspection;
     private readonly CheckSummaryService _checkSummary;
@@ -74,6 +77,7 @@ public sealed class CliApp
         ComponentValueWorkflowService componentWorkflow,
         RoutingWorkflowService routingWorkflow,
         SchematicAuthoringWorkflowService schematicWorkflow,
+        TestSpecService testSpecService,
         ChangeReviewService changeReview,
         BoardInspectionService boardInspection,
         CheckSummaryService checkSummary,
@@ -91,6 +95,7 @@ public sealed class CliApp
         _componentWorkflow = componentWorkflow;
         _routingWorkflow = routingWorkflow;
         _schematicWorkflow = schematicWorkflow;
+        _testSpecService = testSpecService;
         _changeReview = changeReview;
         _boardInspection = boardInspection;
         _checkSummary = checkSummary;
@@ -142,6 +147,9 @@ public sealed class CliApp
             "connect-schematic-pins" => await RunConnectSchematicPinsAsync(positional, json, cancellationToken),
             "add-net-label" => await RunAddNetLabelAsync(positional, json, cancellationToken),
             "update-pcb-from-schematic" => await RunUpdatePcbFromSchematicAsync(positional, json, cancellationToken),
+            "list-tests" => RunListTests(positional, json),
+            "validate-tests" => RunValidateTests(positional, json),
+            "evaluate-test-results" => RunEvaluateTestResults(positional, json),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "check-summary" => await RunCheckSummaryAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
@@ -643,6 +651,51 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private int RunListTests(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<TestSpecListResult>.Fail("list-tests requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _testSpecService.ListTests(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunValidateTests(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<TestSpecValidationResult>.Fail("validate-tests requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _testSpecService.ValidateTests(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunEvaluateTestResults(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<TestEvaluationResult>.Fail("evaluate-test-results requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var results = GetOption(args, "--results");
+        if (results is null)
+        {
+            Write(ToolResponse<TestEvaluationResult>.Fail("evaluate-test-results requires --results.", "TEST_RESULTS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _testSpecService.EvaluateResults(args[1], results);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
     private int RunSummary(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 2)
@@ -891,6 +944,9 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper connect-schematic-pins <project-path> --from <ref.pin|ref:pin> --to <ref.pin|ref:pin> [--net <name>] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper update-pcb-from-schematic <project-path> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper list-tests <project-path> [--json]");
+        Console.WriteLine("  pcbhelper validate-tests <project-path> [--json]");
+        Console.WriteLine("  pcbhelper evaluate-test-results <project-path> --results <path> [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper check-summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");

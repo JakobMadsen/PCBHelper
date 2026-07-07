@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "tests": [
+    {
+      "id": "filter_passband_100hz",
+      "type": "simulation.ac",
+      "description": "Passband gain should be close to unity at 100 Hz.",
+      "measurements": [
+        {
+          "name": "gain_at_100hz_db",
+          "kind": "gainDb",
+          "unit": "dB"
+        }
+      ],
+      "asserts": [
+        {
+          "measurement": "gain_at_100hz_db",
+          "between": [
+            -3.0,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filter_rejects_10khz",
+      "type": "simulation.ac",
+      "description": "Stopband gain should be attenuated at 10 kHz.",
+      "measurements": [
+        {
+          "name": "gain_at_10khz_db",
+          "kind": "gainDb",
+          "unit": "dB"
+        },
+        {
+          "name": "bias_v",
+          "kind": "voltage",
+          "unit": "V"
+        }
+      ],
+      "asserts": [
+        {
+          "measurement": "gain_at_10khz_db",
+          "lessThan": -20.0
+        },
+        {
+          "measurement": "bias_v",
+          "equals": 1.65,
+          "tolerance": 0.05
+        }
+      ]
+    }
+  ]
+}

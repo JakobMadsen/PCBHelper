@@ -79,6 +79,9 @@ First exposed tools:
 - `export_manufacturing_zip`
 - `export_bom`
 - `export_position_files`
+- `list_test_specs`
+- `validate_test_specs`
+- `evaluate_test_results`
 - `open_project_in_kicad`
 - `get_kicad_gui_capabilities`
 - `refresh_project_in_kicad`
@@ -91,5 +94,7 @@ Real mutation tools create `.pcbhelper/changes/<change-id>/change.json` so the h
 Routing tools are primitive V1 operations. They inspect tracks/vias and can add/delete straight segments or through vias; they do not autoroute.
 
 Schematic authoring tools are primitive V1 operations. They can place approved catalog symbols, set symbol fields, connect known pins, add labels, and create missing template footprints from the schematic; they do not synthesize arbitrary KiCad libraries.
+
+Simulation assertion tools are deterministic V0 operations. They read JSON test specs from `.pcbhelper/tests/*.json` and evaluate external measurement result JSON files; they do not run ngspice or KiCad SPICE export yet.
 
 Current KiCad 10.0.4 Windows builds tested here do not expose `kicad-cli api-server`. PCBHelper therefore reports `KICAD_IPC_UNAVAILABLE` for live GUI refresh/focus instead of pretending that file edits were pushed into the running KiCad window. The fallback is to reload or reopen the project in KiCad.

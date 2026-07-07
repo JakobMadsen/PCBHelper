@@ -24,6 +24,11 @@ internal sealed class TestFixture : IDisposable
         return CopyFixture("blank-authoring");
     }
 
+    public static TestFixture CopySimulationAssertions()
+    {
+        return CopyFixture("simulation-assertions");
+    }
+
     private static TestFixture CopyFixture(string fixtureName)
     {
         var source = System.IO.Path.Combine(RepoRoot.Path, "fixtures", fixtureName);
@@ -46,6 +51,11 @@ internal sealed class TestFixture : IDisposable
         foreach (var file in Directory.GetFiles(source))
         {
             File.Copy(file, System.IO.Path.Combine(destination, System.IO.Path.GetFileName(file)));
+        }
+
+        foreach (var directory in Directory.GetDirectories(source))
+        {
+            CopyDirectory(directory, System.IO.Path.Combine(destination, System.IO.Path.GetFileName(directory)));
         }
     }
 }

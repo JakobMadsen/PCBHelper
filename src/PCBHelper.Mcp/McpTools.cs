@@ -490,6 +490,27 @@ public static class McpTools
         return Services.ExportService.ExportPositionFilesAsync(projectPath, cancellationToken);
     }
 
+    [McpServerTool(Name = "list_test_specs"), Description("List PCBHelper assertion test specs from .pcbhelper/tests/*.json.")]
+    public static ToolResponse<TestSpecListResult> ListTestSpecs(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.TestSpecService.ListTests(projectPath);
+    }
+
+    [McpServerTool(Name = "validate_test_specs"), Description("Validate PCBHelper assertion test specs without running a simulator.")]
+    public static ToolResponse<TestSpecValidationResult> ValidateTestSpecs(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.TestSpecService.ValidateTests(projectPath);
+    }
+
+    [McpServerTool(Name = "evaluate_test_results"), Description("Evaluate external measurement results against PCBHelper assertion test specs.")]
+    public static ToolResponse<TestEvaluationResult> EvaluateTestResults(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Path to a JSON measurement result file.")] string resultsPath)
+    {
+        return Services.TestSpecService.EvaluateResults(projectPath, resultsPath);
+    }
     [McpServerTool(Name = "open_project_in_kicad"), Description("Open the KiCad project in the local KiCad GUI.")]
     public static ToolResponse<OpenProjectResult> OpenProjectInKiCad(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
@@ -557,6 +578,8 @@ internal static class Services
     public static SchematicAuthoringWorkflowService SchematicWorkflow { get; } = new(SchematicService, CheckRunner, ChangeReports);
 
     public static ChangeReviewService ChangeReview { get; } = new(ProjectDiscovery, ChangeReports, GeometryWorkflow, ComponentWorkflow, RoutingWorkflow, SchematicWorkflow);
+
+    public static TestSpecService TestSpecService { get; } = new(ProjectDiscovery);
 
     public static CheckSummaryService CheckSummary { get; } = new(CheckRunner);
 

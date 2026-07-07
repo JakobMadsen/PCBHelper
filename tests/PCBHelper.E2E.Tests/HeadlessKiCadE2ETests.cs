@@ -417,6 +417,38 @@ public sealed class HeadlessKiCadE2ETests
         Assert.NotEmpty(checks.EnumerateArray());
     }
 
+    [Fact]
+    public async Task Simulation_Assertion_Fixture_Evaluates_External_Measurements()
+    {
+        using var fixture = TestFixture.CopySimulationAssertions();
+        var passResults = Path.Combine(fixture.Path, "measurements-pass.json");
+        var failResults = Path.Combine(fixture.Path, "measurements-fail.json");
+
+        var validate = await RunCliAsync("validate-tests", fixture.Path, "--json");
+        Assert.Equal(0, validate.ExitCode);
+
+        var pass = await RunCliAsync("evaluate-test-results", fixture.Path, "--results", passResults, "--json");
+        Assert.Equal(0, pass.ExitCode);
+        using (var document = JsonDocument.Parse(pass.StandardOutput))
+        {
+            Assert.True(document.RootElement.GetProperty("data").GetProperty("passed").GetBoolean());
+        }
+
+        var fail = await RunCliAsync("evaluate-test-results", fixture.Path, "--results", failResults, "--json");
+        Assert.NotEqual(0, fail.ExitCode);
+        using (var document = JsonDocument.Parse(fail.StandardOutput))
+        {
+            var root = document.RootElement;
+            Assert.Equal("TEST_ASSERTIONS_FAILED", root.GetProperty("error").GetProperty("code").GetString());
+            Assert.Equal(1, root.GetProperty("data").GetProperty("failedAssertionCount").GetInt32());
+            Assert.Contains(
+                root.GetProperty("data").GetProperty("tests").EnumerateArray()
+                    .SelectMany(test => test.GetProperty("assertions").EnumerateArray()),
+                assertion => assertion.GetProperty("measurement").GetString() == "gain_at_10khz_db"
+                    && assertion.GetProperty("passed").GetBoolean() == false);
+        }
+    }
+
     private static async Task<ProcessResult> RunCliAsync(params string[] args)
     {
         var project = Path.Combine(RepoRoot.Path, "src", "PCBHelper.Cli", "PCBHelper.Cli.csproj");

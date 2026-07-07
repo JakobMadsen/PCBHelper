@@ -1,0 +1,22 @@
+{
+  "measurements": [
+    {
+      "name": "gain_at_100hz_db",
+      "value": -0.72,
+      "unit": "dB",
+      "source": "fixture"
+    },
+    {
+      "name": "gain_at_10khz_db",
+      "value": -24.5,
+      "unit": "dB",
+      "source": "fixture"
+    },
+    {
+      "name": "bias_v",
+      "value": 1.67,
+      "unit": "V",
+      "source": "fixture"
+    }
+  ]
+}

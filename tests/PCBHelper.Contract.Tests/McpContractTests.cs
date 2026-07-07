@@ -66,6 +66,9 @@ public sealed class McpContractTests
         Assert.Contains("export_manufacturing_zip", toolNames);
         Assert.Contains("export_bom", toolNames);
         Assert.Contains("export_position_files", toolNames);
+        Assert.Contains("list_test_specs", toolNames);
+        Assert.Contains("validate_test_specs", toolNames);
+        Assert.Contains("evaluate_test_results", toolNames);
         Assert.Contains("open_project_in_kicad", toolNames);
         Assert.Contains("get_kicad_gui_capabilities", toolNames);
         Assert.Contains("refresh_project_in_kicad", toolNames);

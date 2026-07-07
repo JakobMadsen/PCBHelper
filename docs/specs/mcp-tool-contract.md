@@ -564,6 +564,56 @@ Outputs:
 
 First implementation note: PCB update lite preserves existing board placement/routing and creates only missing template footprints. It does not route, annotate, or run arbitrary KiCad library lookup.
 
+## Simulation Assertion Tools
+
+### `list_test_specs`
+
+List JSON assertion test specs under `.pcbhelper/tests/*.json`.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- tests directory
+- files
+- test ids
+- test counts
+
+### `validate_test_specs`
+
+Validate JSON assertion test specs without running a simulator.
+
+Inputs:
+
+- `project_path`
+
+Outputs:
+
+- validation status
+- file count
+- test count
+- diagnostics
+
+Stable errors include `TEST_SPEC_INVALID`, `TEST_TYPE_UNSUPPORTED`, and `TEST_MEASUREMENT_NOT_FOUND`.
+
+### `evaluate_test_results`
+
+Evaluate external measurement JSON against validated test specs.
+
+Inputs:
+
+- `project_path`
+- `results_path`
+
+Outputs:
+
+- normalized measurements
+- per-test assertion results
+- pass/fail counts
+
+First implementation note: V0 evaluates external measurement files only. It does not run ngspice, export KiCad SPICE netlists, or mutate project files. Assertion failures return stable error code `TEST_ASSERTIONS_FAILED` with result data.
 ## Visual Review Tools
 
 ### `highlight_net`

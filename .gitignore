@@ -38,4 +38,9 @@ drill/
 
 # Local scratch
 .scratch/
-.pcbhelper/
+.pcbhelper/*
+!.pcbhelper/tests/
+!.pcbhelper/tests/**
+**/.pcbhelper/*
+!**/.pcbhelper/tests/
+!**/.pcbhelper/tests/**

@@ -201,6 +201,8 @@ public sealed class CliContractTests
     [InlineData("list-tracks")]
     [InlineData("list-vias")]
     [InlineData("list-schematic-symbols")]
+    [InlineData("list-tests")]
+    [InlineData("validate-tests")]
     [InlineData("check-summary")]
     [InlineData("export-bom")]
     [InlineData("export-position-files")]
@@ -279,6 +281,41 @@ public sealed class CliContractTests
         }
     }
 
+    [Fact]
+    public async Task Test_Assertion_Commands_Return_Stable_Json_Envelope()
+    {
+        using var fixture = TestFixture.CopySimulationAssertions();
+        var passResults = Path.Combine(fixture.Path, "measurements-pass.json");
+        var failResults = Path.Combine(fixture.Path, "measurements-fail.json");
+
+        foreach (var result in new[]
+        {
+            await RunCliAsync("list-tests", fixture.Path, "--json"),
+            await RunCliAsync("validate-tests", fixture.Path, "--json"),
+            await RunCliAsync("evaluate-test-results", fixture.Path, "--results", passResults, "--json")
+        })
+        {
+            Assert.Equal(0, result.ExitCode);
+            Assert.False(string.IsNullOrWhiteSpace(result.StandardOutput), result.StandardError);
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            var root = document.RootElement;
+            Assert.True(root.TryGetProperty("success", out _));
+            Assert.True(root.TryGetProperty("summary", out _));
+            Assert.True(root.TryGetProperty("data", out _));
+            Assert.True(root.TryGetProperty("warnings", out _));
+            Assert.True(root.TryGetProperty("error", out _));
+        }
+
+        var failed = await RunCliAsync("evaluate-test-results", fixture.Path, "--results", failResults, "--json");
+
+        Assert.NotEqual(0, failed.ExitCode);
+        using var failedDocument = JsonDocument.Parse(failed.StandardOutput);
+        var failedRoot = failedDocument.RootElement;
+        Assert.False(failedRoot.GetProperty("success").GetBoolean());
+        Assert.Equal("TEST_ASSERTIONS_FAILED", failedRoot.GetProperty("error").GetProperty("code").GetString());
+        Assert.False(failedRoot.GetProperty("data").GetProperty("passed").GetBoolean());
+        Assert.Equal(1, failedRoot.GetProperty("data").GetProperty("failedAssertionCount").GetInt32());
+    }
     [Fact]
     public async Task SetValue_Real_ListChanges_ShowChange_And_Restore_Return_Stable_Envelopes()
     {
