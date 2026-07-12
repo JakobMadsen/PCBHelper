@@ -5,9 +5,10 @@ using PCBHelper.Core;
 var projectDiscovery = new ProjectDiscoveryService();
 var cliLocator = new KiCadCliLocator();
 var runner = new ProcessCommandRunner();
-var doctor = new KiCadDoctorService(cliLocator, runner);
+var doctor = new KiCadDoctorService(cliLocator, runner, new NgspiceLocator());
 var checkRunner = new CheckRunner(projectDiscovery, cliLocator, runner);
 var exportService = new ExportService(projectDiscovery, cliLocator, runner);
+var assemblyService = new AssemblyService(projectDiscovery, doctor, exportService);
 var geometry = new GeometryService(projectDiscovery);
 var changeReports = new ChangeReportService(projectDiscovery);
 var geometryWorkflow = new GeometryWorkflowService(geometry, checkRunner, changeReports);
@@ -15,9 +16,12 @@ var componentService = new ComponentService(projectDiscovery);
 var componentWorkflow = new ComponentValueWorkflowService(componentService, checkRunner, changeReports);
 var routingService = new RoutingService(projectDiscovery);
 var routingWorkflow = new RoutingWorkflowService(routingService, checkRunner, changeReports);
+var autoroutingService = new AutoroutingService(projectDiscovery, cliLocator, runner);
+var freeRoutingSetup = new FreeRoutingSetupService();
 var schematicService = new SchematicAuthoringService(projectDiscovery);
 var schematicWorkflow = new SchematicAuthoringWorkflowService(schematicService, checkRunner, changeReports);
 var testSpecService = new TestSpecService(projectDiscovery);
+var planRuntime = PCBHelperRuntime.ForCli();
 
 var app = new CliApp(
     doctor,
@@ -27,6 +31,8 @@ var app = new CliApp(
     geometryWorkflow,
     componentWorkflow,
     routingWorkflow,
+    autoroutingService,
+    freeRoutingSetup,
     schematicWorkflow,
     testSpecService,
     new ChangeReviewService(projectDiscovery, changeReports, geometryWorkflow, componentWorkflow, routingWorkflow, schematicWorkflow),
@@ -39,7 +45,13 @@ var app = new CliApp(
         projectDiscovery,
         doctor,
         exportService),
-    new OpenKiCadService(projectDiscovery, new KiCadExecutableLocator(cliLocator), new ProcessStarter()));
+    assemblyService,
+    new OpenKiCadService(projectDiscovery, new KiCadExecutableLocator(cliLocator), new ProcessStarter()),
+    planRuntime.Plans,
+    planRuntime.Transactions,
+    planRuntime.Simulations,
+    planRuntime.Releases,
+    planRuntime.KiCadSimulationNetlists);
 
 return await app.RunAsync(args);
 
@@ -57,6 +69,8 @@ public sealed class CliApp
     private readonly GeometryWorkflowService _geometryWorkflow;
     private readonly ComponentValueWorkflowService _componentWorkflow;
     private readonly RoutingWorkflowService _routingWorkflow;
+    private readonly AutoroutingService _autorouting;
+    private readonly FreeRoutingSetupService _freeRoutingSetup;
     private readonly SchematicAuthoringWorkflowService _schematicWorkflow;
     private readonly TestSpecService _testSpecService;
     private readonly ChangeReviewService _changeReview;
@@ -66,7 +80,13 @@ public sealed class CliApp
     private readonly CheckRunner _checkRunner;
     private readonly ExportService _exportService;
     private readonly PackageService _packageService;
+    private readonly AssemblyService _assemblyService;
     private readonly OpenKiCadService _openKiCad;
+    private readonly DesignPlanService _designPlans;
+    private readonly ProjectTransactionService _transactions;
+    private readonly SimulationService _simulations;
+    private readonly PcbWayReleaseService _releases;
+    private readonly KiCadSimulationNetlistService _kicadSimulationNetlists;
 
     public CliApp(
         KiCadDoctorService doctor,
@@ -76,6 +96,8 @@ public sealed class CliApp
         GeometryWorkflowService geometryWorkflow,
         ComponentValueWorkflowService componentWorkflow,
         RoutingWorkflowService routingWorkflow,
+        AutoroutingService autorouting,
+        FreeRoutingSetupService freeRoutingSetup,
         SchematicAuthoringWorkflowService schematicWorkflow,
         TestSpecService testSpecService,
         ChangeReviewService changeReview,
@@ -85,7 +107,13 @@ public sealed class CliApp
         CheckRunner checkRunner,
         ExportService exportService,
         PackageService packageService,
-        OpenKiCadService openKiCad)
+        AssemblyService assemblyService,
+        OpenKiCadService openKiCad,
+        DesignPlanService designPlans,
+        ProjectTransactionService transactions,
+        SimulationService simulations,
+        PcbWayReleaseService releases,
+        KiCadSimulationNetlistService kicadSimulationNetlists)
     {
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
@@ -94,6 +122,8 @@ public sealed class CliApp
         _geometryWorkflow = geometryWorkflow;
         _componentWorkflow = componentWorkflow;
         _routingWorkflow = routingWorkflow;
+        _autorouting = autorouting;
+        _freeRoutingSetup = freeRoutingSetup;
         _schematicWorkflow = schematicWorkflow;
         _testSpecService = testSpecService;
         _changeReview = changeReview;
@@ -103,7 +133,13 @@ public sealed class CliApp
         _checkRunner = checkRunner;
         _exportService = exportService;
         _packageService = packageService;
+        _assemblyService = assemblyService;
         _openKiCad = openKiCad;
+        _designPlans = designPlans;
+        _transactions = transactions;
+        _simulations = simulations;
+        _releases = releases;
+        _kicadSimulationNetlists = kicadSimulationNetlists;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -137,31 +173,146 @@ public sealed class CliApp
             "list-tracks" => RunListTracks(positional, json),
             "list-vias" => RunListVias(positional, json),
             "get-net-routing" => RunGetNetRouting(positional, json),
+            "list-unrouted-connections" => RunListUnroutedConnections(positional, json),
+            "validate-track-clearance" => RunValidateTrackClearance(positional, json),
             "add-track" => await RunAddTrackAsync(positional, json, cancellationToken),
+            "add-track-polyline" => await RunAddTrackPolylineAsync(positional, json, cancellationToken),
             "delete-track" => await RunDeleteTrackAsync(positional, json, cancellationToken),
             "add-via" => await RunAddViaAsync(positional, json, cancellationToken),
             "delete-via" => await RunDeleteViaAsync(positional, json, cancellationToken),
+            "setup-freerouting" => await RunSetupFreeRoutingAsync(positional, json, cancellationToken),
+            "autoroute-board" => await RunAutorouteBoardAsync(positional, json, cancellationToken),
             "list-schematic-symbols" => RunListSchematicSymbols(positional, json),
             "create-schematic-symbol" => await RunCreateSchematicSymbolAsync(positional, json, cancellationToken),
             "set-symbol-field" => await RunSetSymbolFieldAsync(positional, json, cancellationToken),
             "connect-schematic-pins" => await RunConnectSchematicPinsAsync(positional, json, cancellationToken),
             "add-net-label" => await RunAddNetLabelAsync(positional, json, cancellationToken),
+            "delete-net-label-by-uuid" => await RunDeleteNetLabelByUuidAsync(positional, json, cancellationToken),
+            "delete-net-label" => await RunDeleteNetLabelAsync(positional, json, cancellationToken),
+            "delete-schematic-wire-by-uuid" => await RunDeleteSchematicWireByUuidAsync(positional, json, cancellationToken),
+            "delete-schematic-wire" => await RunDeleteSchematicWireAsync(positional, json, cancellationToken),
             "update-pcb-from-schematic" => await RunUpdatePcbFromSchematicAsync(positional, json, cancellationToken),
+            "regenerate-board-footprint" => await RunRegenerateBoardFootprintAsync(positional, json, cancellationToken),
             "list-tests" => RunListTests(positional, json),
             "validate-tests" => RunValidateTests(positional, json),
             "evaluate-test-results" => RunEvaluateTestResults(positional, json),
+            "simulation" => await RunSimulationAsync(positional, json, cancellationToken),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "check-summary" => await RunCheckSummaryAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
             "export-bom" => await RunExportBomAsync(positional, json, cancellationToken),
             "export-position-files" => await RunExportPositionFilesAsync(positional, json, cancellationToken),
             "package" => await RunPackageAsync(positional, json, cancellationToken),
+            "export-assembly-bom" => await RunExportAssemblyBomAsync(positional, json, cancellationToken),
+            "export-cpl" => await RunExportCplAsync(positional, json, cancellationToken),
+            "validate-assembly-package" => RunValidateAssemblyPackage(positional, json),
+            "package-assembly" => await RunPackageAssemblyAsync(positional, json, cancellationToken),
+            "generate-pcbway-release" => await RunPcbWayReleaseAsync(positional, json, cancellationToken),
+            "validate-release-requirements" => RunReleaseRequirements(positional, json),
+            "export-kicad-spice-netlist" => await RunKiCadSpiceNetlistAsync(positional, json, cancellationToken),
             "open" => RunOpen(positional, json),
             "kicad-gui-status" => await RunGuiStatusAsync(positional, json, cancellationToken),
             "refresh-gui" => await RunRefreshGuiAsync(positional, json, cancellationToken),
             "focus-component" => await RunFocusComponentAsync(positional, json, cancellationToken),
+            "plan" => await RunPlanAsync(positional, json, cancellationToken),
+            "transaction" => await RunTransactionAsync(positional, json, cancellationToken),
             _ => UnknownCommand(positional[0])
         };
+    }
+
+    private async Task<int> RunPcbWayReleaseAsync(IReadOnlyList<string> args,bool json,CancellationToken cancellationToken)
+    { if(args.Count<2){Write(ToolResponse<object>.Fail("generate-pcbway-release requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=await _releases.GenerateAsync(args[1],cancellationToken);Write(result,json);return result.Success?0:1; }
+    private int RunReleaseRequirements(IReadOnlyList<string> args,bool json)
+    { if(args.Count<2){Write(ToolResponse<object>.Fail("validate-release-requirements requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=_releases.ValidateRequirements(args[1]);Write(result,json);return result.Data?.Passed==true?0:1; }
+    private async Task<int> RunKiCadSpiceNetlistAsync(IReadOnlyList<string> args,bool json,CancellationToken cancellationToken)
+    { if(args.Count<2){Write(ToolResponse<object>.Fail("export-kicad-spice-netlist requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=await _kicadSimulationNetlists.ExportAsync(args[1],cancellationToken);Write(result,json);return result.Success?0:1; }
+
+    private async Task<int> RunSimulationAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2 || args[1] is not ("status" or "validate" or "run" or "report"))
+        {
+            Write(ToolResponse<object>.Fail("Usage: pcbhelper simulation status|validate|run|report [<project>]", "SIMULATION_ARGS_REQUIRED"), json);
+            return 2;
+        }
+        if (args[1] == "status")
+        {
+            Write(ToolResponse<SimulationCapabilities>.Ok("Simulation capability status.", _simulations.GetCapabilities()), json);
+            return _simulations.GetCapabilities().Available ? 0 : 1;
+        }
+        if (args.Count < 3)
+        {
+            Write(ToolResponse<object>.Fail("Simulation command requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+        if (args[1] == "validate")
+        {
+            var result = _simulations.Validate(args[2], GetOption(args, "--test")); Write(result, json); return result.Success ? 0 : 1;
+        }
+        if (args[1] == "run")
+        {
+            var result = await _simulations.RunAsync(args[2], GetOption(args, "--test"), cancellationToken); Write(result, json);
+            return result.Success && result.Data?.Passed == true ? 0 : 1;
+        }
+        var run = GetOption(args, "--run");
+        if (run is null) { Write(ToolResponse<object>.Fail("simulation report requires --run.", "SIMULATION_RUN_REQUIRED"), json); return 2; }
+        var report = _simulations.GetReport(args[2], run); Write(report, json); return report.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunPlanAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 3 || args[1] is not ("validate" or "preview" or "apply"))
+        {
+            Write(ToolResponse<object>.Fail("Usage: pcbhelper plan validate|preview|apply <project> --file <plan.json>", "PLAN_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var file = GetOption(args, "--file");
+        if (file is null || !File.Exists(file))
+        {
+            Write(ToolResponse<object>.Fail("A readable --file <plan.json> is required.", "PLAN_FILE_NOT_FOUND"), json);
+            return 2;
+        }
+
+        var plan = await File.ReadAllTextAsync(file, cancellationToken);
+        if (args[1] == "validate")
+        {
+            var result = _designPlans.Validate(args[2], plan); Write(result, json); return result.Success ? 0 : 1;
+        }
+        if (args[1] == "preview")
+        {
+            var result = _designPlans.Preview(args[2], plan); Write(result, json); return result.Success ? 0 : 1;
+        }
+
+        var expectedHash = GetOption(args, "--expected-hash");
+        if (expectedHash is null)
+        {
+            Write(ToolResponse<object>.Fail("plan apply requires --expected-hash from preview.", "PLAN_HASH_REQUIRED"), json);
+            return 2;
+        }
+        var decisions = GetOption(args, "--acknowledged-decisions")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var applied = await _designPlans.ApplyAsync(args[2], plan, expectedHash, decisions, cancellationToken);
+        Write(applied, json); return applied.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunTransactionAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 3 || args[1] is not ("show" or "restore"))
+        {
+            Write(ToolResponse<object>.Fail("Usage: pcbhelper transaction show|restore <project> --id <transaction-id>", "TRANSACTION_ARGS_REQUIRED"), json);
+            return 2;
+        }
+        var id = GetOption(args, "--id");
+        if (id is null)
+        {
+            Write(ToolResponse<object>.Fail("transaction requires --id.", "TRANSACTION_ID_REQUIRED"), json);
+            return 2;
+        }
+        if (args[1] == "show")
+        {
+            var result = _transactions.Get(args[2], id); Write(result, json); return result.Success ? 0 : 1;
+        }
+        var restored = await _transactions.RestoreAsync(args[2], id, cancellationToken);
+        Write(restored, json); return restored.Success ? 0 : 1;
     }
 
     private async Task<int> RunDoctorAsync(bool json, CancellationToken cancellationToken)
@@ -450,6 +601,41 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private int RunListUnroutedConnections(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<UnroutedConnectionListResult>.Fail("list-unrouted-connections requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _routingWorkflow.ListUnroutedConnections(args[1], GetOption(args, "--net"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunValidateTrackClearance(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<RoutingClearanceValidationResult>.Fail("validate-track-clearance requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        var points = GetOption(args, "--points");
+        var layer = GetOption(args, "--layer");
+        if (net is null || points is null || layer is null || !TryGetDoubleOption(args, "--width", out var width))
+        {
+            Write(ToolResponse<RoutingClearanceValidationResult>.Fail("validate-track-clearance requires --net, --points, --layer, and --width.", "ROUTING_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _routingWorkflow.ValidateTrackClearance(args[1], net, points, layer, width);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private async Task<int> RunAddTrackAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
     {
         if (args.Count < 2)
@@ -472,6 +658,28 @@ public sealed class CliApp
         }
 
         var result = await _routingWorkflow.AddTrackAsync(args[1], net, startX, startY, endX, endY, layer, width, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunAddTrackPolylineAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("add-track-polyline requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        var points = GetOption(args, "--points");
+        var layer = GetOption(args, "--layer");
+        if (net is null || points is null || layer is null || !TryGetDoubleOption(args, "--width", out var width))
+        {
+            Write(ToolResponse<RoutingMutationResult>.Fail("add-track-polyline requires --net, --points, --layer, and --width.", "ROUTING_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _routingWorkflow.AddTrackPolylineAsync(args[1], net, points, layer, width, HasFlag(args, "--dry-run"), cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -541,6 +749,26 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private async Task<int> RunSetupFreeRoutingAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        var result = await _freeRoutingSetup.SetupAsync(HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunAutorouteBoardAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<AutorouteBoardResult>.Fail("autoroute-board requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _autorouting.AutorouteBoardAsync(args[1], HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private int RunListSchematicSymbols(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 2)
@@ -570,7 +798,8 @@ public sealed class CliApp
             return 2;
         }
 
-        var result = await _schematicWorkflow.CreateSymbolAsync(args[1], symbol, reference, x, y, GetOption(args, "--value"), GetOption(args, "--footprint"), HasFlag(args, "--dry-run"), cancellationToken);
+        var unit = TryGetIntOption(args, "--unit", out var parsedUnit) ? parsedUnit : 1;
+        var result = await _schematicWorkflow.CreateSymbolAsync(args[1], symbol, reference, x, y, GetOption(args, "--value"), GetOption(args, "--footprint"), unit, HasFlag(args, "--dry-run"), cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -638,6 +867,90 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private async Task<int> RunDeleteNetLabelByUuidAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-net-label-by-uuid requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var uuid = GetOption(args, "--uuid");
+        if (uuid is null)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-net-label-by-uuid requires --uuid.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.DeleteNetLabelByUuidAsync(args[1], uuid, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunDeleteNetLabelAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-net-label requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var net = GetOption(args, "--net");
+        if (net is null || !TryGetDoubleOption(args, "--x", out var x) || !TryGetDoubleOption(args, "--y", out var y))
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-net-label requires --net, --x, and --y.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var tolerance = TryGetDoubleOption(args, "--tolerance", out var parsedTolerance) ? parsedTolerance : (double?)null;
+        var result = await _schematicWorkflow.DeleteNetLabelAsync(args[1], net, x, y, tolerance, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunDeleteSchematicWireByUuidAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-schematic-wire-by-uuid requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var uuid = GetOption(args, "--uuid");
+        if (uuid is null)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-schematic-wire-by-uuid requires --uuid.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.DeleteSchematicWireByUuidAsync(args[1], uuid, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunDeleteSchematicWireAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-schematic-wire requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        if (!TryGetDoubleOption(args, "--x1", out var x1)
+            || !TryGetDoubleOption(args, "--y1", out var y1)
+            || !TryGetDoubleOption(args, "--x2", out var x2)
+            || !TryGetDoubleOption(args, "--y2", out var y2))
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("delete-schematic-wire requires --x1, --y1, --x2, and --y2.", "SCHEMATIC_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var tolerance = TryGetDoubleOption(args, "--tolerance", out var parsedTolerance) ? parsedTolerance : (double?)null;
+        var result = await _schematicWorkflow.DeleteSchematicWireAsync(args[1], x1, y1, x2, y2, tolerance, HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private async Task<int> RunUpdatePcbFromSchematicAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
     {
         if (args.Count < 2)
@@ -647,6 +960,26 @@ public sealed class CliApp
         }
 
         var result = await _schematicWorkflow.UpdatePcbFromSchematicAsync(args[1], HasFlag(args, "--dry-run"), cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunRegenerateBoardFootprintAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("regenerate-board-footprint requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var reference = GetOption(args, "--ref");
+        if (reference is null)
+        {
+            Write(ToolResponse<SchematicMutationResult>.Fail("regenerate-board-footprint requires --ref.", "REFERENCE_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _schematicWorkflow.RegenerateBoardFootprintAsync(args[1], reference, HasFlag(args, "--dry-run"), cancellationToken);
         Write(result, json);
         return result.Success ? 0 : 1;
     }
@@ -696,6 +1029,7 @@ public sealed class CliApp
         Write(result, json);
         return result.Success ? 0 : 1;
     }
+
     private int RunSummary(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 2)
@@ -800,6 +1134,58 @@ public sealed class CliApp
         return result.Success ? 0 : 1;
     }
 
+    private async Task<int> RunExportAssemblyBomAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<AssemblyExportResult>.Fail("export-assembly-bom requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _assemblyService.ExportAssemblyBomAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunExportCplAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<AssemblyExportResult>.Fail("export-cpl requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _assemblyService.ExportCplAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private int RunValidateAssemblyPackage(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<AssemblyValidationResult>.Fail("validate-assembly-package requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _assemblyService.ValidateAssemblyPackage(args[1]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
+    private async Task<int> RunPackageAssemblyAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 2)
+        {
+            Write(ToolResponse<AssemblyPackageResult>.Fail("package-assembly requires <project-path>.", "PROJECT_PATH_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = await _assemblyService.CreatePcbWayAssemblyPackageAsync(args[1], cancellationToken);
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+
     private int RunOpen(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 2)
@@ -885,6 +1271,12 @@ public sealed class CliApp
         return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
+    private static bool TryGetIntOption(IReadOnlyList<string> args, string optionName, out int value)
+    {
+        var raw = GetOption(args, optionName);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
     private static bool HasFlag(IReadOnlyList<string> args, string flagName)
     {
         return args.Any(arg => arg.Equals(flagName, StringComparison.OrdinalIgnoreCase));
@@ -922,6 +1314,9 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper measure <project-path> --from <ref> --to <ref> [--json]");
         Console.WriteLine("  pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm> [--axis x|y] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper plan validate|preview <project-path> --file <plan.json> [--json]");
+        Console.WriteLine("  pcbhelper plan apply <project-path> --file <plan.json> --expected-hash <hash> [--acknowledged-decisions <ids>] [--json]");
+        Console.WriteLine("  pcbhelper transaction show|restore <project-path> --id <transaction-id> [--json]");
         Console.WriteLine("  pcbhelper restore-change <project-path> --change <change-id-or-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper list-changes <project-path> [--json]");
         Console.WriteLine("  pcbhelper show-change <project-path> --change <change-id-or-path> [--json]");
@@ -934,25 +1329,40 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper list-tracks <project-path> [--net <name-or-code>] [--json]");
         Console.WriteLine("  pcbhelper list-vias <project-path> [--net <name-or-code>] [--json]");
         Console.WriteLine("  pcbhelper get-net-routing <project-path> --net <name-or-code> [--json]");
+        Console.WriteLine("  pcbhelper list-unrouted-connections <project-path> [--net <name-or-code>] [--json]");
+        Console.WriteLine("  pcbhelper validate-track-clearance <project-path> --net <name-or-code> --points \"x1,y1;x2,y2;...\" --layer F.Cu|B.Cu --width <mm> [--json]");
         Console.WriteLine("  pcbhelper add-track <project-path> --net <name-or-code> --start-x <mm> --start-y <mm> --end-x <mm> --end-y <mm> --layer F.Cu|B.Cu --width <mm> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper add-track-polyline <project-path> --net <name-or-code> --points \"x1,y1;x2,y2;...\" --layer F.Cu|B.Cu --width <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper delete-track <project-path> --track <uuid-or-id> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper add-via <project-path> --net <name-or-code> --x <mm> --y <mm> --size <mm> --drill <mm> --layers F.Cu,B.Cu [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper delete-via <project-path> --via <uuid-or-id> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper setup-freerouting [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper autoroute-board <project-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper list-schematic-symbols <project-path> [--json]");
-        Console.WriteLine("  pcbhelper create-schematic-symbol <project-path> --symbol <catalog-id> --ref <ref> --x <mm> --y <mm> [--value <value>] [--footprint <id>] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper create-schematic-symbol <project-path> --symbol <catalog-id> --ref <ref> --x <mm> --y <mm> [--unit <n>] [--value <value>] [--footprint <id>] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper set-symbol-field <project-path> --ref <ref> --field <name> --value <value> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper connect-schematic-pins <project-path> --from <ref.pin|ref:pin> --to <ref.pin|ref:pin> [--net <name>] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper delete-net-label-by-uuid <project-path> --uuid <uuid> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper delete-net-label <project-path> --net <name> --x <mm> --y <mm> [--tolerance <mm>] [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper delete-schematic-wire-by-uuid <project-path> --uuid <uuid> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper delete-schematic-wire <project-path> --x1 <mm> --y1 <mm> --x2 <mm> --y2 <mm> [--tolerance <mm>] [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper update-pcb-from-schematic <project-path> [--dry-run] [--json]");
+        Console.WriteLine("  pcbhelper regenerate-board-footprint <project-path> --ref <ref> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper list-tests <project-path> [--json]");
         Console.WriteLine("  pcbhelper validate-tests <project-path> [--json]");
         Console.WriteLine("  pcbhelper evaluate-test-results <project-path> --results <path> [--json]");
+        Console.WriteLine("  pcbhelper simulation status|validate|run|report [<project-path>] [--test <id>] [--run <id>] [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper check-summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");
         Console.WriteLine("  pcbhelper export-bom <project-path> [--json]");
         Console.WriteLine("  pcbhelper export-position-files <project-path> [--json]");
         Console.WriteLine("  pcbhelper package <project-path> [--json]");
+        Console.WriteLine("  pcbhelper export-assembly-bom <project-path> [--json]");
+        Console.WriteLine("  pcbhelper export-cpl <project-path> [--json]");
+        Console.WriteLine("  pcbhelper validate-assembly-package <project-path> [--json]");
+        Console.WriteLine("  pcbhelper package-assembly <project-path> [--json]");
         Console.WriteLine("  pcbhelper open <project-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper kicad-gui-status <project-path> [--json]");
         Console.WriteLine("  pcbhelper refresh-gui <project-path> [--json]");

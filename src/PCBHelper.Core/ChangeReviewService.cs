@@ -81,7 +81,7 @@ public sealed class ChangeReviewService
                 : ToolResponse<object>.Fail(restored.Summary, restored.Error?.Code ?? "RESTORE_FAILED", restored.Error?.Message);
         }
 
-        if (report.Data.Operation is "add-track" or "delete-track" or "add-via" or "delete-via"
+        if (report.Data.Operation is "add-track" or "add-track-polyline" or "delete-track" or "add-via" or "delete-via"
             || (report.Data.Operation == "restore-change" && report.Data.RoutingItemKind is not null))
         {
             if (_routingWorkflow is null)

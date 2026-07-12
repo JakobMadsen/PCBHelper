@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "tests": [
+    {
+      "id": "rc_lowpass_response",
+      "type": "simulation.ac",
+      "description": "A 1 kohm / 1 uF low-pass should pass 100 Hz and attenuate 10 kHz.",
+      "circuit": { "source": "spice-file", "path": "simulation/filter.cir" },
+      "analysis": { "startHz": 10, "stopHz": 100000, "pointsPerDecade": 50 },
+      "stimuli": [
+        { "name": "IN", "kind": "ac-voltage", "positiveNet": "IN", "negativeNet": "0", "amplitudeV": 1 }
+      ],
+      "measurements": [
+        { "name": "gain_at_100hz_db", "kind": "gainDbAt", "inputNet": "IN", "outputNet": "OUT", "frequencyHz": 100, "unit": "dB" },
+        { "name": "gain_at_10khz_db", "kind": "gainDbAt", "inputNet": "IN", "outputNet": "OUT", "frequencyHz": 10000, "unit": "dB" },
+        { "name": "cutoff_frequency", "kind": "cutoffFrequency", "net": "OUT", "unit": "Hz" }
+      ],
+      "asserts": [
+        { "measurement": "gain_at_100hz_db", "between": [-3.0, 0.5] },
+        { "measurement": "gain_at_10khz_db", "lessThan": -30.0 },
+        { "measurement": "cutoff_frequency", "approximately": 159.15, "tolerance": 8.0 }
+      ]
+    }
+  ]
+}

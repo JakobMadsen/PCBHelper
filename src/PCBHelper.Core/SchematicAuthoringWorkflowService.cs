@@ -23,6 +23,11 @@ public sealed class SchematicAuthoringWorkflowService
         return CompleteMutationAsync(projectPath, _schematic.CreateSymbol(projectPath, symbol, reference, x, y, value, footprint, dryRun), cancellationToken);
     }
 
+    public Task<ToolResponse<SchematicMutationResult>> CreateSymbolAsync(string projectPath, string symbol, string reference, double x, double y, string? value, string? footprint, int unit, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        return CompleteMutationAsync(projectPath, _schematic.CreateSymbol(projectPath, symbol, reference, x, y, value, footprint, unit, dryRun), cancellationToken);
+    }
+
     public Task<ToolResponse<SchematicMutationResult>> SetSymbolFieldAsync(string projectPath, string reference, string field, string value, bool dryRun, CancellationToken cancellationToken = default)
     {
         return CompleteMutationAsync(projectPath, _schematic.SetSymbolField(projectPath, reference, field, value, dryRun), cancellationToken);
@@ -38,9 +43,34 @@ public sealed class SchematicAuthoringWorkflowService
         return CompleteMutationAsync(projectPath, _schematic.AddNetLabel(projectPath, net, x, y, dryRun), cancellationToken);
     }
 
+    public Task<ToolResponse<SchematicMutationResult>> DeleteNetLabelByUuidAsync(string projectPath, string uuid, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        return CompleteMutationAsync(projectPath, _schematic.DeleteNetLabelByUuid(projectPath, uuid, dryRun), cancellationToken);
+    }
+
+    public Task<ToolResponse<SchematicMutationResult>> DeleteNetLabelAsync(string projectPath, string net, double x, double y, double? toleranceMillimeters, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        return CompleteMutationAsync(projectPath, _schematic.DeleteNetLabel(projectPath, net, x, y, toleranceMillimeters, dryRun), cancellationToken);
+    }
+
+    public Task<ToolResponse<SchematicMutationResult>> DeleteSchematicWireByUuidAsync(string projectPath, string uuid, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        return CompleteMutationAsync(projectPath, _schematic.DeleteSchematicWireByUuid(projectPath, uuid, dryRun), cancellationToken);
+    }
+
+    public Task<ToolResponse<SchematicMutationResult>> DeleteSchematicWireAsync(string projectPath, double x1, double y1, double x2, double y2, double? toleranceMillimeters, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        return CompleteMutationAsync(projectPath, _schematic.DeleteSchematicWire(projectPath, x1, y1, x2, y2, toleranceMillimeters, dryRun), cancellationToken);
+    }
+
     public Task<ToolResponse<SchematicMutationResult>> UpdatePcbFromSchematicAsync(string projectPath, bool dryRun, CancellationToken cancellationToken = default)
     {
         return CompleteMutationAsync(projectPath, _schematic.UpdatePcbFromSchematic(projectPath, dryRun), cancellationToken);
+    }
+
+    public Task<ToolResponse<SchematicMutationResult>> RegenerateBoardFootprintAsync(string projectPath, string reference, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        return CompleteMutationAsync(projectPath, _schematic.RegenerateBoardFootprint(projectPath, reference, dryRun), cancellationToken);
     }
 
     public Task<ToolResponse<SchematicMutationResult>> RestoreFileSnapshotsAsync(ChangeReport report, bool dryRun, CancellationToken cancellationToken = default)

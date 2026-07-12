@@ -140,7 +140,27 @@ public sealed class TestSpecService
             result);
     }
 
-    private ToolResponse<LoadedTestSpecs> Load(string projectPath)
+    internal ToolResponse<LoadedTestSpecs> LoadSimulationTests(string projectPath, string? testId)
+    {
+        var loaded = Load(projectPath);
+        if (!loaded.Success || loaded.Data is null) return loaded;
+        var tests = loaded.Data.Tests.Where(item => item.Test.Type.StartsWith("simulation.", StringComparison.OrdinalIgnoreCase)
+            && (testId is null || item.Test.Id.Equals(testId, StringComparison.OrdinalIgnoreCase))).ToArray();
+        if (testId is not null && tests.Length == 0)
+            return ToolResponse<LoadedTestSpecs>.Fail($"Simulation test was not found: {testId}", "TEST_NOT_FOUND");
+        return ToolResponse<LoadedTestSpecs>.Ok($"Loaded {tests.Length} simulation test(s).", loaded.Data with { Tests = tests });
+    }
+
+    internal TestCaseEvaluation EvaluateTest(LoadedTestCase test, IReadOnlyList<TestMeasurementResult> measurements)
+    {
+        var byName = measurements.ToDictionary(static item => item.Name, StringComparer.OrdinalIgnoreCase);
+        var assertions = test.Test.Asserts.Select(assertion => byName.TryGetValue(assertion.Measurement, out var measurement)
+            ? EvaluateAssertion(assertion, measurement)
+            : TestAssertionEvaluation.Missing(assertion.Measurement)).ToArray();
+        return new TestCaseEvaluation(test.Test.Id, test.Test.Type, test.File, assertions.All(static item => item.Passed), assertions);
+    }
+
+    internal ToolResponse<LoadedTestSpecs> Load(string projectPath)
     {
         var project = _projectDiscovery.GetSummary(projectPath);
         if (!project.Success || project.Data is null)
@@ -402,13 +422,27 @@ public sealed record TestCaseSpec(
     string Type,
     string? Description,
     IReadOnlyList<TestMeasurementSpec> Measurements,
-    IReadOnlyList<TestAssertionSpec> Asserts)
+    IReadOnlyList<TestAssertionSpec> Asserts,
+    SimulationCircuitSpec? Circuit = null,
+    SimulationAnalysisSpec? Analysis = null,
+    IReadOnlyList<SimulationStimulusSpec>? StimuliInput = null)
 {
     public IReadOnlyList<TestMeasurementSpec> Measurements { get; init; } = Measurements ?? Array.Empty<TestMeasurementSpec>();
     public IReadOnlyList<TestAssertionSpec> Asserts { get; init; } = Asserts ?? Array.Empty<TestAssertionSpec>();
+    [JsonPropertyName("stimuli")]
+    public IReadOnlyList<SimulationStimulusSpec> Stimuli { get; init; } = StimuliInput ?? Array.Empty<SimulationStimulusSpec>();
 }
 
-public sealed record TestMeasurementSpec(string Name, string Kind, string? Unit);
+public sealed record TestMeasurementSpec(string Name, string Kind, string? Unit, string? Net = null, string? InputNet = null,
+    string? OutputNet = null, string? Source = null, double? FrequencyHz = null, double? TargetValue = null,
+    [property: JsonPropertyName("measurementTolerance")] double? MeasurementTolerance = null);
+
+public sealed record SimulationCircuitSpec(string Source, string? Path);
+public sealed record SimulationAnalysisSpec(double? StartHz = null, double? StopHz = null, int? PointsPerDecade = null,
+    double? StepSeconds = null, double? StopSeconds = null);
+public sealed record SimulationStimulusSpec(string Name, string Kind, string PositiveNet, string NegativeNet,
+    double? AmplitudeV = null, double? DcV = null, double? InitialV = null, double? PulsedV = null,
+    double? PulseWidthSeconds = null, double? PeriodSeconds = null);
 
 public sealed record TestAssertionSpec(
     string Measurement,

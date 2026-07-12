@@ -1,0 +1,36 @@
+name: Bug report
+description: Report reproducible PCBHelper behavior that is incorrect or unsafe.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach confidential PCB projects or credentials. Prefer a minimal fixture.
+  - type: input
+    id: version
+    attributes:
+      label: PCBHelper version or commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows, KiCad, .NET, and client versions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Sanitized logs or fixture

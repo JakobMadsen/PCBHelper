@@ -71,7 +71,7 @@ internal static partial class KiCadBoardParser
 
     public static string FormatNumber(double value)
     {
-        return value.ToString("0.###", CultureInfo.InvariantCulture);
+        return value.ToString("0.####", CultureInfo.InvariantCulture);
     }
 
     private static int FindMatchingParenthesis(string text, int openIndex)
@@ -168,23 +168,28 @@ internal static partial class KiCadBoardParser
             var padText = footprintText.Substring(padStart, padEnd - padStart + 1);
             var nameMatch = PadNameRegex().Match(padText);
             var typeMatch = PadTypeRegex().Match(padText);
+            var shapeMatch = PadShapeRegex().Match(padText);
             var atMatch = AtRegex().Match(padText);
-            var netMatch = PadNetRegex().Match(padText);
+            var sizeMatch = PadSizeRegex().Match(padText);
+            var net = ParseNetReference(padText);
             var pinFunctionMatch = PinFunctionRegex().Match(padText);
             var layersMatch = PadLayersRegex().Match(padText);
 
             pads.Add(new KiCadPad(
                 nameMatch.Success ? nameMatch.Groups["name"].Value : string.Empty,
                 typeMatch.Success ? typeMatch.Groups["type"].Value : null,
+                shapeMatch.Success ? shapeMatch.Groups["shape"].Value : null,
                 atMatch.Success ? double.Parse(atMatch.Groups["x"].Value, CultureInfo.InvariantCulture) : null,
                 atMatch.Success ? double.Parse(atMatch.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
+                sizeMatch.Success ? double.Parse(sizeMatch.Groups["x"].Value, CultureInfo.InvariantCulture) : null,
+                sizeMatch.Success ? double.Parse(sizeMatch.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
                 layersMatch.Success
                     ? layersMatch.Groups["layers"].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                         .Select(static layer => layer.Trim('"'))
                         .ToArray()
                     : Array.Empty<string>(),
-                netMatch.Success ? int.Parse(netMatch.Groups["code"].Value, CultureInfo.InvariantCulture) : null,
-                netMatch.Success ? netMatch.Groups["name"].Value : null,
+                net.Code,
+                net.Name,
                 pinFunctionMatch.Success ? pinFunctionMatch.Groups["pinfunction"].Value : null,
                 absoluteOffset + padStart,
                 padEnd - padStart + 1));
@@ -197,13 +202,41 @@ internal static partial class KiCadBoardParser
 
     private static IReadOnlyList<KiCadNet> ParseNets(string text)
     {
-        var firstFootprint = text.IndexOf("(footprint", StringComparison.Ordinal);
-        var declarationText = firstFootprint >= 0 ? text[..firstFootprint] : text;
-        return NetRegex().Matches(declarationText)
-            .Select(static match => new KiCadNet(
-                int.Parse(match.Groups["code"].Value, CultureInfo.InvariantCulture),
-                match.Groups["name"].Value))
+        var netsByName = new Dictionary<string, KiCadNet>(StringComparer.OrdinalIgnoreCase);
+        var usedCodes = new HashSet<int>();
+
+        foreach (Match match in NetRegex().Matches(text))
+        {
+            var name = NormalizeNetName(match.Groups["name"].Value);
+            if (name is null)
+            {
+                continue;
+            }
+
+            var code = int.Parse(match.Groups["code"].Value, CultureInfo.InvariantCulture);
+            usedCodes.Add(code);
+            if (!netsByName.ContainsKey(name))
+            {
+                netsByName[name] = new KiCadNet(code, name);
+            }
+        }
+
+        foreach (Match match in NamedNetReferenceRegex().Matches(text))
+        {
+            var name = NormalizeNetName(match.Groups["name"].Value);
+            if (name is null || netsByName.ContainsKey(name))
+            {
+                continue;
+            }
+
+            var code = NextAvailableNetCode(usedCodes);
+            usedCodes.Add(code);
+            netsByName[name] = new KiCadNet(code, name);
+        }
+
+        return netsByName.Values
             .OrderBy(static net => net.Code)
+            .ThenBy(static net => net.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
@@ -230,7 +263,7 @@ internal static partial class KiCadBoardParser
             var endMatch = EndRegex().Match(block);
             var widthMatch = WidthRegex().Match(block);
             var layerMatch = LayerRegex().Match(block);
-            var netMatch = NetCodeRegex().Match(block);
+            var net = ParseNetReference(block);
             var uuidMatch = UuidRegex().Match(block);
 
             segments.Add(new KiCadSegment(
@@ -242,7 +275,8 @@ internal static partial class KiCadBoardParser
                 endMatch.Success ? double.Parse(endMatch.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
                 widthMatch.Success ? double.Parse(widthMatch.Groups["width"].Value, CultureInfo.InvariantCulture) : null,
                 layerMatch.Success ? layerMatch.Groups["layer"].Value : null,
-                netMatch.Success ? int.Parse(netMatch.Groups["code"].Value, CultureInfo.InvariantCulture) : null,
+                net.Code,
+                net.Name,
                 start,
                 end - start + 1,
                 block));
@@ -276,7 +310,7 @@ internal static partial class KiCadBoardParser
             var sizeMatch = SizeRegex().Match(block);
             var drillMatch = DrillRegex().Match(block);
             var layersMatch = PadLayersRegex().Match(block);
-            var netMatch = NetCodeRegex().Match(block);
+            var net = ParseNetReference(block);
             var uuidMatch = UuidRegex().Match(block);
 
             vias.Add(new KiCadVia(
@@ -291,7 +325,8 @@ internal static partial class KiCadBoardParser
                         .Select(static layer => layer.Trim('"'))
                         .ToArray()
                     : Array.Empty<string>(),
-                netMatch.Success ? int.Parse(netMatch.Groups["code"].Value, CultureInfo.InvariantCulture) : null,
+                net.Code,
+                net.Name,
                 start,
                 end - start + 1,
                 block));
@@ -329,6 +364,9 @@ internal static partial class KiCadBoardParser
     [GeneratedRegex(@"\(size\s+(?<size>-?\d+(?:\.\d+)?)\)")]
     private static partial Regex SizeRegex();
 
+    [GeneratedRegex(@"\(size\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex PadSizeRegex();
+
     [GeneratedRegex(@"\(drill\s+(?<drill>-?\d+(?:\.\d+)?)\)")]
     private static partial Regex DrillRegex();
 
@@ -338,24 +376,67 @@ internal static partial class KiCadBoardParser
     [GeneratedRegex(@"\(net\s+(?<code>\d+)\)")]
     private static partial Regex NetCodeRegex();
 
+    [GeneratedRegex(@"\(net\s+""(?<name>[^""]*)""\)")]
+    private static partial Regex NamedNetReferenceRegex();
+
     [GeneratedRegex(@"\(pad\s+""(?<name>[^""]*)""")]
     private static partial Regex PadNameRegex();
 
     [GeneratedRegex(@"\(pad\s+""[^""]*""\s+(?<type>\S+)")]
     private static partial Regex PadTypeRegex();
 
+    [GeneratedRegex(@"\(pad\s+""[^""]*""\s+\S+\s+(?<shape>\S+)")]
+    private static partial Regex PadShapeRegex();
+
     [GeneratedRegex(@"\(layers\s+(?<layers>[^)]*)\)")]
     private static partial Regex PadLayersRegex();
-
-    [GeneratedRegex(@"\(net\s+(?<code>\d+)\s+""(?<name>[^""]*)""\)")]
-    private static partial Regex PadNetRegex();
 
     [GeneratedRegex(@"\(pinfunction\s+""(?<pinfunction>[^""]*)""\)")]
     private static partial Regex PinFunctionRegex();
 
     [GeneratedRegex(@"\(uuid\s+""?(?<uuid>[0-9a-fA-F-]+)""?\)")]
     private static partial Regex UuidRegex();
+
+    private static ParsedNetReference ParseNetReference(string block)
+    {
+        var numericNamedMatch = NetRegex().Match(block);
+        if (numericNamedMatch.Success)
+        {
+            return new ParsedNetReference(
+                int.Parse(numericNamedMatch.Groups["code"].Value, CultureInfo.InvariantCulture),
+                NormalizeNetName(numericNamedMatch.Groups["name"].Value));
+        }
+
+        var namedMatch = NamedNetReferenceRegex().Match(block);
+        if (namedMatch.Success)
+        {
+            return new ParsedNetReference(null, NormalizeNetName(namedMatch.Groups["name"].Value));
+        }
+
+        var numericMatch = NetCodeRegex().Match(block);
+        return numericMatch.Success
+            ? new ParsedNetReference(int.Parse(numericMatch.Groups["code"].Value, CultureInfo.InvariantCulture), null)
+            : new ParsedNetReference(null, null);
+    }
+
+    private static string? NormalizeNetName(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static int NextAvailableNetCode(ISet<int> usedCodes)
+    {
+        var code = usedCodes.Count == 0 ? 1 : usedCodes.Max() + 1;
+        while (usedCodes.Contains(code))
+        {
+            code++;
+        }
+
+        return code;
+    }
 }
+
+internal sealed record ParsedNetReference(int? Code, string? Name);
 
 internal sealed record KiCadBoardDocument(
     string BoardFile,
@@ -391,8 +472,11 @@ internal sealed record KiCadProperty(
 internal sealed record KiCadPad(
     string Name,
     string? Type,
+    string? Shape,
     double? XMillimeters,
     double? YMillimeters,
+    double? SizeXMillimeters,
+    double? SizeYMillimeters,
     IReadOnlyList<string> Layers,
     int? NetCode,
     string? NetName,
@@ -412,6 +496,7 @@ internal sealed record KiCadSegment(
     double? WidthMillimeters,
     string? Layer,
     int? NetCode,
+    string? NetName,
     int SourceStart,
     int SourceLength,
     string SourceText);
@@ -425,6 +510,7 @@ internal sealed record KiCadVia(
     double? DrillMillimeters,
     IReadOnlyList<string> Layers,
     int? NetCode,
+    string? NetName,
     int SourceStart,
     int SourceLength,
     string SourceText);

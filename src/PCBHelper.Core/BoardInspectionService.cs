@@ -29,9 +29,7 @@ public sealed class BoardInspectionService
             return ToolResponse<NetSummary>.Fail(board.Summary, board.Error?.Code ?? "BOARD_LOAD_FAILED", board.Error?.Message);
         }
 
-        var match = board.Data.Nets.FirstOrDefault(item =>
-            string.Equals(item.Name, net, StringComparison.OrdinalIgnoreCase)
-            || item.Code.ToString(System.Globalization.CultureInfo.InvariantCulture) == net);
+        var match = board.Data.Nets.FirstOrDefault(item => NetIdentifierMatches(item, net));
         if (match is null)
         {
             return ToolResponse<NetSummary>.Fail($"Net not found: {net}", "NET_NOT_FOUND");
@@ -60,8 +58,11 @@ public sealed class BoardInspectionService
             return new PadSummary(
             pad.Name,
             pad.Type,
+            pad.Shape,
             pad.XMillimeters,
             pad.YMillimeters,
+            pad.SizeXMillimeters,
+            pad.SizeYMillimeters,
             absolute.X,
             absolute.Y,
             pad.Layers,
@@ -93,7 +94,7 @@ public sealed class BoardInspectionService
         var pads = board.Footprints
             .Where(static footprint => footprint.Reference is not null)
             .SelectMany(footprint => footprint.Pads
-                .Where(pad => pad.NetCode == net.Code)
+                .Where(pad => NetReferenceMatches(pad.NetCode, pad.NetName, net))
                 .Select(pad =>
                 {
                     var absolute = CalculateAbsolutePadPosition(footprint, pad);
@@ -102,8 +103,11 @@ public sealed class BoardInspectionService
                         pad.Name,
                         pad.PinFunction,
                         footprint.Side,
+                        pad.Shape,
                         pad.XMillimeters,
                         pad.YMillimeters,
+                        pad.SizeXMillimeters,
+                        pad.SizeYMillimeters,
                         absolute.X,
                         absolute.Y,
                         pad.Layers,
@@ -112,7 +116,22 @@ public sealed class BoardInspectionService
                 }))
             .ToArray();
 
-        return new NetSummary(net.Code, net.Name, pads);
+        var trackCount = board.Segments.Count(segment => NetReferenceMatches(segment.NetCode, segment.NetName, net));
+        var viaCount = board.Vias.Count(via => NetReferenceMatches(via.NetCode, via.NetName, net));
+
+        return new NetSummary(net.Code, net.Name, pads, pads.Length, trackCount, viaCount);
+    }
+
+    private static bool NetIdentifierMatches(KiCadNet net, string identifier)
+    {
+        return string.Equals(net.Name, identifier, StringComparison.OrdinalIgnoreCase)
+            || net.Code.ToString(System.Globalization.CultureInfo.InvariantCulture) == identifier;
+    }
+
+    private static bool NetReferenceMatches(int? code, string? name, KiCadNet net)
+    {
+        return code == net.Code
+            || (!string.IsNullOrWhiteSpace(name) && string.Equals(name, net.Name, StringComparison.OrdinalIgnoreCase));
     }
 
     internal static (double? X, double? Y) CalculateAbsolutePadPosition(KiCadFootprint footprint, KiCadPad pad)
@@ -134,15 +153,18 @@ public sealed class BoardInspectionService
 
 public sealed record NetListResult(string BoardFile, IReadOnlyList<NetSummary> Nets);
 
-public sealed record NetSummary(int Code, string Name, IReadOnlyList<NetPadSummary> Pads);
+public sealed record NetSummary(int Code, string Name, IReadOnlyList<NetPadSummary> Pads, int PadCount, int TrackCount, int ViaCount);
 
 public sealed record NetPadSummary(
     string FootprintReference,
     string PadName,
     string? PinFunction,
     string FootprintSide,
+    string? PadShape,
     double? PadXMillimeters,
     double? PadYMillimeters,
+    double? PadSizeXMillimeters,
+    double? PadSizeYMillimeters,
     double? AbsoluteXMillimeters,
     double? AbsoluteYMillimeters,
     IReadOnlyList<string> PadLayers,
@@ -154,8 +176,11 @@ public sealed record FootprintPadsResult(string Reference, IReadOnlyList<PadSumm
 public sealed record PadSummary(
     string Name,
     string? Type,
+    string? Shape,
     double? XMillimeters,
     double? YMillimeters,
+    double? SizeXMillimeters,
+    double? SizeYMillimeters,
     double? AbsoluteXMillimeters,
     double? AbsoluteYMillimeters,
     IReadOnlyList<string> Layers,

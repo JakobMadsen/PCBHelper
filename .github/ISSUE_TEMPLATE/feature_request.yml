@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a constrained workflow for small, simple PCBs.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Explain the PCB task, not only the proposed tool name.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Desired workflow and evidence
+      description: Include expected preview, checks, restore behavior, and release impact.
+    validations:
+      required: true
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Board domain
+      options: [Small low-voltage board, Manufacturing workflow, Simulation/testing, Agent integration]
+    validations:
+      required: true

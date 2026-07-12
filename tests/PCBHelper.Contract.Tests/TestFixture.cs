@@ -29,6 +29,11 @@ internal sealed class TestFixture : IDisposable
         return CopyFixture("simulation-assertions");
     }
 
+    public static TestFixture CopyNgspiceSimulation()
+    {
+        return CopyFixture("simulation-ngspice-rc");
+    }
+
     private static TestFixture CopyFixture(string fixtureName)
     {
         var source = System.IO.Path.Combine(RepoRoot.Path, "fixtures", fixtureName);

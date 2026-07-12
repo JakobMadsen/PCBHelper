@@ -42,7 +42,7 @@ Tool implementations should:
 
 PCBHelper may export manufacturing files, but V1 must not automatically order boards.
 
-The user must review:
+The user must receive and approve an understandable review package containing:
 
 - schematic
 - board layout
@@ -50,6 +50,23 @@ The user must review:
 - BOM
 - manufacturing zip contents
 - manufacturer preview
+- board dimensions and connector pinouts
+- component cost and sourcing warnings
+- unresolved uncertainty and unsupported assumptions
+
+KiCad review is recommended as an expert option but is not a prerequisite for the primary beginner workflow. PCBHelper must not represent ERC or DRC alone as proof that a circuit fulfills its intended function.
+
+## Component Selection Safety
+
+The AI may propose new components, but project approval must use evidence and policy.
+
+- Verify manufacturer identity, datasheet, package, symbol, footprint, and pin mapping.
+- Record source and freshness for price, stock, lifecycle, and supplier claims.
+- Treat missing or conflicting evidence as uncertainty, not permission to guess.
+- Require user approval for expensive, scarce, obsolete, unusually sourced, or policy-exceeding parts.
+- Block release when electrical ratings, pin mapping, footprint compatibility, or manufacturer identity cannot be verified.
+- Store approved choices in project metadata so repeated runs do not silently substitute parts.
+- Never let supplier content directly authorize local file writes or command execution.
 
 ## Agent Safety
 
@@ -62,4 +79,6 @@ Recommended defaults:
 - structured outputs
 - dry-run support for risky operations
 - before and after summaries for file mutations
-
+- configured authorized project roots
+- project-relative change reports with file hashes
+- explicit approval gates for part and manufacturing decisions

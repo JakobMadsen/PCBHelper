@@ -2,6 +2,18 @@ namespace PCBHelper.Core;
 
 public sealed class ProjectDiscoveryService
 {
+    private readonly ProjectScopePolicy _scope;
+
+    public ProjectDiscoveryService()
+        : this(ProjectScopePolicy.Unrestricted())
+    {
+    }
+
+    public ProjectDiscoveryService(ProjectScopePolicy scope)
+    {
+        _scope = scope;
+    }
+
     public ToolResponse<ProjectSummary> GetSummary(string projectPath)
     {
         if (string.IsNullOrWhiteSpace(projectPath))
@@ -9,7 +21,13 @@ public sealed class ProjectDiscoveryService
             return ToolResponse<ProjectSummary>.Fail("Project path is required.", "PROJECT_PATH_REQUIRED");
         }
 
-        var fullPath = Path.GetFullPath(projectPath);
+        var authorized = _scope.Authorize(projectPath);
+        if (!authorized.Success || authorized.Data is null)
+        {
+            return ToolResponse<ProjectSummary>.Fail(authorized.Summary, authorized.Error?.Code ?? "PROJECT_SCOPE_VIOLATION", authorized.Error?.Message);
+        }
+
+        var fullPath = authorized.Data;
         if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
         {
             return ToolResponse<ProjectSummary>.Fail($"Project path does not exist: {fullPath}", "PROJECT_PATH_NOT_FOUND");

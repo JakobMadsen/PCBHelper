@@ -35,7 +35,7 @@ public sealed class CheckSummaryService
         {
             using var document = JsonDocument.Parse(File.ReadAllText(check.ReportPath));
             var findings = new List<CheckFinding>();
-            Walk(check.Kind, document.RootElement, findings);
+            WalkFindingArrays(check.Kind, document.RootElement, findings);
             return findings;
         }
         catch (JsonException)
@@ -44,28 +44,51 @@ public sealed class CheckSummaryService
         }
     }
 
-    private static void Walk(string kind, JsonElement element, List<CheckFinding> findings)
+    private static void WalkFindingArrays(string kind, JsonElement element, List<CheckFinding> findings)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            var message = TryString(element, "description") ?? TryString(element, "message") ?? TryString(element, "text");
-            var severity = TryString(element, "severity") ?? TryString(element, "type");
-            if (message is not null)
-            {
-                findings.Add(new CheckFinding(kind, severity, message));
-            }
-
             foreach (var property in element.EnumerateObject())
             {
-                Walk(kind, property.Value, findings);
+                if (IsFindingArray(property.Name) && property.Value.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in property.Value.EnumerateArray())
+                    {
+                        AddFinding(kind, item, findings);
+                    }
+                }
+                else
+                {
+                    WalkFindingArrays(kind, property.Value, findings);
+                }
             }
         }
         else if (element.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in element.EnumerateArray())
             {
-                Walk(kind, item, findings);
+                WalkFindingArrays(kind, item, findings);
             }
+        }
+    }
+
+    private static bool IsFindingArray(string propertyName)
+    {
+        return propertyName is "violations" or "unconnected_items" or "schematic_parity";
+    }
+
+    private static void AddFinding(string kind, JsonElement element, List<CheckFinding> findings)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var message = TryString(element, "description") ?? TryString(element, "message") ?? TryString(element, "text");
+        var severity = TryString(element, "severity") ?? TryString(element, "type");
+        if (message is not null)
+        {
+            findings.Add(new CheckFinding(kind, severity, message));
         }
     }
 

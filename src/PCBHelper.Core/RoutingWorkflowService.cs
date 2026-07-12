@@ -28,6 +28,34 @@ public sealed class RoutingWorkflowService
         return _routing.GetNetRouting(projectPath, net);
     }
 
+    public ToolResponse<UnroutedConnectionListResult> ListUnroutedConnections(string projectPath, string? net = null)
+    {
+        return _routing.ListUnroutedConnections(projectPath, net);
+    }
+
+    public ToolResponse<RoutingClearanceValidationResult> ValidateTrackClearance(
+        string projectPath,
+        string net,
+        string points,
+        string layer,
+        double widthMillimeters)
+    {
+        return _routing.ValidateTrackClearance(projectPath, net, points, layer, widthMillimeters);
+    }
+
+    public Task<ToolResponse<RoutingMutationResult>> AddTrackPolylineAsync(
+        string projectPath,
+        string net,
+        string points,
+        string layer,
+        double widthMillimeters,
+        bool dryRun,
+        CancellationToken cancellationToken = default)
+    {
+        var result = _routing.AddTrackPolyline(projectPath, net, points, layer, widthMillimeters, dryRun);
+        return CompleteMutationAsync(projectPath, result, cancellationToken);
+    }
+
     public Task<ToolResponse<RoutingMutationResult>> AddTrackAsync(
         string projectPath,
         string net,

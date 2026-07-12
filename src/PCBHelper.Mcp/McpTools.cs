@@ -8,9 +8,14 @@ namespace PCBHelper.Mcp;
 public static class McpTools
 {
     [McpServerTool(Name = "doctor"), Description("Check whether kicad-cli is installed and supported by PCBHelper.")]
-    public static Task<ToolResponse<DoctorResult>> Doctor(CancellationToken cancellationToken)
+    public static async Task<ToolResponse<DoctorResult>> Doctor(CancellationToken cancellationToken)
     {
-        return Services.Doctor.RunAsync(cancellationToken);
+        var result = await Services.Doctor.RunAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PCBHELPER_ALLOWED_ROOTS")))
+        {
+            return result with { Warnings = result.Warnings.Append("PCBHELPER_ALLOWED_ROOTS is not configured; MCP project reads and mutations are blocked.").ToArray() };
+        }
+        return result;
     }
 
     [McpServerTool(Name = "get_project_summary"), Description("Read the top-level KiCad project files in a project directory.")]
@@ -199,6 +204,25 @@ public static class McpTools
         return Services.RoutingWorkflow.GetNetRouting(projectPath, net);
     }
 
+    [McpServerTool(Name = "list_unrouted_connections"), Description("List disconnected pad groups per net so routing can target missing board connections.")]
+    public static ToolResponse<UnroutedConnectionListResult> ListUnroutedConnections(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Optional net name or code.")] string? net = null)
+    {
+        return Services.RoutingWorkflow.ListUnroutedConnections(projectPath, net);
+    }
+
+    [McpServerTool(Name = "validate_track_clearance"), Description("Validate a proposed track polyline against conservative copper clearance before writing it.")]
+    public static ToolResponse<RoutingClearanceValidationResult> ValidateTrackClearance(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        [Description("Net name or code.")] string net,
+        [Description("Polyline points as x1,y1;x2,y2;... in millimeters.")] string points,
+        [Description("Copper layer: F.Cu or B.Cu.")] string layer,
+        [Description("Track width in millimeters.")] double widthMillimeters)
+    {
+        return Services.RoutingWorkflow.ValidateTrackClearance(projectPath, net, points, layer, widthMillimeters);
+    }
+
     [McpServerTool(Name = "add_track_preview"), Description("Preview adding a straight track segment without writing files.")]
     public static Task<ToolResponse<RoutingMutationResult>> AddTrackPreview(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
@@ -227,6 +251,30 @@ public static class McpTools
         CancellationToken cancellationToken = default)
     {
         return Services.RoutingWorkflow.AddTrackAsync(projectPath, net, startXMillimeters, startYMillimeters, endXMillimeters, endYMillimeters, layer, widthMillimeters, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_track_polyline_preview"), Description("Preview adding an atomically validated track polyline without writing files.")]
+    public static Task<ToolResponse<RoutingMutationResult>> AddTrackPolylinePreview(
+        string projectPath,
+        string net,
+        string points,
+        string layer,
+        double widthMillimeters,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.AddTrackPolylineAsync(projectPath, net, points, layer, widthMillimeters, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "add_track_polyline"), Description("Add an atomically validated track polyline and write a PCBHelper change report.")]
+    public static Task<ToolResponse<RoutingMutationResult>> AddTrackPolyline(
+        string projectPath,
+        string net,
+        string points,
+        string layer,
+        double widthMillimeters,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.RoutingWorkflow.AddTrackPolylineAsync(projectPath, net, points, layer, widthMillimeters, dryRun: false, cancellationToken);
     }
 
     [McpServerTool(Name = "delete_track_preview"), Description("Preview deleting a track segment without writing files.")]
@@ -293,6 +341,34 @@ public static class McpTools
         return Services.RoutingWorkflow.DeleteViaAsync(projectPath, via, dryRun: false, cancellationToken);
     }
 
+    [McpServerTool(Name = "setup_freerouting_preview"), Description("Preview downloading FreeRouting into PCBHelper's local tools cache.")]
+    public static Task<ToolResponse<FreeRoutingSetupResult>> SetupFreeRoutingPreview(CancellationToken cancellationToken = default)
+    {
+        return Services.FreeRoutingSetup.SetupAsync(dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "setup_freerouting"), Description("Download FreeRouting into PCBHelper's local tools cache so autoroute_board can discover it.")]
+    public static Task<ToolResponse<FreeRoutingSetupResult>> SetupFreeRouting(CancellationToken cancellationToken = default)
+    {
+        return Services.FreeRoutingSetup.SetupAsync(dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "autoroute_board_preview"), Description("Preview whether the FreeRouting DSN/SES backend is available for this board.")]
+    public static Task<ToolResponse<AutorouteBoardResult>> AutorouteBoardPreview(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.Autorouting.AutorouteBoardAsync(projectPath, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "autoroute_board"), Description("Run the FreeRouting DSN/SES autorouting backend when local prerequisites are available.")]
+    public static Task<ToolResponse<AutorouteBoardResult>> AutorouteBoard(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.Autorouting.AutorouteBoardAsync(projectPath, dryRun: false, cancellationToken);
+    }
+
     [McpServerTool(Name = "list_schematic_symbols"), Description("List schematic symbols, fields, wires, and labels.")]
     public static ToolResponse<SchematicSymbolListResult> ListSchematicSymbols(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
@@ -307,11 +383,12 @@ public static class McpTools
         string reference,
         double xMillimeters,
         double yMillimeters,
+        int unit = 1,
         string? value = null,
         string? footprint = null,
         CancellationToken cancellationToken = default)
     {
-        return Services.SchematicWorkflow.CreateSymbolAsync(projectPath, symbol, reference, xMillimeters, yMillimeters, value, footprint, dryRun: true, cancellationToken);
+        return Services.SchematicWorkflow.CreateSymbolAsync(projectPath, symbol, reference, xMillimeters, yMillimeters, value, footprint, unit, dryRun: true, cancellationToken);
     }
 
     [McpServerTool(Name = "create_schematic_symbol"), Description("Place an approved catalog schematic symbol and write a change report.")]
@@ -321,11 +398,12 @@ public static class McpTools
         string reference,
         double xMillimeters,
         double yMillimeters,
+        int unit = 1,
         string? value = null,
         string? footprint = null,
         CancellationToken cancellationToken = default)
     {
-        return Services.SchematicWorkflow.CreateSymbolAsync(projectPath, symbol, reference, xMillimeters, yMillimeters, value, footprint, dryRun: false, cancellationToken);
+        return Services.SchematicWorkflow.CreateSymbolAsync(projectPath, symbol, reference, xMillimeters, yMillimeters, value, footprint, unit, dryRun: false, cancellationToken);
     }
 
     [McpServerTool(Name = "set_symbol_field_preview"), Description("Preview setting a schematic symbol field.")]
@@ -394,6 +472,92 @@ public static class McpTools
         return Services.SchematicWorkflow.AddNetLabelAsync(projectPath, net, xMillimeters, yMillimeters, dryRun: false, cancellationToken);
     }
 
+    [McpServerTool(Name = "delete_net_label_by_uuid_preview"), Description("Preview deleting a schematic net label by UUID.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteNetLabelByUuidPreview(
+        string projectPath,
+        string uuid,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteNetLabelByUuidAsync(projectPath, uuid, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_net_label_by_uuid"), Description("Delete a schematic net label by UUID and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteNetLabelByUuid(
+        string projectPath,
+        string uuid,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteNetLabelByUuidAsync(projectPath, uuid, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_net_label_preview"), Description("Preview deleting a schematic net label by net name and coordinate.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteNetLabelPreview(
+        string projectPath,
+        string net,
+        double xMillimeters,
+        double yMillimeters,
+        double? toleranceMillimeters = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteNetLabelAsync(projectPath, net, xMillimeters, yMillimeters, toleranceMillimeters, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_net_label"), Description("Delete a schematic net label by net name and coordinate and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteNetLabel(
+        string projectPath,
+        string net,
+        double xMillimeters,
+        double yMillimeters,
+        double? toleranceMillimeters = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteNetLabelAsync(projectPath, net, xMillimeters, yMillimeters, toleranceMillimeters, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_schematic_wire_by_uuid_preview"), Description("Preview deleting a schematic wire by UUID.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteSchematicWireByUuidPreview(
+        string projectPath,
+        string uuid,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteSchematicWireByUuidAsync(projectPath, uuid, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_schematic_wire_by_uuid"), Description("Delete a schematic wire by UUID and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteSchematicWireByUuid(
+        string projectPath,
+        string uuid,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteSchematicWireByUuidAsync(projectPath, uuid, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_schematic_wire_preview"), Description("Preview deleting a schematic wire by endpoints.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteSchematicWirePreview(
+        string projectPath,
+        double x1Millimeters,
+        double y1Millimeters,
+        double x2Millimeters,
+        double y2Millimeters,
+        double? toleranceMillimeters = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteSchematicWireAsync(projectPath, x1Millimeters, y1Millimeters, x2Millimeters, y2Millimeters, toleranceMillimeters, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "delete_schematic_wire"), Description("Delete a schematic wire by endpoints and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> DeleteSchematicWire(
+        string projectPath,
+        double x1Millimeters,
+        double y1Millimeters,
+        double x2Millimeters,
+        double y2Millimeters,
+        double? toleranceMillimeters = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.DeleteSchematicWireAsync(projectPath, x1Millimeters, y1Millimeters, x2Millimeters, y2Millimeters, toleranceMillimeters, dryRun: false, cancellationToken);
+    }
+
     [McpServerTool(Name = "update_pcb_from_schematic_preview"), Description("Preview creating missing board footprints from approved schematic symbols.")]
     public static Task<ToolResponse<SchematicMutationResult>> UpdatePcbFromSchematicPreview(
         string projectPath,
@@ -408,6 +572,24 @@ public static class McpTools
         CancellationToken cancellationToken = default)
     {
         return Services.SchematicWorkflow.UpdatePcbFromSchematicAsync(projectPath, dryRun: false, cancellationToken);
+    }
+
+    [McpServerTool(Name = "regenerate_board_footprint_preview"), Description("Preview regenerating one existing board footprint from its approved schematic template.")]
+    public static Task<ToolResponse<SchematicMutationResult>> RegenerateBoardFootprintPreview(
+        string projectPath,
+        string reference,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.RegenerateBoardFootprintAsync(projectPath, reference, dryRun: true, cancellationToken);
+    }
+
+    [McpServerTool(Name = "regenerate_board_footprint"), Description("Regenerate one existing board footprint from its approved schematic template and write a change report.")]
+    public static Task<ToolResponse<SchematicMutationResult>> RegenerateBoardFootprint(
+        string projectPath,
+        string reference,
+        CancellationToken cancellationToken = default)
+    {
+        return Services.SchematicWorkflow.RegenerateBoardFootprintAsync(projectPath, reference, dryRun: false, cancellationToken);
     }
 
     [McpServerTool(Name = "run_erc"), Description("Run KiCad ERC through kicad-cli for the project schematic.")]
@@ -490,6 +672,37 @@ public static class McpTools
         return Services.ExportService.ExportPositionFilesAsync(projectPath, cancellationToken);
     }
 
+    [McpServerTool(Name = "export_assembly_bom"), Description("Export a PCBWay-oriented assembly BOM CSV.")]
+    public static Task<ToolResponse<AssemblyExportResult>> ExportAssemblyBom(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.AssemblyService.ExportAssemblyBomAsync(projectPath, cancellationToken);
+    }
+
+    [McpServerTool(Name = "export_cpl"), Description("Export a PCBWay-oriented component placement/centroid CSV.")]
+    public static Task<ToolResponse<AssemblyExportResult>> ExportCpl(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.AssemblyService.ExportCplAsync(projectPath, cancellationToken);
+    }
+
+    [McpServerTool(Name = "validate_assembly_package"), Description("Validate assembly BOM/CPL readiness for PCBWay.")]
+    public static ToolResponse<AssemblyValidationResult> ValidateAssemblyPackage(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
+    {
+        return Services.AssemblyService.ValidateAssemblyPackage(projectPath);
+    }
+
+    [McpServerTool(Name = "export_pcbway_assembly_package"), Description("Create a PCBWay assembly zip with Gerber, drill, BOM, CPL, and validation report.")]
+    public static Task<ToolResponse<AssemblyPackageResult>> ExportPcbWayAssemblyPackage(
+        [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath,
+        CancellationToken cancellationToken)
+    {
+        return Services.AssemblyService.CreatePcbWayAssemblyPackageAsync(projectPath, cancellationToken);
+    }
+
     [McpServerTool(Name = "list_test_specs"), Description("List PCBHelper assertion test specs from .pcbhelper/tests/*.json.")]
     public static ToolResponse<TestSpecListResult> ListTestSpecs(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
@@ -511,6 +724,7 @@ public static class McpTools
     {
         return Services.TestSpecService.EvaluateResults(projectPath, resultsPath);
     }
+
     [McpServerTool(Name = "open_project_in_kicad"), Description("Open the KiCad project in the local KiCad GUI.")]
     public static ToolResponse<OpenProjectResult> OpenProjectInKiCad(
         [Description("Path to a KiCad project directory or .kicad_pro file.")] string projectPath)
@@ -549,7 +763,7 @@ internal static class Services
     private static readonly ProcessCommandRunner Runner = new();
     private static readonly KiCadCliLocator Locator = new();
 
-    public static ProjectDiscoveryService ProjectDiscovery { get; } = new();
+    public static ProjectDiscoveryService ProjectDiscovery { get; } = new(ProjectScopePolicy.FromEnvironment());
 
     public static BoardSummaryService BoardSummary { get; } = new(ProjectDiscovery);
 
@@ -573,6 +787,10 @@ internal static class Services
 
     public static RoutingWorkflowService RoutingWorkflow { get; } = new(RoutingService, CheckRunner, ChangeReports);
 
+    public static AutoroutingService Autorouting { get; } = new(ProjectDiscovery, Locator, Runner);
+
+    public static FreeRoutingSetupService FreeRoutingSetup { get; } = new();
+
     public static SchematicAuthoringService SchematicService { get; } = new(ProjectDiscovery);
 
     public static SchematicAuthoringWorkflowService SchematicWorkflow { get; } = new(SchematicService, CheckRunner, ChangeReports);
@@ -586,6 +804,8 @@ internal static class Services
     public static ExportService ExportService { get; } = new(ProjectDiscovery, Locator, Runner);
 
     public static PackageService PackageService { get; } = new(ProjectDiscovery, Doctor, ExportService);
+
+    public static AssemblyService AssemblyService { get; } = new(ProjectDiscovery, Doctor, ExportService);
 
     public static OpenKiCadService OpenKiCad { get; } = new(ProjectDiscovery, new KiCadExecutableLocator(Locator), new ProcessStarter());
 

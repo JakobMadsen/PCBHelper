@@ -1,16 +1,16 @@
-# Product Requirements: Human-in-the-Loop KiCad Operator
+# Product Requirements: Conversational Small-PCB Builder
 
 ## Problem Statement
 
-Simple PCB projects take too long when the user has to manually perform every KiCad setup, placement, checking, and export step. The user is comfortable with AI-assisted software work and wants a similar loop for PCB work: an agent can execute precise, repetitive operations, run checks, and explain results, while the human remains responsible for visual review and engineering judgement.
+People with good product ideas are often blocked by electronics terminology, KiCad operation, component selection, layout rules, and manufacturer file requirements. For small and well-understood circuits, the user should be able to explain the desired behavior in ordinary language and receive a design that is understandable, checked, and ready for manufacturer review.
 
-The current pain is not lack of imagination. It is the friction between an electronics idea and a reviewable KiCad design.
+The current pain is the gap between an electronics idea and a trustworthy PCBWay-ready package. Requiring the user to learn KiCad merely moves that gap rather than closing it.
 
 ## Solution
 
-Build a local tool layer, likely exposed as an MCP server, that lets Codex operate on KiCad projects through supported APIs and `kicad-cli`.
+Build a local, BYOK-friendly system, exposed through MCP and CLI, that lets an AI clarify requirements, compose constrained design recipes, evaluate parts, operate KiCad, run deterministic engineering gates, and create manufacturer-ready review packages.
 
-The tool layer should expose small, typed tools for creating projects, reading board state, placing footprints, measuring distances, running checks, highlighting relevant design objects, and exporting manufacturing files.
+The AI may use small, typed KiCad tools internally. The primary user interaction is conversational and task-oriented: describe the board, answer material questions, review understandable previews and risks, and approve the final package. Opening KiCad is an optional expert path, not a normal prerequisite.
 
 The system should be BYOK-friendly and public-repo-safe. Core KiCad automation should not depend on a private hosted service or committed credentials. Users should be able to connect their own Codex setup, API keys, local agents, or future compatible clients.
 
@@ -36,6 +36,12 @@ The system should be BYOK-friendly and public-repo-safe. Core KiCad automation s
 18. As a user, I want all secret configuration kept local, so that the repository can remain public.
 19. As a contributor, I want clear tool contracts, so that integrations can be built without guessing.
 20. As a contributor, I want test fixtures based on KiCad projects, so that tool behavior can be verified without manual GUI work.
+21. As a beginner, I want to describe a small PCB without knowing KiCad, so that the implementation details do not block me.
+22. As a user, I want the AI to propose suitable parts using current price, availability, lifecycle, and compatibility evidence.
+23. As a user, I want the AI to ask before using an expensive, scarce, obsolete, unusually sourced, or uncertain part.
+24. As a user, I want a plain-language review package with board images, dimensions, connectors, BOM cost, checks, and unresolved risks.
+25. As a user, I want PCBWay-ready Gerber, drill, BOM, and CPL outputs to be validated before I approve release.
+26. As a user, I want unsupported or safety-critical requests to be refused or escalated instead of receiving confident guesswork.
 
 ## Functional Requirements
 
@@ -50,6 +56,13 @@ The system should be BYOK-friendly and public-repo-safe. Core KiCad automation s
 - Export Gerber, drill, BOM, and position files where supported.
 - Build a manufacturing zip from export artifacts.
 - Support approved parts and templates as explicit project data.
+- Discover part candidates through replaceable data-source adapters.
+- Evaluate part candidates for symbol and footprint identity, pin mapping, electrical limits, package, stock, price, MOQ, lifecycle, supplier, and manufacturer identifiers.
+- Apply configurable project policies for budget, preferred suppliers, minimum availability evidence, and approval thresholds.
+- Require explicit user approval when a part exceeds policy or has incomplete or conflicting evidence.
+- Lock approved part evidence into project metadata so later runs are reproducible.
+- Generate beginner-readable visual and textual review artifacts without requiring KiCad knowledge.
+- Validate generic and PCBWay-oriented manufacturing and assembly outputs.
 - Keep agent actions visible and reviewable.
 
 ## Non-Functional Requirements
@@ -61,6 +74,8 @@ The system should be BYOK-friendly and public-repo-safe. Core KiCad automation s
 - Conservative by default: prefer read-only inspection unless a tool is explicitly mutating.
 - Recoverable: mutating operations should either be atomic or have a clear rollback story.
 - Cross-platform intent: design for Windows first if that is the development environment, but avoid unnecessary OS coupling.
+- Evidence-based: the LLM may propose and explain, while deterministic tools validate file scope, part identity, compatibility, engineering checks, and release readiness.
+- Honest uncertainty: missing datasheets, ambiguous pin maps, stale pricing, or unavailable stock must be visible and block automatic approval.
 
 ## Implementation Decisions
 
@@ -68,7 +83,8 @@ The system should be BYOK-friendly and public-repo-safe. Core KiCad automation s
 - Use `kicad-cli` for ERC, DRC, and manufacturing exports where available.
 - Use KiCad Python or IPC APIs for board inspection, placement, measurements, and highlighting.
 - Keep AI provider configuration outside the core KiCad automation layer.
-- Treat templates and approved parts as first-class inputs.
+- Treat design recipes, part candidates, project-approved parts, and design locks as first-class inputs.
+- Do not make the LLM the sole authority for footprint or pin-map correctness.
 - Prefer small tools such as `get_board_summary`, `place_component`, and `run_drc` over broad autonomous commands.
 - Represent measurements in millimeters at the public tool boundary.
 - Return structured JSON-like results from tools, with human-readable summaries as secondary fields.
@@ -90,11 +106,11 @@ The system should be BYOK-friendly and public-repo-safe. Core KiCad automation s
 - High-speed layout.
 - RF layout.
 - Fully autonomous routing.
-- Arbitrary web-based component search.
+- Unconstrained component selection without evidence and project policy.
 - Automatic board ordering.
 - GUI mouse automation as the primary control path.
 - Firmware workflow beyond possible placeholders.
 
 ## Success Criteria
 
-The first prototype succeeds when the user can ask the agent to create a simple dual optical sensor board, place two sensors at 15 mm center spacing, run ERC and DRC, export manufacturing files, and review the result in KiCad.
+The first prototype succeeds when a user without KiCad knowledge can describe the simple optical sensor board, answer requirement and part-choice questions, approve two sensors at 15 mm spacing, receive understandable previews and engineering-gate results, and obtain a validated PCBWay-ready package. An expert may inspect the source in KiCad, but the primary flow must not require it.

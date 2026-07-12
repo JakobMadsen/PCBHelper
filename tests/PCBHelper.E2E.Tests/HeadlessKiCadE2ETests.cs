@@ -449,6 +449,81 @@ public sealed class HeadlessKiCadE2ETests
         }
     }
 
+    [Fact]
+    public async Task Design_Plan_Previews_Applies_And_Restores_Through_Cli()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var planPath = Path.Combine(fixture.Path, "plan.json");
+        await File.WriteAllTextAsync(planPath, """{"version":1,"goal":"Change R1","operations":[{"id":"value","type":"set-component-value","reference":"R1","value":"300R"}],"engineeringGate":{"erc":"skip","drc":"skip","manufacturingValidation":"skip"}}""");
+        var preview = await RunCliAsync("plan", "preview", fixture.Path, "--file", planPath, "--json");
+        Assert.Equal(0, preview.ExitCode);
+        using var previewJson = JsonDocument.Parse(preview.StandardOutput);
+        var data = previewJson.RootElement.GetProperty("data");
+        var hash = data.GetProperty("planHash").GetString()!;
+        var decisions = string.Join(',', data.GetProperty("requiredDecisions").EnumerateArray().Select(static item => item.GetProperty("decisionId").GetString()));
+
+        var apply = await RunCliAsync("plan", "apply", fixture.Path, "--file", planPath, "--expected-hash", hash, "--acknowledged-decisions", decisions, "--json");
+        Assert.Equal(0, apply.ExitCode);
+        using var applyJson = JsonDocument.Parse(apply.StandardOutput);
+        var transactionId = applyJson.RootElement.GetProperty("data").GetProperty("transaction").GetProperty("transaction").GetProperty("transactionId").GetString()!;
+
+        var value = await RunCliAsync("get-value", fixture.Path, "--ref", "R1", "--json");
+        Assert.Contains("300R", value.StandardOutput);
+        var restore = await RunCliAsync("transaction", "restore", fixture.Path, "--id", transactionId, "--json");
+        Assert.Equal(0, restore.ExitCode);
+        var restoredValue = await RunCliAsync("get-value", fixture.Path, "--ref", "R1", "--json");
+        Assert.Contains("330R", restoredValue.StandardOutput);
+    }
+
+    [Fact]
+    public async Task Workflow_Generates_Visual_Review_And_Gated_PcbWay_Package()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var runtime = PCBHelperRuntime.ForCli();
+        Assert.True(new KiCadCliLocator().Locate().Found, "Workflow release E2E requires KiCad; it must not pass by returning early.");
+
+        var review = await runtime.Workflows.GenerateReviewPackageAsync(fixture.Path);
+        Assert.True(review.Success, review.Error?.Message);
+        Assert.True(File.Exists(review.Data!.ReportPath));
+        Assert.Contains(review.Data.RenderFiles, static path => path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && File.Exists(path));
+        Assert.Contains(review.Data.RenderFiles, static path => path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) && File.Exists(path));
+
+        var plan = """{"version":1,"goal":"Prepare release transaction","operations":[{"id":"value","type":"set-component-value","reference":"R1","value":"300R"}],"engineeringGate":{"erc":"skip","drc":"skip","manufacturingValidation":"skip"}}""";
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+        var applied = await runtime.Plans.ApplyAsync(fixture.Path, plan, preview.Data!.PlanHash,
+            preview.Data.RequiredDecisions.Select(static decision => decision.DecisionId).ToArray());
+        Assert.True(applied.Success, applied.Error?.Message);
+
+        var package = await runtime.Workflows.GeneratePcbWayPackageAsync(fixture.Path);
+        Assert.True(package.Success, package.Error?.Message);
+        Assert.True(File.Exists(package.Data!.ZipPath));
+    }
+
+    [Fact]
+    public async Task Ngspice_Fixture_Validates_And_Never_Passes_When_Backend_Is_Missing()
+    {
+        using var fixture = TestFixture.CopyNgspiceSimulation();
+        var validation = await RunCliAsync("simulation", "validate", fixture.Path, "--json");
+        Assert.Equal(0, validation.ExitCode);
+
+        var status = await RunCliAsync("simulation", "status", "--json");
+        using var statusDocument = JsonDocument.Parse(status.StandardOutput);
+        var available = statusDocument.RootElement.GetProperty("data").GetProperty("available").GetBoolean();
+        var run = await RunCliAsync("simulation", "run", fixture.Path, "--json");
+        using var runDocument = JsonDocument.Parse(run.StandardOutput);
+        if (available)
+        {
+            Assert.Equal(0, run.ExitCode);
+            Assert.True(runDocument.RootElement.GetProperty("data").GetProperty("passed").GetBoolean());
+        }
+        else
+        {
+            Assert.NotEqual(0, run.ExitCode);
+            Assert.False(runDocument.RootElement.GetProperty("success").GetBoolean());
+            Assert.Equal("SIMULATOR_NOT_FOUND", runDocument.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+    }
+
     private static async Task<ProcessResult> RunCliAsync(params string[] args)
     {
         var project = Path.Combine(RepoRoot.Path, "src", "PCBHelper.Cli", "PCBHelper.Cli.csproj");

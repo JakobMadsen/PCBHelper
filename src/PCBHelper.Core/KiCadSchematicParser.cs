@@ -51,11 +51,19 @@ internal static partial class KiCadSchematicParser
             var properties = ParseProperties(symbolText, symbolStart);
             properties.TryGetValue("Reference", out var reference);
             var libId = LibIdRegex().Match(symbolText);
+            if (!libId.Success)
+            {
+                searchIndex = symbolEnd + 1;
+                continue;
+            }
+
             var at = AtRegex().Match(symbolText);
+            var unit = UnitRegex().Match(symbolText);
 
             symbols.Add(new KiCadSchematicSymbol(
                 reference?.Value,
-                libId.Success ? libId.Groups["libid"].Value : null,
+                libId.Groups["libid"].Value,
+                unit.Success ? int.Parse(unit.Groups["unit"].Value, CultureInfo.InvariantCulture) : 1,
                 at.Success ? double.Parse(at.Groups["x"].Value, CultureInfo.InvariantCulture) : null,
                 at.Success ? double.Parse(at.Groups["y"].Value, CultureInfo.InvariantCulture) : null,
                 at.Success && at.Groups["rotation"].Success
@@ -73,27 +81,49 @@ internal static partial class KiCadSchematicParser
 
     private static IReadOnlyList<KiCadSchematicWire> ParseWires(string text)
     {
-        return WireRegex().Matches(text)
-            .Select(static match => new KiCadSchematicWire(
+        var wires = new List<KiCadSchematicWire>();
+        foreach (var item in ParseBlocks(text, "wire"))
+        {
+            var match = WirePointsRegex().Match(item.BlockText);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            wires.Add(new KiCadSchematicWire(
                 double.Parse(match.Groups["x1"].Value, CultureInfo.InvariantCulture),
                 double.Parse(match.Groups["y1"].Value, CultureInfo.InvariantCulture),
                 double.Parse(match.Groups["x2"].Value, CultureInfo.InvariantCulture),
                 double.Parse(match.Groups["y2"].Value, CultureInfo.InvariantCulture),
-                match.Index,
-                match.Length))
-            .ToArray();
+                ParseUuid(item.BlockText),
+                item.SourceStart,
+                item.SourceLength));
+        }
+
+        return wires;
     }
 
     private static IReadOnlyList<KiCadSchematicLabel> ParseLabels(string text)
     {
-        return LabelRegex().Matches(text)
-            .Select(static match => new KiCadSchematicLabel(
+        var labels = new List<KiCadSchematicLabel>();
+        foreach (var item in ParseBlocks(text, "label"))
+        {
+            var match = LabelDataRegex().Match(item.BlockText);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            labels.Add(new KiCadSchematicLabel(
                 match.Groups["text"].Value,
                 double.Parse(match.Groups["x"].Value, CultureInfo.InvariantCulture),
                 double.Parse(match.Groups["y"].Value, CultureInfo.InvariantCulture),
-                match.Index,
-                match.Length))
-            .ToArray();
+                ParseUuid(item.BlockText),
+                item.SourceStart,
+                item.SourceLength));
+        }
+
+        return labels;
     }
 
     private static IReadOnlyList<KiCadSchematicJunction> ParseJunctions(string text)
@@ -180,24 +210,74 @@ internal static partial class KiCadSchematicParser
         return -1;
     }
 
+    private static IReadOnlyList<KiCadSchematicBlock> ParseBlocks(string text, string keyword)
+    {
+        var blocks = new List<KiCadSchematicBlock>();
+        var searchIndex = 0;
+        var marker = $"({keyword}";
+        while (searchIndex < text.Length)
+        {
+            var blockStart = text.IndexOf(marker, searchIndex, StringComparison.Ordinal);
+            if (blockStart < 0)
+            {
+                break;
+            }
+
+            var afterKeyword = blockStart + marker.Length;
+            if (afterKeyword < text.Length && !char.IsWhiteSpace(text[afterKeyword]))
+            {
+                searchIndex = afterKeyword;
+                continue;
+            }
+
+            var blockEnd = FindMatchingParenthesis(text, blockStart);
+            if (blockEnd < 0)
+            {
+                break;
+            }
+
+            blocks.Add(new KiCadSchematicBlock(
+                text.Substring(blockStart, blockEnd - blockStart + 1),
+                blockStart,
+                blockEnd - blockStart + 1));
+            searchIndex = blockEnd + 1;
+        }
+
+        return blocks;
+    }
+
+    private static string? ParseUuid(string blockText)
+    {
+        var match = UuidRegex().Match(blockText);
+        return match.Success ? match.Groups["uuid"].Value : null;
+    }
+
     [GeneratedRegex(@"\(lib_id\s+""(?<libid>[^""]+)""\)")]
     private static partial Regex LibIdRegex();
 
     [GeneratedRegex(@"\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+(?<rotation>-?\d+(?:\.\d+)?))?\)")]
     private static partial Regex AtRegex();
 
+    [GeneratedRegex(@"\(unit\s+(?<unit>\d+)\)")]
+    private static partial Regex UnitRegex();
+
     [GeneratedRegex(@"\(property\s+""(?<name>[^""]+)""\s+""(?<value>(?:\\""|[^""])*)""")]
     private static partial Regex PropertyRegex();
 
-    [GeneratedRegex(@"\(wire\s+\(pts\s+\(xy\s+(?<x1>-?\d+(?:\.\d+)?)\s+(?<y1>-?\d+(?:\.\d+)?)\)\s+\(xy\s+(?<x2>-?\d+(?:\.\d+)?)\s+(?<y2>-?\d+(?:\.\d+)?)\)\)[\s\S]*?\)")]
-    private static partial Regex WireRegex();
+    [GeneratedRegex(@"\(pts\s+\(xy\s+(?<x1>-?\d+(?:\.\d+)?)\s+(?<y1>-?\d+(?:\.\d+)?)\)\s+\(xy\s+(?<x2>-?\d+(?:\.\d+)?)\s+(?<y2>-?\d+(?:\.\d+)?)\)\)")]
+    private static partial Regex WirePointsRegex();
 
-    [GeneratedRegex(@"\(label\s+""(?<text>[^""]+)""[\s\S]*?\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+-?\d+(?:\.\d+)?)?\)[\s\S]*?\)")]
-    private static partial Regex LabelRegex();
+    [GeneratedRegex(@"\(label\s+""(?<text>[^""]+)""[\s\S]*?\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+-?\d+(?:\.\d+)?)?\)")]
+    private static partial Regex LabelDataRegex();
 
     [GeneratedRegex(@"\(junction\s+\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)\)[\s\S]*?\)")]
     private static partial Regex JunctionRegex();
+
+    [GeneratedRegex(@"\(uuid\s+""(?<uuid>[^""]+)""\)")]
+    private static partial Regex UuidRegex();
 }
+
+internal sealed record KiCadSchematicBlock(string BlockText, int SourceStart, int SourceLength);
 
 internal sealed record KiCadSchematicDocument(
     string SchematicFile,
@@ -210,6 +290,7 @@ internal sealed record KiCadSchematicDocument(
 internal sealed record KiCadSchematicSymbol(
     string? Reference,
     string? LibId,
+    int Unit,
     double? XMillimeters,
     double? YMillimeters,
     double? RotationDegrees,
@@ -217,8 +298,8 @@ internal sealed record KiCadSchematicSymbol(
     int SourceLength,
     IReadOnlyDictionary<string, KiCadProperty> Properties);
 
-internal sealed record KiCadSchematicWire(double X1Millimeters, double Y1Millimeters, double X2Millimeters, double Y2Millimeters, int SourceStart, int SourceLength);
+internal sealed record KiCadSchematicWire(double X1Millimeters, double Y1Millimeters, double X2Millimeters, double Y2Millimeters, string? Uuid, int SourceStart, int SourceLength);
 
-internal sealed record KiCadSchematicLabel(string Text, double XMillimeters, double YMillimeters, int SourceStart, int SourceLength);
+internal sealed record KiCadSchematicLabel(string Text, double XMillimeters, double YMillimeters, string? Uuid, int SourceStart, int SourceLength);
 
 internal sealed record KiCadSchematicJunction(double XMillimeters, double YMillimeters, int SourceStart, int SourceLength);
