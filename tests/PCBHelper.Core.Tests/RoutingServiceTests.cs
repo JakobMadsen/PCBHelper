@@ -54,7 +54,7 @@ public sealed class RoutingServiceTests
         var service = new RoutingService(new ProjectDiscoveryService());
 
         var before = service.ListUnroutedConnections(fixture.Path, "LED_A");
-        var add = service.AddTrackPolyline(fixture.Path, "LED_A", "55.16,35;68.73,35", "F.Cu", 0.25, dryRun: false);
+        var add = service.AddTrackPolyline(fixture.Path, "LED_A", LedConnectionPoints(service, fixture.Path), "F.Cu", 0.25, dryRun: false);
         var after = service.ListUnroutedConnections(fixture.Path, "LED_A");
 
         Assert.True(before.Success);
@@ -69,12 +69,20 @@ public sealed class RoutingServiceTests
         using var fixture = CopyTutorialFixture();
         var service = new RoutingService(new ProjectDiscoveryService());
 
-        var clear = service.ValidateTrackClearance(fixture.Path, "LED_A", "55.16,35;68.73,35", "F.Cu", 0.25);
+        var clear = service.ValidateTrackClearance(fixture.Path, "LED_A", LedConnectionPoints(service, fixture.Path), "F.Cu", 0.25);
         var violation = service.ValidateTrackClearance(fixture.Path, "LED_A", "70,50;76,50", "B.Cu", 0.25);
 
         Assert.True(clear.Success);
         Assert.False(violation.Success);
         Assert.Equal("ROUTING_CLEARANCE_VIOLATION", violation.Error?.Code);
+    }
+
+    private static string LedConnectionPoints(RoutingService service, string projectPath)
+    {
+        var routing = service.GetNetRouting(projectPath, "LED_A").Data!;
+        var from = routing.Pads.Single(pad => pad.FootprintReference == "R1" && pad.PadName == "2");
+        var to = routing.Pads.Single(pad => pad.FootprintReference == "D1" && pad.PadName == "1");
+        return FormattableString.Invariant($"{from.AbsoluteXMillimeters},{from.AbsoluteYMillimeters};{to.AbsoluteXMillimeters},{to.AbsoluteYMillimeters}");
     }
 
     [Fact]
