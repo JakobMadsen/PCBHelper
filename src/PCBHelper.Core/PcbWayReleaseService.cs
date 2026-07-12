@@ -11,8 +11,11 @@ public sealed class PcbWayReleaseService
     private readonly ExportService _exports;
     private readonly AssemblyService _assembly;
     private readonly EngineeringGateService _gates;
+    private readonly DesignIntentService _designIntent;
+    public PcbWayReleaseService(ProjectDiscoveryService projects, ExportService exports, AssemblyService assembly, EngineeringGateService gates, DesignIntentService designIntent)
+    { _projects=projects; _exports=exports; _assembly=assembly; _gates=gates; _designIntent=designIntent; }
     public PcbWayReleaseService(ProjectDiscoveryService projects, ExportService exports, AssemblyService assembly, EngineeringGateService gates)
-    { _projects=projects; _exports=exports; _assembly=assembly; _gates=gates; }
+        : this(projects, exports, assembly, gates, new DesignIntentService(projects, new BoardInspectionService(projects))) { }
 
     public ToolResponse<ReleaseRequirementsResult> ValidateRequirements(string projectPath)
     {
@@ -32,7 +35,9 @@ public sealed class PcbWayReleaseService
     {
         var project=_projects.GetSummary(projectPath); if(!project.Success||project.Data is null)return ToolResponse<PcbWayReleaseResult>.Fail(project.Summary,project.Error?.Code??"PROJECT_NOT_FOUND",project.Error?.Message);
         var requirements=ValidateRequirements(projectPath); if(requirements.Data is { Passed:false })return ToolResponse<PcbWayReleaseResult>.Fail("Release requirements are not implemented.","RELEASE_REQUIREMENT_MISSING",data:null);
-        var gate=await _gates.RunAsync(projectPath,EngineeringGateRequirements.Default,cancellationToken); if(!gate.Success||gate.Data?.Status!=EngineeringGateStatus.Passed)return ToolResponse<PcbWayReleaseResult>.Fail("Engineering release gate did not pass.","RELEASE_GATE_FAILED",gate.Error?.Message);
+        var intent=_designIntent.Analyze(projectPath);if(intent.Data?.Findings.Any(f=>f.RuleId=="INTENT-COMPONENT-EVIDENCE-001"&&f.Severity==DesignIntentSeverity.Error&&f.Outcome==DesignIntentOutcome.NotProven)==true)return ToolResponse<PcbWayReleaseResult>.Fail("Critical component evidence is unavailable.","COMPONENT_EVIDENCE_UNAVAILABLE");if(intent.Data is null||!intent.Data.Passed)return ToolResponse<PcbWayReleaseResult>.Fail("Design-intent release gate did not pass.",intent.Error?.Code??"DESIGN_INTENT_GATE_FAILED",intent.Error?.Message??intent.Summary);
+        var releaseRequirements=new EngineeringGateRequirements("required","required","required","skip","required");
+        var gate=await _gates.RunAsync(projectPath,releaseRequirements,cancellationToken); if(!gate.Success||gate.Data?.Status!=EngineeringGateStatus.Passed)return ToolResponse<PcbWayReleaseResult>.Fail("Engineering release gate did not pass.","RELEASE_GATE_FAILED",gate.Error?.Message);
         var manufacturing=await _exports.ExportManufacturingFilesAsync(projectPath,cancellationToken); if(manufacturing.Data is null)return ToolResponse<PcbWayReleaseResult>.Fail(manufacturing.Summary,manufacturing.Error?.Code??"EXPORT_FAILED",manufacturing.Error?.Message);
         var bom=await _assembly.ExportAssemblyBomAsync(projectPath,cancellationToken);var cpl=await _assembly.ExportCplAsync(projectPath,cancellationToken);var validation=_assembly.ValidateAssemblyPackage(projectPath);
         if(bom.Data is null||cpl.Data is null||validation.Data is null||!validation.Data.Valid)return ToolResponse<PcbWayReleaseResult>.Fail("Assembly release validation failed.","ASSEMBLY_VALIDATION_FAILED");

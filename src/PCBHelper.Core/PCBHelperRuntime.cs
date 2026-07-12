@@ -22,14 +22,15 @@ public sealed class PCBHelperRuntime
         Components = new ComponentService(Projects);
         BoardSummary = new BoardSummaryService(Projects);
         BoardInspection = new BoardInspectionService(Projects);
+        DesignIntent = new DesignIntentService(Projects, BoardInspection);
         BoardFinishing = new BoardFinishingService(Projects);
         Gui = new GuiReviewService(locator, new KiCadExecutableLocator(locator), runner);
         TransactionStore = new ProjectTransactionStore(Projects);
         Transactions = new ProjectTransactionService(Projects, TransactionStore, new AtomicProjectFileWriter(), () => DateTimeOffset.UtcNow);
-        Gates = new EngineeringGateService(CheckSummary, Assembly, Simulations);
-        Releases = new PcbWayReleaseService(Projects, Exports, Assembly, Gates);
+        Gates = new EngineeringGateService(CheckSummary, Assembly, Simulations, DesignIntent);
+        Releases = new PcbWayReleaseService(Projects, Exports, Assembly, Gates, DesignIntent);
         Plans = new DesignPlanService(Projects, Transactions, Gates);
-        Workflows = new ProjectWorkflowService(Projects, BoardSummary, BoardInspection, Components, Gui, TransactionStore, Gates, Assembly, Simulations, locator, runner);
+        Workflows = new ProjectWorkflowService(Projects, BoardSummary, BoardInspection, Components, Gui, TransactionStore, Gates, Assembly, Simulations, DesignIntent, locator, runner);
     }
 
     public static PCBHelperRuntime ForCli() => new(ProjectScopePolicy.Unrestricted());
@@ -48,6 +49,7 @@ public sealed class PCBHelperRuntime
     public ComponentService Components { get; }
     public BoardSummaryService BoardSummary { get; }
     public BoardInspectionService BoardInspection { get; }
+    public DesignIntentService DesignIntent { get; }
     public BoardFinishingService BoardFinishing { get; }
     public GuiReviewService Gui { get; }
     public ProjectTransactionStore TransactionStore { get; }
@@ -70,15 +72,17 @@ public sealed class ProjectWorkflowService
     private readonly EngineeringGateService _gates;
     private readonly AssemblyService _assembly;
     private readonly SimulationService _simulations;
+    private readonly DesignIntentService _designIntent;
     private readonly KiCadCliLocator _cliLocator;
     private readonly ICommandRunner _runner;
 
     public ProjectWorkflowService(ProjectDiscoveryService projects, BoardSummaryService boards, BoardInspectionService inspection,
-        ComponentService components, GuiReviewService gui, ProjectTransactionStore transactions, EngineeringGateService gates, AssemblyService assembly, SimulationService simulations,
+        ComponentService components, GuiReviewService gui, ProjectTransactionStore transactions, EngineeringGateService gates, AssemblyService assembly, SimulationService simulations, DesignIntentService designIntent,
         KiCadCliLocator cliLocator, ICommandRunner runner)
     {
         _projects = projects; _boards = boards; _inspection = inspection; _components = components; _gui = gui;
         _transactions = transactions; _gates = gates; _assembly = assembly; _simulations = simulations; _cliLocator = cliLocator; _runner = runner;
+        _designIntent = designIntent;
     }
 
     public async Task<ToolResponse<ProjectContextResult>> GetProjectContextAsync(string projectPath, CancellationToken cancellationToken = default)
@@ -104,6 +108,7 @@ public sealed class ProjectWorkflowService
         if (!context.Success || context.Data is null)
             return ToolResponse<ReviewPackageResult>.Fail(context.Summary, context.Error?.Code ?? "PROJECT_NOT_FOUND", context.Error?.Message);
         var validation = _assembly.ValidateAssemblyPackage(projectPath);
+        var intent = _designIntent.Analyze(projectPath);
         var root = context.Data.Project.ProjectRoot;
         var directory = Path.Combine(root, ".pcbhelper", "review", DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffZ"));
         Directory.CreateDirectory(directory);
@@ -135,7 +140,8 @@ public sealed class ProjectWorkflowService
             uncertainty.Add("KiCad CLI is unavailable, so visual renders were not generated.");
         }
         var report = Path.Combine(directory, "review.json");
-        var result = new ReviewPackageResult(report, context.Data, validation.Data, renderFiles, uncertainty);
+        if (intent.Data is null) uncertainty.Add(intent.Error?.Message ?? intent.Summary);
+        var result = new ReviewPackageResult(report, context.Data, validation.Data, renderFiles, uncertainty, intent.Data);
         await File.WriteAllTextAsync(report, JsonSerializer.Serialize(result, JsonOptions), cancellationToken);
         return ToolResponse<ReviewPackageResult>.Ok("Generated project review package.", result, result.UnresolvedUncertainty);
     }
@@ -154,4 +160,4 @@ public sealed class ProjectWorkflowService
 
 public sealed record ProjectContextResult(ProjectSummary Project, BoardSummary? Board, ComponentListResult? Components, NetListResult? Nets, KiCadGuiCapabilities? KiCadCapabilities, ProjectTransactionRecord? LatestTransaction, SimulationCapabilities? SimulationCapabilities = null, AgentContractReference? AgentContract = null);
 public sealed record AgentContractReference(int CapabilityVersion, int GuideVersion, string GuideUri, string DesignPlanSchemaUri);
-public sealed record ReviewPackageResult(string ReportPath, ProjectContextResult Context, AssemblyValidationResult? ManufacturingValidation, IReadOnlyList<string> RenderFiles, IReadOnlyList<string> UnresolvedUncertainty);
+public sealed record ReviewPackageResult(string ReportPath, ProjectContextResult Context, AssemblyValidationResult? ManufacturingValidation, IReadOnlyList<string> RenderFiles, IReadOnlyList<string> UnresolvedUncertainty, DesignIntentReport? DesignIntent = null);

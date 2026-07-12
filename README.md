@@ -1,29 +1,93 @@
 # PCBHelper
 
-PCBHelper is an experimental conversational tool for turning small, simple electronics ideas into reviewable, verified, manufacturer-ready PCBs.
+PCBHelper is a local, open-source bridge between an AI agent and KiCad for designing small, simple, reviewable PCBs through conversation.
 
-The goal is not to replace an electronics engineer or generate arbitrary PCBs from text. The goal is to let a person without KiCad expertise describe a constrained board to an AI, review understandable decisions and evidence, and receive a PCBWay-ready package. KiCad remains the internal source of truth and an optional expert review surface.
+Describe what a low-voltage board should do. The agent builds a constrained Design Plan, PCBHelper previews and applies it as a reversible transaction, and deterministic tools run checks, simulation, design-intent verification, and manufacturing export. You do not need to know KiCad for the normal workflow, but every result remains a real KiCad project that an expert can inspect.
 
-> **v0.1-alpha target:** Windows 11 x64, KiCad 10, and VS Code/Copilot or another MCP-compatible agent. PCBHelper is experimental and does not guarantee that a physical circuit works.
+> **Public alpha:** Windows 11 x64, KiCad 10, and an MCP-compatible client such as VS Code with GitHub Copilot. PCBHelper reduces risk; it does not guarantee that a physical circuit works.
 
-## 10 Minute Quick Start
+## What It Does
 
-1. Install [KiCad 10](https://www.kicad.org/download/windows/) and confirm `kicad-cli` is available.
-2. Download and extract the self-contained Windows alpha ZIP, or build the solution with .NET 10.
-3. Run the environment check:
+- Reads KiCad projects, components, nets, footprints, routing, and board geometry.
+- Creates and edits supported schematic symbols, values, connections, footprints, placement, routing primitives, zones, and testpoints.
+- Groups changes into hash-bound Design Plans with preview, atomic apply, and conflict-safe restore.
+- Runs KiCad ERC/DRC and creates Gerber, drill, BOM, CPL, review, and PCBWay release packages.
+- Runs deterministic ngspice assertions for operating-point, AC, transient, tolerance, battery, and noise scenarios.
+- Checks declared design intent: common circuit mistakes, ADC ranges, test access, connector requirements, and sourced component ratings.
+- Reports what was proved, what failed, and what remains unknown instead of asking an LLM to grade its own work.
+
+PCBHelper never places an order, pays, publishes a design, or approves a component substitution.
+
+## How It Works
+
+```text
+Conversation
+    |
+    v
+AI agent through MCP
+    |
+    v
+PCBHelper Design Plan -> preview -> reversible transaction
+    |
+    +-> KiCad project files and kicad-cli
+    +-> ngspice simulation assertions
+    +-> Design Intent verification
+    +-> ERC / DRC / manufacturing gates
+    |
+    v
+Review package and manufacturer files
+```
+
+The AI proposes and explains. PCBHelper performs structured, reproducible operations and evaluates the resulting evidence. Routine reversible work is autonomous; the user is involved for ambiguous requirements, material risk, unusual parts, release decisions, orders, and payment.
+
+## 10-Minute Quick Start
+
+### 1. Install KiCad
+
+Install [KiCad 10 for Windows](https://www.kicad.org/download/windows/). PCBHelper discovers `kicad-cli` through `KICAD_CLI`, `PATH`, or known installation locations.
+
+### 2. Download PCBHelper
+
+Download and extract a [Windows alpha release](https://github.com/JakobMadsen/PCBHelper/releases). The ZIP is self-contained; .NET is only required when building from source.
+
+Run:
 
 ```powershell
 ./pcbhelper.exe doctor --json
 ```
 
-4. Authorize the directories that PCBHelper MCP may access, then restart VS Code:
+### 3. Authorize Project Directories
+
+The MCP server refuses project access until you explicitly authorize one or more roots:
 
 ```powershell
-setx PCBHELPER_ALLOWED_ROOTS "C:\PCB;C:\Users\Public\Documents\PCBHelper"
+setx PCBHELPER_ALLOWED_ROOTS "C:\PCB;C:\Projects\Boards"
 ```
 
-5. Add `mcp.example.json` to your client's MCP configuration and update the executable path.
-6. Ask the agent:
+Restart VS Code after changing the environment variable.
+
+### 4. Configure MCP
+
+Point your MCP client at the extracted executable:
+
+```json
+{
+  "servers": {
+    "pcbhelper": {
+      "type": "stdio",
+      "command": "C:\\Tools\\PCBHelper\\PCBHelper.Mcp.exe",
+      "env": {
+        "PCBHELPER_MCP_PROFILE": "workflow",
+        "PCBHELPER_ALLOWED_ROOTS": "C:\\PCB;C:\\Projects\\Boards"
+      }
+    }
+  }
+}
+```
+
+The `workflow` profile is the supported product interface. The larger `legacy` profile exists for development and debugging.
+
+### 5. Try the Included Fixture
 
 ```text
 Use PCBHelper on the included kicad-getting-started-led fixture.
@@ -31,229 +95,102 @@ Read the agent guide and capabilities, summarize the project, preview changing R
 apply the exact previewed plan, run the engineering gate, and restore the transaction.
 ```
 
-Source checkout users can run the same workflow with `dotnet run --project src/PCBHelper.Cli -- doctor` and the checked-in `.vscode/mcp.json`.
+The canonical agent workflow is documented in the [Agent Guide](docs/agent-guide-v1.md) and [Copilot setup guide](docs/copilot-mcp.md).
 
-Docker is optional and intended for clean-room development tests. It is not required by normal Windows users:
+## Design Plans
+
+Normal mutations are submitted as one declarative JSON plan rather than a sequence of improvised shell or GUI actions:
+
+```json
+{
+  "version": 1,
+  "goal": "Change the indicator resistor and sensor spacing",
+  "operations": [
+    {
+      "id": "resistor",
+      "type": "set-component-value",
+      "reference": "R1",
+      "value": "300R"
+    },
+    {
+      "id": "spacing",
+      "type": "set-component-spacing",
+      "fixedReference": "S1",
+      "movingReference": "S2",
+      "distanceMm": 15,
+      "axis": "x"
+    }
+  ]
+}
+```
+
+PCBHelper validates the plan, returns a canonical SHA-256 hash, prepares all file changes in isolation, and applies only the exact previewed hash. Each transaction records before/after snapshots and can be restored when the project has not changed unexpectedly.
+
+## Engineering Evidence
+
+PCBHelper deliberately separates different kinds of confidence:
+
+| Check | Question it answers |
+| --- | --- |
+| ERC | Are schematic pins and connections electrically legal? |
+| Design Intent | Does the circuit match the requirements we explicitly declared? |
+| Simulation | Does the mathematical model satisfy numerical assertions? |
+| DRC | Does the board obey connectivity and manufacturing geometry rules? |
+| Test access | Can critical signals be measured on the assembled board? |
+| Ratings | Do sourced component limits cover the declared or simulated load? |
+| Manufacturing | Are Gerber, drill, BOM, and CPL outputs mutually consistent? |
+
+No single check proves physical operation. Prototype assembly, visual inspection, and bench measurement remain part of responsible hardware development.
+
+See [Design Intent Verification](docs/specs/design-intent-verification.md) and [Simulation Assertion Tests](docs/specs/simulation-assertion-tests.md).
+
+## Build And Test From Source
+
+Requirements: .NET 10 SDK. KiCad 10 and ngspice are needed for their respective E2E tests.
+
+```powershell
+dotnet build PCBHelper.slnx -c Release
+dotnet test tests/PCBHelper.Core.Tests/PCBHelper.Core.Tests.csproj -c Release
+dotnet test tests/PCBHelper.Contract.Tests/PCBHelper.Contract.Tests.csproj -c Release
+```
+
+Docker Desktop is optional and used only as a clean-room development environment:
 
 ```powershell
 ./scripts/Test-DockerCleanRoom.ps1 -Target core-test
 ./scripts/Test-DockerCleanRoom.ps1 -Target eda-test
 ```
 
-See the [support matrix](docs/support-matrix.md), [agent guide](docs/agent-guide-v1.md), and [security policy](.github/SECURITY.md) before using PCBHelper on a new design.
+The EDA image installs KiCad 10 and ngspice, then tests checks, Design Plans, simulation, export, and packaging from `git archive HEAD`. Docker is not required for normal Windows use.
 
-## Project Thesis
+## Scope And Limitations
 
-Simple PCB work often takes too long because the mechanical steps are repetitive:
+PCBHelper currently targets small, simple, low-voltage, two-layer prototype boards.
 
-- creating projects from known templates
-- reading footprints, nets, board outlines, and constraints
-- placing components at exact distances
-- running ERC and DRC
-- interpreting reports
-- exporting manufacturing files
+It is not intended for:
 
-PCBHelper aims to turn those steps into explicit tools that Codex can call through a local integration layer, likely an MCP server.
+- mains voltage, medical, safety-critical, RF, high-speed, or high-current design
+- unconstrained component or footprint invention
+- complex autorouting or guaranteed signal integrity
+- replacing datasheets, engineering review, simulation models, or physical testing
+- unattended ordering, payment, publication, or substitution approval
 
-```text
-Codex
-  -> local MCP server / tool layer
-  -> KiCad Python or IPC API and kicad-cli
-  -> KiCad project files and KiCad GUI
-```
+KiCad GUI refresh and zone refill are capability-gated. File changes may require reopening or reloading the project in KiCad. Linux is tested through clean-room CI but is not an official alpha user platform.
 
-The human stays in the loop by approving intended function, dimensions, connectors, component costs and risks, and final release. Codex may propose parts and operate KiCad, but deterministic tools must verify identity, footprint and pin compatibility, engineering checks, and manufacturing readiness. Expensive, scarce, obsolete, or uncertain parts require a conversation before design lock.
+## Documentation
 
-## Bring Your Own Key
-
-This repository is intended to be public and BYOK-friendly.
-
-Users should be able to run the local KiCad tool layer with their own AI provider credentials, local agent, or Codex environment. The project should avoid hard-coding hosted accounts, API keys, or private services into the core KiCad automation layer.
-
-Configuration belongs in local environment files, OS keychains, or user-specific agent settings. Secrets must not be committed.
-
-## First Prototype
-
-The first end-to-end demo is a small optical sensor PCB:
-
-- two optical sensors or photodiodes
-- exact 15 mm center-to-center spacing
-- two matched analog channels
-- connector pins for power, ground, AMP_A, and AMP_B
-- ERC and DRC checks
-- manufacturing export package
-
-The point of this board is not to be the final product. It is a compact test of the full loop:
-
-1. express requirements
-2. create a KiCad project
-3. place components precisely
-4. enforce mechanical constraints
-5. run electrical and layout checks
-6. export production files
-7. review everything in KiCad
-
-## Non-Goals For V1
-
-PCBHelper v1 is not a general AI electronics engineer.
-
-It should not:
-
-- design complex analog circuits freely
-- do high-speed or RF layout
-- autoroute complex boards
-- choose components without verified identity, compatibility, sourcing evidence, and project approval
-- order boards automatically
-- hide file changes from the user
-- depend on GUI clicking or screen scraping as the primary control method
-
-The first version should be a controlled, template-based KiCad operator.
-
-## Current Status
-
-This repository contains the first implementation slice:
-
-- .NET 10 solution structure
-- `pcbhelper doctor`
-- `pcbhelper summary <project-path>`
-- `pcbhelper check <project-path>`
-- `pcbhelper board-summary <project-path>`
-- `pcbhelper measure <project-path> --from <ref> --to <ref>`
-- `pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm>`
-- `pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm>`
-- `pcbhelper restore-change <project-path> --change <change-id-or-path>`
-- `pcbhelper list-changes <project-path>`
-- `pcbhelper show-change <project-path> --change <change-id-or-path>`
-- `pcbhelper list-components <project-path>`
-- `pcbhelper get-value <project-path> --ref <ref>`
-- `pcbhelper set-value <project-path> --ref <ref> --value <value>`
-- `pcbhelper list-nets <project-path>`
-- `pcbhelper get-net <project-path> --net <name-or-code>`
-- `pcbhelper list-footprint-pads <project-path> --ref <ref>`
-- `pcbhelper list-tracks <project-path>`
-- `pcbhelper list-vias <project-path>`
-- `pcbhelper get-net-routing <project-path> --net <name-or-code>`
-- `pcbhelper add-track <project-path> --net <name-or-code> --start-x <mm> --start-y <mm> --end-x <mm> --end-y <mm> --layer F.Cu|B.Cu --width <mm>`
-- `pcbhelper delete-track <project-path> --track <uuid-or-id>`
-- `pcbhelper add-via <project-path> --net <name-or-code> --x <mm> --y <mm> --size <mm> --drill <mm> --layers F.Cu,B.Cu`
-- `pcbhelper delete-via <project-path> --via <uuid-or-id>`
-- `pcbhelper list-schematic-symbols <project-path>`
-- `pcbhelper create-schematic-symbol <project-path> --symbol <catalog-id> --ref <ref> --x <mm> --y <mm> [--unit <n>]`
-- `pcbhelper set-symbol-field <project-path> --ref <ref> --field <name> --value <value>`
-- `pcbhelper connect-schematic-pins <project-path> --from <ref.pin|ref:pin> --to <ref.pin|ref:pin> --net <name>`
-- `pcbhelper add-net-label <project-path> --net <name> --x <mm> --y <mm>`
-- `pcbhelper delete-net-label-by-uuid <project-path> --uuid <uuid>`
-- `pcbhelper delete-net-label <project-path> --net <name> --x <mm> --y <mm> [--tolerance <mm>]`
-- `pcbhelper delete-schematic-wire-by-uuid <project-path> --uuid <uuid>`
-- `pcbhelper delete-schematic-wire <project-path> --x1 <mm> --y1 <mm> --x2 <mm> --y2 <mm> [--tolerance <mm>]`
-- `pcbhelper update-pcb-from-schematic <project-path>`
-- `pcbhelper regenerate-board-footprint <project-path> --ref <ref>`
-- `pcbhelper list-tests <project-path>`
-- `pcbhelper validate-tests <project-path>`
-- `pcbhelper evaluate-test-results <project-path> --results <path>`
-- `pcbhelper export <project-path>`
-- `pcbhelper export-bom <project-path>`
-- `pcbhelper export-position-files <project-path>`
-- `pcbhelper package <project-path>`
-- `pcbhelper export-assembly-bom <project-path>`
-- `pcbhelper export-cpl <project-path>`
-- `pcbhelper validate-assembly-package <project-path>`
-- `pcbhelper package-assembly <project-path>`
-- `pcbhelper open <project-path>`
-- `pcbhelper kicad-gui-status <project-path>`
-- `pcbhelper refresh-gui <project-path>`
-- `pcbhelper focus-component <project-path> --ref <ref>`
-- `pcbhelper plan validate|preview|apply <project-path> --file <plan.json>`
-- `pcbhelper transaction show|restore <project-path> --id <transaction-id>`
-- MCP stdio server for VS Code/Copilot-compatible clients
-- unit, contract, and headless E2E test projects
-
-Start with:
-
-- [Project context](CONTEXT.md)
 - [Product requirements](docs/specs/prd.md)
-- [Architecture sketch](docs/specs/architecture.md)
-- [MCP tool contract](docs/specs/mcp-tool-contract.md)
+- [Architecture](docs/specs/architecture.md)
 - [Design Plan V1](docs/specs/design-plan-v1.md)
-- [Simulation assertion tests](docs/specs/simulation-assertion-tests.md)
+- [MCP tool contract](docs/specs/mcp-tool-contract.md)
+- [Design Intent Verification](docs/specs/design-intent-verification.md)
+- [Simulation Assertion Tests](docs/specs/simulation-assertion-tests.md)
 - [Board finishing and PCBWay release](docs/specs/board-finishing-and-release.md)
-- [Hello World board spec](docs/specs/hello-world-optical-board.md)
-- [Roadmap](docs/roadmap.md)
 - [Testing strategy](docs/testing-strategy.md)
-- [Implementation decisions](docs/decisions.md)
-- [VS Code / Copilot MCP setup](docs/copilot-mcp.md)
-- [Agent smoke test](docs/agent-smoke-test.md)
-- [Agent Guide V1](docs/agent-guide-v1.md)
-- [Agent evaluation scenarios](docs/agent-evals.md)
-- [Security and secrets](docs/security.md)
 - [Support matrix](docs/support-matrix.md)
+- [Security policy](.github/SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
-- [Open questions](docs/open-questions.md)
-
-## V1 Targets
-
-- Runtime: .NET 10 LTS
-- KiCad: KiCad 9+
-- First client: VS Code/Copilot through MCP stdio
-- First KiCad integration: `kicad-cli`
-
-## CLI Quick Start
-
-```text
-dotnet run --project src/PCBHelper.Cli -- doctor
-dotnet run --project src/PCBHelper.Cli -- summary fixtures/minimal-board
-dotnet run --project src/PCBHelper.Cli -- check fixtures/minimal-board
-dotnet run --project src/PCBHelper.Cli -- board-summary fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- measure fixtures/kicad-getting-started-led --from R1 --to D1
-dotnet run --project src/PCBHelper.Cli -- move fixtures/kicad-getting-started-led --ref D1 --x 75 --y 35 --dry-run
-dotnet run --project src/PCBHelper.Cli -- set-spacing fixtures/kicad-getting-started-led --fixed R1 --moving D1 --distance 25 --axis x --dry-run
-dotnet run --project src/PCBHelper.Cli -- restore-change fixtures/kicad-getting-started-led --change <change-id-or-path> --dry-run
-dotnet run --project src/PCBHelper.Cli -- list-components fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- get-value fixtures/kicad-getting-started-led --ref R1
-dotnet run --project src/PCBHelper.Cli -- set-value fixtures/kicad-getting-started-led --ref R1 --value 300R --dry-run
-dotnet run --project src/PCBHelper.Cli -- list-nets fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- get-net-routing fixtures/kicad-getting-started-led --net LED_A
-dotnet run --project src/PCBHelper.Cli -- add-track fixtures/kicad-getting-started-led --net LED_A --start-x 10 --start-y 10 --end-x 20 --end-y 10 --layer F.Cu --width 0.25 --dry-run
-dotnet run --project src/PCBHelper.Cli -- add-via fixtures/kicad-getting-started-led --net GND --x 73 --y 45 --size 1.2 --drill 0.6 --layers F.Cu,B.Cu --dry-run
-dotnet run --project src/PCBHelper.Cli -- list-schematic-symbols fixtures/blank-authoring
-dotnet run --project src/PCBHelper.Cli -- create-schematic-symbol fixtures/blank-authoring --symbol Device:R --ref R1 --x 50 --y 50 --value 330R --dry-run
-dotnet run --project src/PCBHelper.Cli -- connect-schematic-pins fixtures/blank-authoring --from R1.1 --to R1.2 --net LOOP --dry-run
-dotnet run --project src/PCBHelper.Cli -- connect-schematic-pins fixtures/blank-authoring --from R1:1 --to R1:2 --net LOOP --dry-run
-dotnet run --project src/PCBHelper.Cli -- update-pcb-from-schematic fixtures/blank-authoring --dry-run
-dotnet run --project src/PCBHelper.Cli -- validate-tests fixtures/simulation-assertions
-dotnet run --project src/PCBHelper.Cli -- evaluate-test-results fixtures/simulation-assertions --results fixtures/simulation-assertions/measurements-pass.json
-dotnet run --project src/PCBHelper.Cli -- simulation status --json
-dotnet run --project src/PCBHelper.Cli -- simulation validate fixtures/simulation-ngspice-rc --json
-dotnet run --project src/PCBHelper.Cli -- simulation run fixtures/simulation-ngspice-rc --json
-dotnet run --project src/PCBHelper.Cli -- export fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- export-bom fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- export-position-files fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- package fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- kicad-gui-status fixtures/kicad-getting-started-led
-dotnet run --project src/PCBHelper.Cli -- open fixtures/kicad-getting-started-led --dry-run
-```
-
-Add `--json` to any command for structured output.
-
-The `simulation` commands use an optional ngspice installation discovered through `NGSPICE`, PATH, or known
-Windows locations. PCBHelper generates constrained simulator input, stores artifacts under `.pcbhelper/simulations/`,
-and evaluates numeric assertions itself. A missing simulator is reported as unavailable, never as a passing test.
-
-Real `move`, `set-spacing`, `set-value`, routing add/delete, schematic authoring, PCB update, and `restore-change` operations write a review report under `.pcbhelper/changes/<change-id>/change.json` and run KiCad checks after the edit. Dry-runs report proposed before/after values without writing project files or a change report.
-
-Routing V1 is intentionally primitive: it can inspect tracks/vias and add/delete straight segments or through vias. It is not an autorouter.
-
-Schematic authoring V1 is intentionally catalog-based: it can place approved LED/resistor/battery symbols, set fields, draw simple wires/labels, and create missing template footprints. It is not arbitrary KiCad library synthesis.
 
 ## License
 
 PCBHelper is licensed under the [Apache License 2.0](LICENSE).
-
-## Alpha Limitations
-
-- Small, simple, low-voltage two-layer boards only.
-- ERC and DRC do not prove electrical function; simulation is evidence, not a physical guarantee.
-- KiCad GUI refresh is capability-gated, and file changes may require an explicit reload.
-- Copper-zone refill may require opening and saving the board in KiCad.
-- PCBHelper generates review and manufacturing artifacts but never places orders, pays, publishes, or approves substitutions.
-- Linux is used for clean-room CI but is not an official v0.1 user platform.

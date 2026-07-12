@@ -50,6 +50,8 @@ tools/
 .pcbhelper/*
 !.pcbhelper/tests/
 !.pcbhelper/tests/**
+!.pcbhelper/design-intent.json
 **/.pcbhelper/*
 !**/.pcbhelper/tests/
 !**/.pcbhelper/tests/**
+!**/.pcbhelper/design-intent.json

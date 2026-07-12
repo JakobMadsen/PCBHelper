@@ -62,7 +62,7 @@ public sealed record ServerCapabilitiesResult(int CapabilityVersion, string Serv
     int DesignPlanVersion, string DesignPlanSchemaUri, IReadOnlyList<DesignPlanOperationDefinition> Operations,
     IReadOnlyList<string> Capabilities, IReadOnlyList<string> Limitations);
 
-public enum DesignPlanPropertyKind { String, Number, Integer }
+public enum DesignPlanPropertyKind { String, Number, Integer, Object }
 public sealed record DesignPlanPropertyDefinition(string Name, DesignPlanPropertyKind Kind, bool Required, object? DefaultValue = null);
 public sealed record DesignPlanOperationDefinition(string Type, string Description, IReadOnlyList<DesignPlanPropertyDefinition> Properties, bool Reversible = true);
 
@@ -71,10 +71,12 @@ public static class DesignPlanOperationCatalog
     private static DesignPlanPropertyDefinition S(string name, bool required = true, string? fallback = null) => new(name, DesignPlanPropertyKind.String, required, fallback);
     private static DesignPlanPropertyDefinition N(string name) => new(name, DesignPlanPropertyKind.Number, true);
     private static DesignPlanPropertyDefinition I(string name, int fallback) => new(name, DesignPlanPropertyKind.Integer, false, fallback);
+    private static DesignPlanPropertyDefinition O(string name) => new(name, DesignPlanPropertyKind.Object, true);
 
     public static readonly IReadOnlyList<DesignPlanOperationDefinition> All = new[]
     {
         Op("set-component-value", "Set a component value in available design files.", S("reference"), S("value"), S("scope", false, "available")),
+        Op("set-design-intent", "Set the structured, project-scoped design intent used by deterministic verification.", O("intent")),
         Op("move-component", "Move one board footprint.", S("reference"), N("xMm"), N("yMm")),
         Op("set-component-spacing", "Set axis-limited spacing between footprints.", S("fixedReference"), S("movingReference"), N("distanceMm"), S("axis", false, "x")),
         Op("create-schematic-symbol", "Place an approved schematic symbol.", S("symbol"), S("reference"), N("xMm"), N("yMm"), S("value", false), S("footprint", false), I("unit", 1)),
@@ -118,6 +120,7 @@ public static class DesignPlanOperationCatalog
                 DesignPlanPropertyKind.String => value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString()),
                 DesignPlanPropertyKind.Number => value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number),
                 DesignPlanPropertyKind.Integer => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _),
+                DesignPlanPropertyKind.Object => value.ValueKind == JsonValueKind.Object,
                 _ => false
             };
             if (!valid) return $"Operation {type} property {property.Name} has an invalid value.";
@@ -129,7 +132,7 @@ public static class DesignPlanOperationCatalog
     {
         object PropertySchema(DesignPlanPropertyDefinition property)
         {
-            var type = property.Kind switch { DesignPlanPropertyKind.String => "string", DesignPlanPropertyKind.Integer => "integer", _ => "number" };
+            var type = property.Kind switch { DesignPlanPropertyKind.String => "string", DesignPlanPropertyKind.Integer => "integer", DesignPlanPropertyKind.Object => "object", _ => "number" };
             var values = new Dictionary<string, object?> { ["type"] = type };
             if (property.DefaultValue is not null) values["default"] = property.DefaultValue;
             return values;
@@ -153,7 +156,7 @@ public static class DesignPlanOperationCatalog
                 ["version"] = new { @const = 1 }, ["goal"] = new { type = "string", minLength = 1 },
                 ["operations"] = new { type = "array", minItems = 1, items = new Dictionary<string, object?> { ["oneOf"] = variants } },
                 ["engineeringGate"] = new { type = "object", additionalProperties = false,
-                    properties = new Dictionary<string, object?> { ["erc"] = Requirement(), ["drc"] = Requirement(), ["manufacturingValidation"] = Requirement(), ["simulationAssertions"] = Requirement() } }
+                    properties = new Dictionary<string, object?> { ["erc"] = Requirement(), ["drc"] = Requirement(), ["manufacturingValidation"] = Requirement(), ["simulationAssertions"] = Requirement(), ["designIntent"] = Requirement() } }
             }
         };
         return JsonSerializer.Serialize(schema, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });

@@ -42,6 +42,7 @@ public sealed class McpWorkflowProcessTests
                 "get_capabilities", "get_agent_guide",
                 "get_project_context", "validate_design_plan", "preview_design_plan", "apply_design_plan",
                 "get_transaction", "restore_transaction", "run_engineering_gate",
+                "analyze_design_intent", "get_design_intent_report",
                 "generate_review_package", "generate_pcbway_package", "generate_pcbway_release", "validate_release_requirements", "refill_zones", "get_simulation_capabilities",
                 "validate_simulation_tests", "run_simulation_tests", "get_simulation_report", "validate_kicad_simulation_models", "export_kicad_spice_netlist", "run_simulation_sweep"
             }, names);

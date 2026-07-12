@@ -50,9 +50,15 @@ public sealed class WorkflowMcpTools
     [McpServerTool(Name = "run_engineering_gate"), Description("Run typed ERC, DRC, simulation, and manufacturing validation gates.")]
     public Task<ToolResponse<EngineeringGateResult>> RunEngineeringGate(
         string projectPath, string erc = "required", string drc = "required",
-        string manufacturingValidation = "required", string simulationAssertions = "skip",
+        string manufacturingValidation = "required", string simulationAssertions = "skip", string designIntent = "optional",
         CancellationToken cancellationToken = default) =>
-        _runtime.Gates.RunAsync(projectPath, new EngineeringGateRequirements(erc, drc, manufacturingValidation, simulationAssertions), cancellationToken);
+        _runtime.Gates.RunAsync(projectPath, new EngineeringGateRequirements(erc, drc, manufacturingValidation, simulationAssertions, designIntent), cancellationToken);
+
+    [McpServerTool(Name = "analyze_design_intent"), Description("Deterministically compare schematic, board test access, and sourced component evidence with the project's declared design intent.")]
+    public ToolResponse<DesignIntentReport> AnalyzeDesignIntent(string projectPath) => _runtime.DesignIntent.Analyze(projectPath);
+
+    [McpServerTool(Name = "get_design_intent_report"), Description("Read a previous project-scoped design-intent report by run id.")]
+    public ToolResponse<DesignIntentReport> GetDesignIntentReport(string projectPath, string runId) => _runtime.DesignIntent.GetReport(projectPath, runId);
 
     [McpServerTool(Name = "generate_review_package"), Description("Generate an autonomous project review report with design and manufacturing context.")]
     public Task<ToolResponse<ReviewPackageResult>> GenerateReviewPackage(string projectPath, CancellationToken cancellationToken) =>
