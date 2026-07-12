@@ -69,8 +69,11 @@ public sealed class EngineeringGateService
             var intent = _designIntent?.Analyze(projectPath);
             var intentStatus = intent?.Data is not null
                 ? intent.Data.Passed ? EngineeringGateCheckStatus.Passed : EngineeringGateCheckStatus.FindingsPresent
-                : intent?.Error?.Code is "DESIGN_INTENT_UNAVAILABLE" or "SCHEMATIC_NOT_FOUND"
-                    ? EngineeringGateCheckStatus.Unavailable : EngineeringGateCheckStatus.ExecutionFailed;
+                : intent is null || intent.Error?.Code is "DESIGN_INTENT_UNAVAILABLE" or "SCHEMATIC_NOT_FOUND"
+                    ? EngineeringGateCheckStatus.Unavailable
+                    : intent.Error?.Code == "DESIGN_INTENT_INVALID"
+                        ? EngineeringGateCheckStatus.FindingsPresent
+                        : EngineeringGateCheckStatus.ExecutionFailed;
             checks.Add(new EngineeringGateCheck("design-intent", Requirement(requirements.DesignIntent), intentStatus,
                 intent?.Data?.Findings.Count(item => item.Severity == DesignIntentSeverity.Error && item.Outcome == DesignIntentOutcome.NotProven) ?? 0,
                 intent?.Data?.PlainLanguageSummary ?? intent?.Error?.Message ?? "Design-intent service is unavailable.",

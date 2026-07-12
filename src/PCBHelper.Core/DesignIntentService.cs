@@ -54,22 +54,29 @@ public sealed class DesignIntentService
         CheckEvidence(graph, loaded.Data.Intent, findings);
         CheckTestAccess(projectPath, loaded.Data.Intent, findings);
 
-        var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffZ") + "-" + Guid.NewGuid().ToString("N")[..8];
-        var output = Path.Combine(loaded.Data.ProjectRoot, ".pcbhelper", "intent-runs", runId);
-        Directory.CreateDirectory(output);
-        var normalized = Path.Combine(output, "normalized-intent.json");
-        var findingsPath = Path.Combine(output, "findings.json");
-        var reportPath = Path.Combine(output, "report.json");
-        File.WriteAllText(normalized, JsonSerializer.Serialize(loaded.Data.Intent, JsonOptions));
-        File.WriteAllText(findingsPath, JsonSerializer.Serialize(findings, JsonOptions));
+        try
+        {
+            var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffZ") + "-" + Guid.NewGuid().ToString("N")[..8];
+            var output = Path.Combine(loaded.Data.ProjectRoot, ".pcbhelper", "intent-runs", runId);
+            Directory.CreateDirectory(output);
+            var normalized = Path.Combine(output, "normalized-intent.json");
+            var findingsPath = Path.Combine(output, "findings.json");
+            var reportPath = Path.Combine(output, "report.json");
+            File.WriteAllText(normalized, JsonSerializer.Serialize(loaded.Data.Intent, JsonOptions));
+            File.WriteAllText(findingsPath, JsonSerializer.Serialize(findings, JsonOptions));
 
-        var proven = findings.Count(item => item.Outcome == DesignIntentOutcome.Proven);
-        var notProven = findings.Count(item => item.Outcome == DesignIntentOutcome.NotProven);
-        var errors = findings.Count(item => item.Severity == DesignIntentSeverity.Error && item.Outcome == DesignIntentOutcome.NotProven);
-        var report = new DesignIntentReport(runId, loaded.Data.IntentPath, reportPath, graph, findings, errors == 0, proven, notProven,
-            PlainLanguageSummary(errors, notProven), new[] { normalized, findingsPath, reportPath });
-        File.WriteAllText(reportPath, JsonSerializer.Serialize(report, JsonOptions));
-        return ToolResponse<DesignIntentReport>.Ok(report.Passed ? "Design intent verification passed." : $"Design intent verification found {errors} blocking error(s).", report);
+            var proven = findings.Count(item => item.Outcome == DesignIntentOutcome.Proven);
+            var notProven = findings.Count(item => item.Outcome == DesignIntentOutcome.NotProven);
+            var errors = findings.Count(item => item.Severity == DesignIntentSeverity.Error && item.Outcome == DesignIntentOutcome.NotProven);
+            var report = new DesignIntentReport(runId, loaded.Data.IntentPath, reportPath, graph, findings, errors == 0, proven, notProven,
+                PlainLanguageSummary(errors, notProven), new[] { normalized, findingsPath, reportPath });
+            File.WriteAllText(reportPath, JsonSerializer.Serialize(report, JsonOptions));
+            return ToolResponse<DesignIntentReport>.Ok(report.Passed ? "Design intent verification passed." : $"Design intent verification found {errors} blocking error(s).", report);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return ToolResponse<DesignIntentReport>.Fail("Could not write design-intent report artifacts.", "DESIGN_INTENT_REPORT_WRITE_FAILED", exception.Message);
+        }
     }
 
     public ToolResponse<DesignIntentReport> GetReport(string projectPath, string runId)

@@ -232,7 +232,7 @@ public sealed class CliApp
     private int RunIntent(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 3 || args[1] is not ("validate" or "analyze" or "report"))
-        { Write(ToolResponse<object>.Fail("Usage: pcbhelper intent validate|analyze|report <project-path> [--run <id>]", "DESIGN_INTENT_ARGS_REQUIRED"), json); return 2; }
+        { Write(ToolResponse<object>.Fail("Usage: pcbhelper intent validate|analyze <project-path> OR pcbhelper intent report <project-path> --run <id>", "DESIGN_INTENT_ARGS_REQUIRED"), json); return 2; }
         if (args[1] == "validate") { var result = _designIntent.Validate(args[2]); Write(result, json); return result.Data?.Valid == true ? 0 : 1; }
         if (args[1] == "analyze") { var result = _designIntent.Analyze(args[2]); Write(result, json); return result.Data?.Passed == true ? 0 : 1; }
         var run = GetOption(args, "--run");

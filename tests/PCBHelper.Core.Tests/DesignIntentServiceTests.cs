@@ -69,6 +69,42 @@ public sealed class DesignIntentServiceTests
         Assert.True(File.Exists(apply.Data!.IntentPath));
     }
 
+    [Fact]
+    public void Report_Write_Failure_Returns_Stable_Error()
+    {
+        using var fixture = CopyCircuit();
+        WriteIntent(fixture.Path, """{"version":1,"signals":[{"net":"LED_A","role":"led-drive"}]}""");
+        File.WriteAllText(Path.Combine(fixture.Path, ".pcbhelper", "intent-runs"), "blocks directory creation");
+
+        var result = Service().Analyze(fixture.Path);
+
+        Assert.False(result.Success);
+        Assert.Equal("DESIGN_INTENT_REPORT_WRITE_FAILED", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task Invalid_Intent_Is_A_Gate_Finding_Not_Execution_Failure()
+    {
+        using var fixture = CopyCircuit();
+        WriteIntent(fixture.Path, """{"version":1}""");
+        using var fakeRoot = new TempDirectory();
+        var fakeCli = Path.Combine(fakeRoot.Path, "kicad-cli.exe");
+        File.WriteAllText(fakeCli, string.Empty);
+        var projects = new ProjectDiscoveryService();
+        var locator = new KiCadCliLocator(name => name == "KICAD_CLI" ? fakeCli : null);
+        var runner = new FakeCommandRunner();
+        var checks = new CheckSummaryService(new CheckRunner(projects, locator, runner));
+        var exports = new ExportService(projects, locator, runner);
+        var assembly = new AssemblyService(projects, new KiCadDoctorService(locator, runner), exports);
+        var intent = new DesignIntentService(projects, new BoardInspectionService(projects));
+        var gates = new EngineeringGateService(checks, assembly, designIntent: intent);
+
+        var result = await gates.RunAsync(fixture.Path, new EngineeringGateRequirements("skip", "skip", "skip", "skip", "required"));
+
+        Assert.Equal(EngineeringGateStatus.FindingsPresent, result.Data!.Status);
+        Assert.Contains(result.Data.Checks, check => check.Kind == "design-intent" && check.Status == EngineeringGateCheckStatus.FindingsPresent);
+    }
+
     private static DesignIntentService Service()
     {
         var projects = new ProjectDiscoveryService();
@@ -96,5 +132,15 @@ public sealed class DesignIntentServiceTests
         service.ConnectPins(temp.Path, "D1.K", "BT1.-", "GND", false);
         service.UpdatePcbFromSchematic(temp.Path, false);
         return temp;
+    }
+
+    private sealed class FakeCommandRunner : ICommandRunner
+    {
+        public async Task<CommandExecutionResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken = default)
+        {
+            for (var index = 0; index < arguments.Count - 1; index++)
+                if (arguments[index] == "--output") await File.WriteAllTextAsync(arguments[index + 1], "[]", cancellationToken);
+            return new CommandExecutionResult(0, string.Empty, string.Empty);
+        }
     }
 }
