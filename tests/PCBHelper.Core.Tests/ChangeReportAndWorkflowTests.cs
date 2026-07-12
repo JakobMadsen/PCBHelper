@@ -79,6 +79,48 @@ public sealed class ChangeReportAndWorkflowTests
         Assert.Equal(original.YMillimeters, d1.YMillimeters);
     }
 
+    [Fact]
+    public async Task ChangeReportService_Rejects_Snapshots_Outside_Project()
+    {
+        using var fixture = CopyTutorialFixture();
+        using var outside = new TempDirectory();
+        var service = new ChangeReportService(new ProjectDiscoveryService());
+
+        var write = await service.WriteAsync(
+            fixture.Path,
+            new ChangeReportInput(
+                "set-symbol-field",
+                "R1",
+                null,
+                null,
+                null,
+                null,
+                Path.Combine(fixture.Path, "kicad-getting-started-led.kicad_sch"),
+                new Placement(0, 0, null),
+                new Placement(0, 0, null),
+                "Checks not run.",
+                Array.Empty<string>(),
+                FileSnapshots: new[] { new ChangeFileSnapshot(Path.Combine(outside.Path, "victim.txt"), "before", "after") }));
+
+        Assert.False(write.Success);
+        Assert.Equal("PROJECT_SCOPE_VIOLATION", write.Error?.Code);
+    }
+
+    [Fact]
+    public void ChangeReportService_Rejects_External_Report_Path()
+    {
+        using var fixture = CopyTutorialFixture();
+        using var outside = new TempDirectory();
+        var external = Path.Combine(outside.Path, "change.json");
+        File.WriteAllText(external, "{}");
+        var service = new ChangeReportService(new ProjectDiscoveryService());
+
+        var read = service.Read(fixture.Path, external);
+
+        Assert.False(read.Success);
+        Assert.Equal("PROJECT_SCOPE_VIOLATION", read.Error?.Code);
+    }
+
     private static GeometryWorkflowService CreateWorkflow()
     {
         var projectDiscovery = new ProjectDiscoveryService();

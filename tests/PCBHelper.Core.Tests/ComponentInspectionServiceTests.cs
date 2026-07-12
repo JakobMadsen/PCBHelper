@@ -81,11 +81,79 @@ public sealed class ComponentInspectionServiceTests
         var pads = service.ListFootprintPads(fixture.Path, "R1");
 
         Assert.True(nets.Success);
-        Assert.Equal(new[] { 0, 1, 2, 3 }, nets.Data!.Nets.Select(static net => net.Code).ToArray());
+        Assert.Equal(new[] { 1, 2, 3 }, nets.Data!.Nets.Select(static net => net.Code).ToArray());
         Assert.True(ledA.Success);
         Assert.Contains(ledA.Data!.Pads, pad => pad.FootprintReference == "R1" && pad.PadName == "2" && pad.PadLayers.Count > 0);
         Assert.True(pads.Success);
         Assert.Contains(pads.Data!.Pads, pad => pad.NetName == "VCC");
+    }
+
+    [Fact]
+    public void BoardInspection_Reads_KiCad10_Named_Net_References()
+    {
+        using var fixture = new TempDirectory();
+        File.WriteAllText(Path.Combine(fixture.Path, "mixed.kicad_pro"), "{}");
+        File.WriteAllText(
+            Path.Combine(fixture.Path, "mixed.kicad_pcb"),
+            """
+            (kicad_pcb
+              (version 20250114)
+              (generator "PCBHelper.Tests")
+              (net 1 "GND")
+              (footprint "Test:R"
+                (layer "F.Cu")
+                (uuid "11111111-1111-1111-1111-111111111111")
+                (at 10 10)
+                (property "Reference" "R1")
+                (pad "1" smd rect
+                  (at 0 0)
+                  (size 1 1)
+                  (layers "F.Cu")
+                  (net "VCC")
+                  (pinfunction "1"))
+                (pad "2" smd rect
+                  (at 2 0)
+                  (size 1 1)
+                  (layers "F.Cu")
+                  (net 1 "GND")
+                  (pinfunction "2"))
+                (pad "3" smd rect
+                  (at 4 0)
+                  (size 1 1)
+                  (layers "F.Cu")
+                  (net ""))
+              )
+              (segment
+                (start 10 10)
+                (end 20 10)
+                (width 0.25)
+                (layer "F.Cu")
+                (net "TIA_IN")
+                (uuid "22222222-2222-2222-2222-222222222222"))
+              (via
+                (at 15 15)
+                (size 0.8)
+                (drill 0.4)
+                (layers "F.Cu" "B.Cu")
+                (net "VCC")
+                (uuid "33333333-3333-3333-3333-333333333333"))
+            )
+            """);
+        var service = new BoardInspectionService(new ProjectDiscoveryService());
+
+        var nets = service.ListNets(fixture.Path);
+        var vcc = service.GetNet(fixture.Path, "VCC");
+        var tiaIn = service.GetNet(fixture.Path, "TIA_IN");
+
+        Assert.True(nets.Success);
+        Assert.Contains(nets.Data!.Nets, net => net.Name == "GND" && net.PadCount == 1);
+        Assert.Contains(nets.Data.Nets, net => net.Name == "VCC" && net.PadCount == 1 && net.ViaCount == 1);
+        Assert.Contains(nets.Data.Nets, net => net.Name == "TIA_IN" && net.TrackCount == 1);
+        Assert.DoesNotContain(nets.Data.Nets, net => string.IsNullOrWhiteSpace(net.Name));
+        Assert.True(vcc.Success);
+        Assert.Single(vcc.Data!.Pads);
+        Assert.True(tiaIn.Success);
+        Assert.Equal(1, tiaIn.Data!.TrackCount);
     }
 
     [Fact]

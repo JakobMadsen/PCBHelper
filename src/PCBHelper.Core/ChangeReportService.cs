@@ -37,9 +37,6 @@ public sealed class ChangeReportService
 
         var createdAt = _utcNow();
         var changeId = CreateChangeId(createdAt, input.Operation, input.Reference);
-        var changeRoot = Path.Combine(project.Data.ProjectRoot, ".pcbhelper", "changes", changeId);
-        Directory.CreateDirectory(changeRoot);
-
         var restoreCommand = $"pcbhelper restore-change \"{project.Data.ProjectRoot}\" --change \"{changeId}\"";
         var report = new ChangeReport(
             changeId,
@@ -65,6 +62,15 @@ public sealed class ChangeReportService
             input.RoutingItemBefore,
             input.RoutingItemAfter,
             input.FileSnapshots);
+        var normalized = NormalizeReportPaths(projectPath, report);
+        if (!normalized.Success || normalized.Data is null)
+        {
+            return ToolResponse<ChangeReportWriteResult>.Fail(normalized.Summary, normalized.Error?.Code ?? "PROJECT_SCOPE_VIOLATION", normalized.Error?.Message);
+        }
+
+        report = normalized.Data;
+        var changeRoot = Path.Combine(project.Data.ProjectRoot, ".pcbhelper", "changes", changeId);
+        Directory.CreateDirectory(changeRoot);
 
         var reportPath = Path.Combine(changeRoot, "change.json");
         await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, JsonOptions), cancellationToken);
@@ -90,7 +96,10 @@ public sealed class ChangeReportService
                 return ToolResponse<ChangeReport>.Fail($"Change report is empty: {path.Data}", "CHANGE_REPORT_INVALID");
             }
 
-            return ToolResponse<ChangeReport>.Ok($"Read change report: {path.Data}", report);
+            var normalized = NormalizeReportPaths(projectPath, report);
+            return normalized.Success && normalized.Data is not null
+                ? ToolResponse<ChangeReport>.Ok($"Read change report: {path.Data}", normalized.Data)
+                : ToolResponse<ChangeReport>.Fail(normalized.Summary, normalized.Error?.Code ?? "PROJECT_SCOPE_VIOLATION", normalized.Error?.Message);
         }
         catch (JsonException exception)
         {
@@ -105,31 +114,104 @@ public sealed class ChangeReportService
             return ToolResponse<string>.Fail("restore-change requires --change.", "CHANGE_REQUIRED");
         }
 
-        if (File.Exists(changeIdOrPath))
-        {
-            return ToolResponse<string>.Ok("Resolved change report path.", Path.GetFullPath(changeIdOrPath));
-        }
-
-        if (changeIdOrPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-            || changeIdOrPath.Contains(Path.DirectorySeparatorChar)
-            || changeIdOrPath.Contains(Path.AltDirectorySeparatorChar))
-        {
-            var fullPath = Path.GetFullPath(changeIdOrPath);
-            return File.Exists(fullPath)
-                ? ToolResponse<string>.Ok("Resolved change report path.", fullPath)
-                : ToolResponse<string>.Fail($"Change report was not found: {fullPath}", "CHANGE_REPORT_NOT_FOUND");
-        }
-
         var project = _projectDiscovery.GetSummary(projectPath);
         if (!project.Success || project.Data is null)
         {
             return ToolResponse<string>.Fail(project.Summary, project.Error?.Code ?? "PROJECT_NOT_FOUND", project.Error?.Message);
         }
 
-        var candidate = Path.Combine(project.Data.ProjectRoot, ".pcbhelper", "changes", changeIdOrPath, "change.json");
+        var changesRoot = Path.Combine(project.Data.ProjectRoot, ".pcbhelper", "changes");
+        var hasPathSyntax = changeIdOrPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            || changeIdOrPath.Contains(Path.DirectorySeparatorChar)
+            || changeIdOrPath.Contains(Path.AltDirectorySeparatorChar)
+            || Path.IsPathRooted(changeIdOrPath);
+        var candidate = hasPathSyntax
+            ? Path.GetFullPath(changeIdOrPath, project.Data.ProjectRoot)
+            : Path.Combine(changesRoot, changeIdOrPath, "change.json");
+        if (!ProjectScopePolicy.IsWithin(changesRoot, candidate))
+        {
+            return ToolResponse<string>.Fail(
+                "Change reports must be read from the selected project's .pcbhelper/changes directory.",
+                "PROJECT_SCOPE_VIOLATION");
+        }
+
         return File.Exists(candidate)
             ? ToolResponse<string>.Ok("Resolved change report path.", candidate)
             : ToolResponse<string>.Fail($"Change report was not found: {candidate}", "CHANGE_REPORT_NOT_FOUND");
+    }
+
+    private ToolResponse<ChangeReport> NormalizeReportPaths(string projectPath, ChangeReport report)
+    {
+        var project = _projectDiscovery.GetSummary(projectPath);
+        if (!project.Success || project.Data is null)
+        {
+            return ToolResponse<ChangeReport>.Fail(project.Summary, project.Error?.Code ?? "PROJECT_NOT_FOUND", project.Error?.Message);
+        }
+
+        string? Normalize(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            var fullPath = Path.IsPathRooted(path)
+                ? Path.GetFullPath(path)
+                : Path.GetFullPath(path, project.Data.ProjectRoot);
+            return ProjectScopePolicy.IsWithin(project.Data.ProjectRoot, fullPath) ? fullPath : null;
+        }
+
+        var changedFile = Normalize(report.ChangedFile);
+        if (!string.IsNullOrWhiteSpace(report.ChangedFile) && changedFile is null)
+        {
+            return ToolResponse<ChangeReport>.Fail("Change report references a file outside the selected project.", "PROJECT_SCOPE_VIOLATION");
+        }
+
+        var changedFiles = new List<string>();
+        foreach (var file in report.ChangedFiles ?? Array.Empty<string>())
+        {
+            var normalized = Normalize(file);
+            if (normalized is null)
+            {
+                return ToolResponse<ChangeReport>.Fail("Change report references a file outside the selected project.", "PROJECT_SCOPE_VIOLATION");
+            }
+
+            changedFiles.Add(normalized);
+        }
+
+        var locations = new List<ChangeValueLocation>();
+        foreach (var location in report.ValueLocations ?? Array.Empty<ChangeValueLocation>())
+        {
+            var normalized = Normalize(location.File);
+            if (normalized is null)
+            {
+                return ToolResponse<ChangeReport>.Fail("Change report value location is outside the selected project.", "PROJECT_SCOPE_VIOLATION");
+            }
+
+            locations.Add(location with { File = normalized });
+        }
+
+        var snapshots = new List<ChangeFileSnapshot>();
+        foreach (var snapshot in report.FileSnapshots ?? Array.Empty<ChangeFileSnapshot>())
+        {
+            var normalized = Normalize(snapshot.File);
+            if (normalized is null)
+            {
+                return ToolResponse<ChangeReport>.Fail("Change report snapshot is outside the selected project.", "PROJECT_SCOPE_VIOLATION");
+            }
+
+            snapshots.Add(snapshot with { File = normalized });
+        }
+
+        return ToolResponse<ChangeReport>.Ok(
+            "Validated change report paths.",
+            report with
+            {
+                ChangedFile = changedFile ?? string.Empty,
+                ChangedFiles = report.ChangedFiles is null ? null : changedFiles,
+                ValueLocations = report.ValueLocations is null ? null : locations,
+                FileSnapshots = report.FileSnapshots is null ? null : snapshots
+            });
     }
 
     public static IReadOnlyList<string> GetCheckReportPaths(CheckRunResult? result)

@@ -1,0 +1,3 @@
+* PCBHelper-owned RC low-pass fixture
+R1 IN OUT 1k
+C1 OUT 0 1u

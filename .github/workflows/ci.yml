@@ -3,28 +3,59 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  test:
-    name: Build and test
+  windows-core:
+    name: Windows build and Core tests
     runs-on: windows-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - run: dotnet restore PCBHelper.slnx
+      - run: dotnet build PCBHelper.slnx --configuration Release --no-restore
+      - run: dotnet test tests/PCBHelper.Core.Tests/PCBHelper.Core.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=core.trx"
+      - name: Upload Core results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-core-test-results
+          path: '**/TestResults/**'
 
-      - name: Restore
-        run: dotnet restore PCBHelper.slnx
+  windows-contract:
+    name: Windows CLI and MCP contracts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore PCBHelper.slnx
+      - run: dotnet build PCBHelper.slnx --configuration Release --no-restore
+      - run: dotnet test tests/PCBHelper.Contract.Tests/PCBHelper.Contract.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=contract.trx"
+      - name: Scan public tree
+        shell: pwsh
+        run: ./scripts/Test-PublicTree.ps1
+      - name: Upload contract results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-contract-test-results
+          path: '**/TestResults/**'
 
-      - name: Build
-        run: dotnet build PCBHelper.slnx --configuration Release --no-restore
+  docker-core:
+    name: Linux clean-room
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target core-test --tag pcbhelper-core-test:${{ github.sha }} .
 
-      - name: Test
-        run: dotnet test PCBHelper.slnx --configuration Release --no-build
+  docker-eda:
+    name: KiCad 10 and ngspice E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target eda-test --tag pcbhelper-eda-test:${{ github.sha }} .

@@ -15,12 +15,19 @@ These decisions are intentionally left open in the first spec pass.
 
 ## Product Scope
 
-- What is the minimum approved-parts format for V1?
-- What templates should ship with the repo?
+- Which measurable limits define a small V1 board: board area, layers, component count, net count, current, voltage, and supported circuit classes?
+- Which design recipes should ship first after the optical sensor board?
+- What is the minimum project design-lock and part-evidence format for V1?
+- Which price, stock, MOQ, lifecycle, and evidence thresholds can be approved automatically?
+- When should the user approve a costly or unusual part, and when should PCBHelper refuse it entirely?
+- How fresh must price and availability evidence be before release?
+- Which supplier and manufacturer data sources are legally and technically suitable for a public BYOK project?
 - What manufacturer profiles should be supported first?
-- Should the Hello World optical board include an analog front-end in V1, or should V1 focus only on placement, checks, and export?
+- Is the first manufacturing target bare PCB, PCBWay assembly, or both?
 
 ## Agent Integration
 
 - How should BYOK provider configuration be documented?
 - Which tool calls should require explicit user confirmation?
+- Should MCP expose workflow profiles so the agent sees only inspection, authoring, or manufacturing tools for the current phase?
+- Which beginner-readable artifacts are required before final approval?

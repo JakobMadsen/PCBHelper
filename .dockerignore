@@ -1,0 +1,16 @@
+.git
+.scratch
+tmp
+tmp_*
+deliverables
+artifacts
+**/.artifacts
+**/bin
+**/obj
+**/TestResults
+*.code-workspace
+Third try.kicad_sch
+tools
+fixtures/**/backups
+**/.pcbhelper
+!fixtures/**/.pcbhelper/tests

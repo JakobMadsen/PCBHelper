@@ -420,3 +420,16 @@ Therefore, PCBHelper should report simulation as one test layer, not as proof th
 - Should ngspice be optional local dependency, bundled adapter, or documented prerequisite?
 - How should manufacturer/datasheet SPICE models be tracked without committing questionable license material?
 - Should CI run ngspice tests by default, or only when the simulator is installed?
+
+## Implemented V1 Contract
+
+PCBHelper discovers an optional ngspice backend through `NGSPICE`, PATH, or known Windows locations. CLI and
+workflow MCP expose capability, validation, execution, and report retrieval. V1 accepts project-contained
+`spice-file` circuits with structured OP, AC, and transient analyses; raw commands and paths outside the project
+are rejected.
+
+Supported measurements are node voltage, branch current, gain at frequency, peak/cutoff frequency,
+minimum/maximum voltage, peak-to-peak voltage, and settling time. Each run records normalized input, generated
+circuit, simulator log, measurements, and a deterministic report under `.pcbhelper/simulations/<run-id>/`.
+Assertion failures become engineering findings, while unavailable backends and execution failures retain distinct
+typed outcomes.

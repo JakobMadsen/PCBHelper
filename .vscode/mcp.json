@@ -7,7 +7,11 @@
         "run",
         "--project",
         "src/PCBHelper.Mcp"
-      ]
+      ],
+      "env": {
+        "PCBHELPER_MCP_PROFILE": "workflow",
+        "PCBHELPER_ALLOWED_ROOTS": "${env:PCBHELPER_ALLOWED_ROOTS}"
+      }
     }
   }
 }

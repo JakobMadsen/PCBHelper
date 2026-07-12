@@ -13,6 +13,7 @@ venv/
 bin/
 obj/
 TestResults/
+artifacts/
 
 # Node
 node_modules/
@@ -38,6 +39,14 @@ drill/
 
 # Local scratch
 .scratch/
+tmp/
+tmp_*
+deliverables/
+**/.artifacts/
+*.code-workspace
+.vscode/tasks.json
+Third try.kicad_sch
+tools/
 .pcbhelper/*
 !.pcbhelper/tests/
 !.pcbhelper/tests/**

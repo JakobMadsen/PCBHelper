@@ -1,5 +1,14 @@
 # Agent Smoke Test
 
+## Workflow contract smoke
+
+1. Confirm the default MCP profile lists `get_capabilities` and `get_agent_guide`.
+2. Read `pcbhelper://agent-guide/v1` and verify it contains `PREVIEW_HASH_REQUIRED` and `NO_ORDER_OR_PAYMENT`.
+3. Read `pcbhelper://design-plan/v1/schema` and verify every operation returned by `get_capabilities` has a matching schema variant.
+4. Get `operate_pcbhelper_project` with a fixture path and a small goal.
+5. Follow the prompt through context, validate, preview, apply, engineering gate, transaction inspection, and conflict-free restore.
+6. Confirm the agent reports unsupported changes rather than using raw file edits or GUI automation.
+
 This is the first human-in-the-loop test for PCBHelper through an agent client.
 
 The goal is to prove that a human can ask an agent to inspect, preview, mutate, check, review, and restore a KiCad board through PCBHelper MCP tools.

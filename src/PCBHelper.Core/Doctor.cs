@@ -4,11 +4,13 @@ public sealed class KiCadDoctorService
 {
     private readonly KiCadCliLocator _locator;
     private readonly ICommandRunner _runner;
+    private readonly NgspiceLocator? _ngspice;
 
-    public KiCadDoctorService(KiCadCliLocator locator, ICommandRunner runner)
+    public KiCadDoctorService(KiCadCliLocator locator, ICommandRunner runner, NgspiceLocator? ngspice = null)
     {
         _locator = locator;
         _runner = runner;
+        _ngspice = ngspice;
     }
 
     public async Task<ToolResponse<DoctorResult>> RunAsync(CancellationToken cancellationToken = default)
@@ -35,7 +37,8 @@ public sealed class KiCadDoctorService
             execution.ExitCode,
             versionText,
             parsed?.ToString(),
-            supported);
+            supported,
+            _ngspice?.Locate());
 
         if (execution.ExitCode != 0)
         {
@@ -65,4 +68,5 @@ public sealed record DoctorResult(
     int VersionCommandExitCode,
     string VersionOutput,
     string? ParsedVersion,
-    bool IsSupported);
+    bool IsSupported,
+    SimulationCapabilities? Simulation = null);

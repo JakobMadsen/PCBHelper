@@ -1,5 +1,26 @@
 # Roadmap
 
+## Product Goal
+
+Enable a person without KiCad expertise to describe a small, simple PCB conversationally and receive an understandable, verified, PCBWay-ready package. KiCad is the internal design source of truth and an optional expert escape hatch.
+
+## Immediate Safety Foundation
+
+- Add configured authorized project roots and canonical path containment.
+- Replace absolute restore paths with project-relative identities and file hashes.
+- Execute mutations through atomic project transactions.
+- Return typed engineering-gate outcomes.
+- Add real MCP stdio handshake, schema, invocation, and mutation tests.
+
+## Conversational Product Slice
+
+- Define the first versioned design-recipe format.
+- Add a project requirements and design-lock manifest.
+- Add part-candidate evidence and project-specific approval states.
+- Add configurable budget, sourcing, availability, and uncertainty thresholds.
+- Generate beginner-readable review packages with renders, dimensions, pinouts, BOM cost, checks, and warnings.
+- Validate a PCBWay-ready Gerber, drill, BOM, and CPL package.
+
 ## Phase 0: Specs And Repo Shape
 
 - Write public project description.
@@ -64,3 +85,10 @@
 - Define simulation fixtures.
 - Add Python assertions for optical sensor board behavior.
 - Report simulation pass/fail status through the tool layer.
+
+## Explicitly Deferred
+
+- Large or complex boards.
+- Mains voltage, high current, RF, high-speed digital, medical, and safety-critical designs.
+- Unconstrained circuit invention or component selection without evidence.
+- Automatic manufacturer ordering or payment.
