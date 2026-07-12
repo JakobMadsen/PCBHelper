@@ -50,12 +50,12 @@ public sealed class RoutingServiceTests
     [Fact]
     public void ListUnroutedConnections_Finds_And_Clears_Filtered_Net()
     {
-        using var fixture = CopyTutorialFixture();
+        using var fixture = CopyRoutingFixture();
         var service = new RoutingService(new ProjectDiscoveryService());
 
-        var before = service.ListUnroutedConnections(fixture.Path, "LED_A");
-        var add = service.AddTrackPolyline(fixture.Path, "LED_A", LedConnectionPoints(service, fixture.Path), "F.Cu", 0.25, dryRun: false);
-        var after = service.ListUnroutedConnections(fixture.Path, "LED_A");
+        var before = service.ListUnroutedConnections(fixture.Path, "A");
+        var add = service.AddTrackPolyline(fixture.Path, "A", "10,10;10,5;30,5;30,10", "F.Cu", 0.25, dryRun: false);
+        var after = service.ListUnroutedConnections(fixture.Path, "A");
 
         Assert.True(before.Success);
         Assert.Single(before.Data!.Nets);
