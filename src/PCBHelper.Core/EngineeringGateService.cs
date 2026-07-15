@@ -5,12 +5,14 @@ public sealed class EngineeringGateService
     private readonly CheckSummaryService _checkSummary;
     private readonly AssemblyService _assembly;
     private readonly SimulationService? _simulations;
+    private readonly DesignIntentService? _designIntent;
 
-    public EngineeringGateService(CheckSummaryService checkSummary, AssemblyService assembly, SimulationService? simulations = null)
+    public EngineeringGateService(CheckSummaryService checkSummary, AssemblyService assembly, SimulationService? simulations = null, DesignIntentService? designIntent = null)
     {
         _checkSummary = checkSummary;
         _assembly = assembly;
         _simulations = simulations;
+        _designIntent = designIntent;
     }
 
     public async Task<ToolResponse<EngineeringGateResult>> RunAsync(
@@ -60,6 +62,22 @@ public sealed class EngineeringGateService
                     simulation.Data?.Tests.Sum(static test => test.Assertions.Count(static assertion => !assertion.Passed)) ?? 0,
                     simulation.Summary, simulation.Data is null ? Array.Empty<string>() : new[] { simulation.Data.OutputDirectory }));
             }
+        }
+
+        if (!IsSkipped(requirements.DesignIntent))
+        {
+            var intent = _designIntent?.Analyze(projectPath);
+            var intentStatus = intent?.Data is not null
+                ? intent.Data.Passed ? EngineeringGateCheckStatus.Passed : EngineeringGateCheckStatus.FindingsPresent
+                : intent is null || intent.Error?.Code is "DESIGN_INTENT_UNAVAILABLE" or "SCHEMATIC_NOT_FOUND"
+                    ? EngineeringGateCheckStatus.Unavailable
+                    : intent.Error?.Code == "DESIGN_INTENT_INVALID"
+                        ? EngineeringGateCheckStatus.FindingsPresent
+                        : EngineeringGateCheckStatus.ExecutionFailed;
+            checks.Add(new EngineeringGateCheck("design-intent", Requirement(requirements.DesignIntent), intentStatus,
+                intent?.Data?.Findings.Count(item => item.Severity == DesignIntentSeverity.Error && item.Outcome == DesignIntentOutcome.NotProven) ?? 0,
+                intent?.Data?.PlainLanguageSummary ?? intent?.Error?.Message ?? "Design-intent service is unavailable.",
+                intent?.Data?.ArtifactPaths ?? Array.Empty<string>()));
         }
 
         var required = checks.Where(static check => check.Required).ToArray();
@@ -152,7 +170,8 @@ public sealed record EngineeringGateRequirements(
     string Erc = "required",
     string Drc = "required",
     string ManufacturingValidation = "required",
-    string Simulation = "skip")
+    string Simulation = "skip",
+    string DesignIntent = "optional")
 {
     public static EngineeringGateRequirements Default { get; } = new();
 }

@@ -43,6 +43,8 @@ The default `workflow` profile deliberately exposes only:
 - `get_transaction`
 - `restore_transaction`
 - `run_engineering_gate`
+- `analyze_design_intent`
+- `get_design_intent_report`
 - `generate_review_package`
 - `generate_pcbway_package`
 - `generate_pcbway_release`

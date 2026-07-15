@@ -51,7 +51,8 @@ var app = new CliApp(
     planRuntime.Transactions,
     planRuntime.Simulations,
     planRuntime.Releases,
-    planRuntime.KiCadSimulationNetlists);
+    planRuntime.KiCadSimulationNetlists,
+    planRuntime.DesignIntent);
 
 return await app.RunAsync(args);
 
@@ -87,6 +88,7 @@ public sealed class CliApp
     private readonly SimulationService _simulations;
     private readonly PcbWayReleaseService _releases;
     private readonly KiCadSimulationNetlistService _kicadSimulationNetlists;
+    private readonly DesignIntentService _designIntent;
 
     public CliApp(
         KiCadDoctorService doctor,
@@ -113,7 +115,8 @@ public sealed class CliApp
         ProjectTransactionService transactions,
         SimulationService simulations,
         PcbWayReleaseService releases,
-        KiCadSimulationNetlistService kicadSimulationNetlists)
+        KiCadSimulationNetlistService kicadSimulationNetlists,
+        DesignIntentService designIntent)
     {
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
@@ -140,6 +143,7 @@ public sealed class CliApp
         _simulations = simulations;
         _releases = releases;
         _kicadSimulationNetlists = kicadSimulationNetlists;
+        _designIntent = designIntent;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -197,6 +201,7 @@ public sealed class CliApp
             "validate-tests" => RunValidateTests(positional, json),
             "evaluate-test-results" => RunEvaluateTestResults(positional, json),
             "simulation" => await RunSimulationAsync(positional, json, cancellationToken),
+            "intent" => RunIntent(positional, json),
             "check" => await RunCheckAsync(positional, json, cancellationToken),
             "check-summary" => await RunCheckSummaryAsync(positional, json, cancellationToken),
             "export" => await RunExportAsync(positional, json, cancellationToken),
@@ -224,6 +229,16 @@ public sealed class CliApp
     { if(args.Count<2){Write(ToolResponse<object>.Fail("generate-pcbway-release requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=await _releases.GenerateAsync(args[1],cancellationToken);Write(result,json);return result.Success?0:1; }
     private int RunReleaseRequirements(IReadOnlyList<string> args,bool json)
     { if(args.Count<2){Write(ToolResponse<object>.Fail("validate-release-requirements requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=_releases.ValidateRequirements(args[1]);Write(result,json);return result.Data?.Passed==true?0:1; }
+    private int RunIntent(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 3 || args[1] is not ("validate" or "analyze" or "report"))
+        { Write(ToolResponse<object>.Fail("Usage: pcbhelper intent validate|analyze <project-path> OR pcbhelper intent report <project-path> --run <id>", "DESIGN_INTENT_ARGS_REQUIRED"), json); return 2; }
+        if (args[1] == "validate") { var result = _designIntent.Validate(args[2]); Write(result, json); return result.Data?.Valid == true ? 0 : 1; }
+        if (args[1] == "analyze") { var result = _designIntent.Analyze(args[2]); Write(result, json); return result.Data?.Passed == true ? 0 : 1; }
+        var run = GetOption(args, "--run");
+        if (run is null) { Write(ToolResponse<object>.Fail("intent report requires --run <id>.", "DESIGN_INTENT_RUN_REQUIRED"), json); return 2; }
+        var report = _designIntent.GetReport(args[2], run); Write(report, json); return report.Success ? 0 : 1;
+    }
     private async Task<int> RunKiCadSpiceNetlistAsync(IReadOnlyList<string> args,bool json,CancellationToken cancellationToken)
     { if(args.Count<2){Write(ToolResponse<object>.Fail("export-kicad-spice-netlist requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=await _kicadSimulationNetlists.ExportAsync(args[1],cancellationToken);Write(result,json);return result.Success?0:1; }
 
@@ -1353,6 +1368,8 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper validate-tests <project-path> [--json]");
         Console.WriteLine("  pcbhelper evaluate-test-results <project-path> --results <path> [--json]");
         Console.WriteLine("  pcbhelper simulation status|validate|run|report [<project-path>] [--test <id>] [--run <id>] [--json]");
+        Console.WriteLine("  pcbhelper intent validate|analyze <project-path> [--json]");
+        Console.WriteLine("  pcbhelper intent report <project-path> --run <id> [--json]");
         Console.WriteLine("  pcbhelper check <project-path> [--json]");
         Console.WriteLine("  pcbhelper check-summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper export <project-path> [--json]");

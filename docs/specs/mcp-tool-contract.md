@@ -11,6 +11,8 @@ The `operate_pcbhelper_project` prompt accepts `projectPath` and `goal` and boot
 
 The default public surface is the Design Plan workflow described in [Design Plan V1](design-plan-v1.md). The primitive contracts below are retained as the `legacy` profile for debugging and compatibility.
 
+Design Intent adds two read-only workflow tools: `analyze_design_intent` runs deterministic circuit-purpose, test-access, and sourced-rating checks; `get_design_intent_report` reads a prior project-scoped run. Intent changes use the structured `set-design-intent` Design Plan operation rather than arbitrary file writes.
+
 ## Design Rules
 
 - The default MCP profile should be small and workflow-oriented.

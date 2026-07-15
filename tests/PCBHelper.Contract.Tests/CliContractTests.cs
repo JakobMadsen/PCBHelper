@@ -6,6 +6,26 @@ namespace PCBHelper.Contract.Tests;
 public sealed class CliContractTests
 {
     [Fact]
+    public async Task Intent_Validate_And_Analyze_Return_Stable_Contracts()
+    {
+        using var fixture = TestFixture.CopyTutorialBoard();
+        var directory = Path.Combine(fixture.Path, ".pcbhelper");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "design-intent.json"), """{"version":1,"signals":[{"net":"LED_A","role":"led-drive"}]}""");
+
+        var validated = await RunCliAsync("intent", "validate", fixture.Path, "--json");
+        var analyzed = await RunCliAsync("intent", "analyze", fixture.Path, "--json");
+
+        Assert.Equal(0, validated.ExitCode);
+        Assert.NotEqual(0, analyzed.ExitCode);
+        using var validationJson = JsonDocument.Parse(validated.StandardOutput);
+        using var analysisJson = JsonDocument.Parse(analyzed.StandardOutput);
+        Assert.True(validationJson.RootElement.GetProperty("data").GetProperty("valid").GetBoolean());
+        Assert.True(analysisJson.RootElement.GetProperty("data").TryGetProperty("plainLanguageSummary", out _));
+        Assert.False(analysisJson.RootElement.GetProperty("data").GetProperty("passed").GetBoolean());
+    }
+
+    [Fact]
     public async Task DesignPlan_Validate_And_Preview_Return_Stable_Contracts()
     {
         using var fixture = TestFixture.CopyTutorialBoard();

@@ -5,6 +5,39 @@ namespace PCBHelper.Core.Tests;
 public sealed class DesignPlanServiceTests
 {
     [Fact]
+    public void SetDesignIntent_Is_Prepared_As_ProjectScoped_Transaction_File()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var plan = """{"version":1,"goal":"Declare intent","operations":[{"id":"intent","type":"set-design-intent","intent":{"version":1,"signals":[{"net":"LED_A","role":"led-drive"}]}}]}""";
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file => file.RelativePath.Replace('\\', '/') == ".pcbhelper/design-intent.json");
+    }
+
+    [Fact]
+    public async Task SetDesignIntent_Applies_And_Restores_Through_Transaction_Engine()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var plan = """{"version":1,"goal":"Declare intent","operations":[{"id":"intent","type":"set-design-intent","intent":{"version":1,"signals":[{"net":"LED_A","role":"led-drive"}]}}],"engineeringGate":{"erc":"skip","drc":"skip","manufacturingValidation":"skip","simulationAssertions":"skip","designIntent":"optional"}}""";
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+        Assert.True(preview.Success, preview.Error?.Message);
+
+        var applied = await runtime.Plans.ApplyAsync(fixture.Path, plan, preview.Data!.PlanHash,
+            preview.Data.RequiredDecisions.Select(decision => decision.DecisionId).ToArray());
+        Assert.True(applied.Success, applied.Error?.Message);
+        var intentPath = Path.Combine(fixture.Path, ".pcbhelper", "design-intent.json");
+        Assert.True(File.Exists(intentPath));
+
+        var restored = await runtime.Transactions.RestoreAsync(fixture.Path, applied.Data!.Transaction.Transaction.TransactionId);
+        Assert.True(restored.Success, restored.Error?.Message);
+        Assert.False(File.Exists(intentPath));
+    }
+
+    [Fact]
     public void Validate_Uses_Canonical_Hash_Independent_Of_Property_Order()
     {
         using var fixture = CopyTutorialFixture();
@@ -37,7 +70,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(22, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(23, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());

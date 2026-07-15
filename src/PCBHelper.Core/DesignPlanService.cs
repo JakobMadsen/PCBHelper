@@ -235,11 +235,13 @@ public sealed class DesignPlanService
                     String(gateElement, "erc", "required"),
                     String(gateElement, "drc", "required"),
                     String(gateElement, "manufacturingValidation", "required"),
-                    String(gateElement, "simulationAssertions", String(gateElement, "simulation", "skip")));
+                    String(gateElement, "simulationAssertions", String(gateElement, "simulation", "skip")),
+                    String(gateElement, "designIntent", "optional"));
                 if (!EngineeringGateService.IsValidRequirement(gate.Erc)
                     || !EngineeringGateService.IsValidRequirement(gate.Drc)
                     || !EngineeringGateService.IsValidRequirement(gate.ManufacturingValidation)
-                    || !EngineeringGateService.IsValidRequirement(gate.Simulation))
+                    || !EngineeringGateService.IsValidRequirement(gate.Simulation)
+                    || !EngineeringGateService.IsValidRequirement(gate.DesignIntent))
                 {
                     return Invalid("Engineering gate values must be required, optional, or skip.");
                 }
@@ -267,6 +269,13 @@ public sealed class DesignPlanService
             {
                 File.Copy(file, Path.Combine(sandbox, Path.GetFileName(file)));
             }
+            var intentSource = Path.Combine(project.ProjectRoot, ".pcbhelper", "design-intent.json");
+            if (File.Exists(intentSource))
+            {
+                var intentTarget = Path.Combine(sandbox, ".pcbhelper", "design-intent.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(intentTarget)!);
+                File.Copy(intentSource, intentTarget);
+            }
 
             var before = CaptureDesignFiles(project.ProjectRoot);
             var sandboxProjects = new ProjectDiscoveryService(ProjectScopePolicy.Unrestricted());
@@ -275,11 +284,12 @@ public sealed class DesignPlanService
             var schematic = new SchematicAuthoringService(sandboxProjects);
             var routing = new RoutingService(sandboxProjects);
             var finishing = new BoardFinishingService(sandboxProjects);
+            var designIntent = new DesignIntentService(sandboxProjects, new BoardInspectionService(sandboxProjects));
             var preparedOperations = new List<PreparedOperation>();
             var warnings = new List<string>();
             foreach (var operation in plan.Operations)
             {
-                var result = Execute(operation, sandbox, component, geometry, schematic, routing, finishing);
+                var result = Execute(operation, sandbox, component, geometry, schematic, routing, finishing, designIntent);
                 if (!result.Success)
                 {
                     return ToolResponse<PlanPreparation>.Fail(
@@ -320,11 +330,11 @@ public sealed class DesignPlanService
 
     private static ToolResponse<object> Execute(
         PlanOperation operation, string projectPath, ComponentService component, GeometryService geometry,
-        SchematicAuthoringService schematic, RoutingService routing, BoardFinishingService finishing)
+        SchematicAuthoringService schematic, RoutingService routing, BoardFinishingService finishing, DesignIntentService designIntent)
     {
         if (!OperationHandlers.TryGetValue(operation.Type, out var handler))
             return ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED");
-        var prepared = handler.Prepare(operation, new PlanPreparationContext(projectPath, component, geometry, schematic, routing, finishing));
+        var prepared = handler.Prepare(operation, new PlanPreparationContext(projectPath, component, geometry, schematic, routing, finishing, designIntent));
         return prepared.Success
             ? ToolResponse<object>.Ok(prepared.Summary, prepared.Data!, prepared.Warnings)
             : ToolResponse<object>.Fail(prepared.Summary, prepared.Error?.Code ?? "PLAN_PREPARATION_FAILED", prepared.Error?.Message);
@@ -336,6 +346,7 @@ public sealed class DesignPlanService
         return operation.Type switch
         {
             "set-component-value" => Box(context.Components.SetValue(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "value"), String(p, "scope", "available"), false)),
+            "set-design-intent" => Box(context.DesignIntent.SetIntent(context.ProjectPath, p.GetProperty("intent"), false)),
             "move-component" => Box(context.Geometry.MoveComponent(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
             "set-component-spacing" => Box(context.Geometry.SetComponentSpacing(context.ProjectPath, RequiredString(p, "fixedReference"), RequiredString(p, "movingReference"), RequiredDouble(p, "distanceMm"), String(p, "axis", "x"), false)),
             "create-schematic-symbol" => Box(context.Schematic.CreateSymbol(context.ProjectPath, RequiredString(p, "symbol"), RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), OptionalString(p, "value"), OptionalString(p, "footprint"), OptionalInt(p, "unit", 1), false)),
@@ -378,9 +389,15 @@ public sealed class DesignPlanService
         ? ToolResponse<object>.Ok(response.Summary, response.Data!, response.Warnings)
         : ToolResponse<object>.Fail(response.Summary, response.Error?.Code ?? "PLAN_PREPARATION_FAILED", response.Error?.Message);
 
-    private static Dictionary<string, string> CaptureDesignFiles(string root) => Directory.GetFiles(root, "*.kicad_*", SearchOption.TopDirectoryOnly)
-        .Where(path => Path.GetExtension(path) is ".kicad_pro" or ".kicad_sch" or ".kicad_pcb")
-        .ToDictionary(static path => Path.GetFileName(path)!, File.ReadAllText, StringComparer.OrdinalIgnoreCase);
+    private static Dictionary<string, string> CaptureDesignFiles(string root)
+    {
+        var files = Directory.GetFiles(root, "*.kicad_*", SearchOption.TopDirectoryOnly)
+            .Where(path => Path.GetExtension(path) is ".kicad_pro" or ".kicad_sch" or ".kicad_pcb")
+            .ToDictionary(path => Path.GetRelativePath(root, path), File.ReadAllText, StringComparer.OrdinalIgnoreCase);
+        var intent = Path.Combine(root, ".pcbhelper", "design-intent.json");
+        if (File.Exists(intent)) files[Path.GetRelativePath(root, intent)] = File.ReadAllText(intent);
+        return files;
+    }
 
     private static string Canonicalize(JsonElement element)
     {
@@ -463,4 +480,4 @@ public interface IPlanOperationHandler
     string OperationType { get; }
     ToolResponse<PreparedOperation> Prepare(PlanOperation operation, PlanPreparationContext context);
 }
-public sealed record PlanPreparationContext(string ProjectPath, ComponentService Components, GeometryService Geometry, SchematicAuthoringService Schematic, RoutingService Routing, BoardFinishingService Finishing);
+public sealed record PlanPreparationContext(string ProjectPath, ComponentService Components, GeometryService Geometry, SchematicAuthoringService Schematic, RoutingService Routing, BoardFinishingService Finishing, DesignIntentService DesignIntent);
