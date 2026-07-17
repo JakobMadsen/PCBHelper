@@ -2035,6 +2035,9 @@ internal static class SchematicSymbolCatalog
 
 internal static class SchematicFootprintTemplates
 {
+    private const string PinHeader1x05 = "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical";
+    private const string Dip16 = "Package_DIP:DIP-16_W7.62mm";
+
     private static readonly string[] KiCadFootprintLibraryRoots =
     {
         @"D:\Program Files\KiCad\10.0\share\kicad\footprints",
@@ -2044,6 +2047,7 @@ internal static class SchematicFootprintTemplates
     public static bool IsSupported(string footprint)
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
+            or PinHeader1x05 or Dip16
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
 
@@ -2058,6 +2062,8 @@ internal static class SchematicFootprintTemplates
             "BatteryHolder_2Pad_Back" => FormatTwoPad("BatteryHolder_2Pad_Back", reference, value, x, y, rotationDegrees, "B.Cu", new[] { ("1", -4.0, "+"), ("2", 4.0, "-") }, padNets),
             "DIP8_300mil" => FormatDip8(reference, value, x, y, rotationDegrees, padNets),
             "TO92_2N3904_EBC" => FormatTo92_2N3904(reference, value, x, y, rotationDegrees, padNets),
+            PinHeader1x05 => FormatPinHeader1x05(reference, value, x, y, rotationDegrees, padNets),
+            Dip16 => FormatDip16(reference, value, x, y, rotationDegrees, padNets),
             _ => FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets)
         };
     }
@@ -2189,6 +2195,72 @@ internal static class SchematicFootprintTemplates
             FormatDipPad("8", 7.62, 0, "8", padNets),
             "  )",
             string.Empty
+        });
+    }
+
+    private static string FormatPinHeader1x05(string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        var atText = rotationDegrees is null
+            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
+            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
+        return string.Join(Environment.NewLine, new[]
+        {
+            $"  (footprint \"{PinHeader1x05}\"",
+            "    (layer \"F.Cu\")",
+            $"    (uuid \"{Guid.NewGuid()}\")",
+            atText,
+            $"    (property \"Reference\" \"{reference}\" (at 0 -2.33 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (property \"Value\" \"{value}\" (at 0 12.49 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))",
+            FormatPinHeaderPad("1", 0, padNets, rectangular: true),
+            FormatPinHeaderPad("2", 2.54, padNets),
+            FormatPinHeaderPad("3", 5.08, padNets),
+            FormatPinHeaderPad("4", 7.62, padNets),
+            FormatPinHeaderPad("5", 10.16, padNets),
+            "  )",
+            string.Empty
+        });
+    }
+
+    private static string FormatDip16(string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        var atText = rotationDegrees is null
+            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
+            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
+        var lines = new List<string>
+        {
+            $"  (footprint \"{Dip16}\"",
+            "    (layer \"F.Cu\")",
+            $"    (uuid \"{Guid.NewGuid()}\")",
+            atText,
+            $"    (property \"Reference\" \"{reference}\" (at 3.81 -3.5 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (property \"Value\" \"{value}\" (at 3.81 21.36 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))"
+        };
+        for (var pin = 1; pin <= 8; pin++)
+        {
+            lines.Add(FormatDipPad(pin.ToString(), 0, (pin - 1) * 2.54, pin.ToString(), padNets));
+        }
+        for (var pin = 9; pin <= 16; pin++)
+        {
+            lines.Add(FormatDipPad(pin.ToString(), 7.62, (16 - pin) * 2.54, pin.ToString(), padNets));
+        }
+        lines.Add("  )");
+        lines.Add(string.Empty);
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatPinHeaderPad(string padName, double y, IReadOnlyDictionary<string, KiCadNet> padNets, bool rectangular = false)
+    {
+        padNets.TryGetValue(padName, out var net);
+        var netText = net is null ? string.Empty : $"{Environment.NewLine}      (net {net.Code} \"{EscapeKiCadString(net.Name)}\")";
+        return string.Join(Environment.NewLine, new[]
+        {
+            $"    (pad \"{padName}\" thru_hole {(rectangular ? "rect" : "oval")}",
+            $"      (at 0 {KiCadBoardParser.FormatNumber(y)})",
+            "      (size 1.7 1.7)",
+            "      (drill 1)",
+            "      (layers \"*.Cu\" \"*.Mask\")" + netText,
+            $"      (pinfunction \"Pin_{padName}\")",
+            "    )"
         });
     }
 

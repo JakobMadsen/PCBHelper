@@ -209,8 +209,11 @@ public sealed class SchematicAuthoringServiceTests
 
         Assert.True(update.Success, update.Error?.Message ?? update.Summary);
         var board = new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path);
-        Assert.Contains(board.Data!.Footprints, item => item.Reference == "J1" && item.FootprintName.Contains("PinHeader_1x05", StringComparison.Ordinal));
-        Assert.Contains(board.Data.Footprints, item => item.Reference == "U3" && item.FootprintName.Contains("DIP-16_W7.62mm", StringComparison.Ordinal));
+        var header = Assert.Single(board.Data!.Footprints, item => item.Reference == "J1" && item.FootprintName.Contains("PinHeader_1x05", StringComparison.Ordinal));
+        var demodulator = Assert.Single(board.Data.Footprints, item => item.Reference == "U3" && item.FootprintName.Contains("DIP-16_W7.62mm", StringComparison.Ordinal));
+        var inspection = new BoardInspectionService(new ProjectDiscoveryService());
+        Assert.Equal(5, inspection.ListFootprintPads(fixture.Path, header.Reference!).Data!.Pads.Count);
+        Assert.Equal(16, inspection.ListFootprintPads(fixture.Path, demodulator.Reference!).Data!.Pads.Count);
     }
 
     [Fact]
