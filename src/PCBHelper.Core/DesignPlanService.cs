@@ -353,6 +353,7 @@ public sealed class DesignPlanService
             "set-symbol-field" => Box(context.Schematic.SetSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), RequiredString(p, "value"), false)),
             "connect-schematic-pins" => Box(context.Schematic.ConnectPins(context.ProjectPath, RequiredString(p, "from"), RequiredString(p, "to"), OptionalString(p, "net"), false)),
             "add-net-label" => Box(context.Schematic.AddNetLabel(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
+            "replace-net-label" => Box(context.Schematic.ReplaceNetLabel(context.ProjectPath, RequiredString(p, "currentNet"), RequiredString(p, "newNet"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "toleranceMm"), false)),
             "update-pcb-from-schematic" => Box(context.Schematic.UpdatePcbFromSchematic(context.ProjectPath, false)),
             "regenerate-board-footprint" => Box(context.Schematic.RegenerateBoardFootprint(context.ProjectPath, RequiredString(p, "reference"), false)),
             "add-track" => Box(context.Routing.AddTrack(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "startXmm"), RequiredDouble(p, "startYmm"), RequiredDouble(p, "endXmm"), RequiredDouble(p, "endYmm"), RequiredString(p, "layer"), RequiredDouble(p, "widthMm"), false)),
@@ -366,6 +367,7 @@ public sealed class DesignPlanService
             "hide-reference-text" => Box(context.Finishing.HideReferenceText(context.ProjectPath, RequiredString(p, "reference"), false)),
             "cleanup-silkscreen" => Box(context.Finishing.CleanupSilkscreen(context.ProjectPath, RequiredDouble(p, "minimumSpacingMm"), false)),
             "add-testpoint" => Box(context.Finishing.AddTestPoint(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "diameterMm"), false)),
+            "set-board-pad-net" => Box(context.Finishing.SetBoardPadNet(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "pad"), RequiredString(p, "net"), false)),
             "add-mounting-hole" => Box(context.Finishing.AddMountingHole(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "drillMm"), RequiredDouble(p, "diameterMm"), false)),
             "add-mechanical-keepout" => Box(context.Finishing.AddMechanicalKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
             _ => ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED")

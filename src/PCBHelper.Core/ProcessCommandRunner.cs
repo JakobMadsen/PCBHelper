@@ -25,7 +25,8 @@ public sealed class ProcessCommandRunner : ICommandRunner
             WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            UseShellExecute = false
+            UseShellExecute = false,
+            CreateNoWindow = true
         };
 
         foreach (var argument in arguments)
@@ -36,9 +37,25 @@ public sealed class ProcessCommandRunner : ICommandRunner
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
 
-        var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        // Cancellation is enforced by killing the process tree below. Passing the
+        // token into both stream reads can leave an already-exited child waiting
+        // forever on Windows/.NET preview builds instead of observing pipe EOF.
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+            throw;
+        }
 
         return new CommandExecutionResult(process.ExitCode, await stdout, await stderr);
     }

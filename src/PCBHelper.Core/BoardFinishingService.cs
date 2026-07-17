@@ -46,7 +46,7 @@ public sealed class BoardFinishingService
         ReplaceFirst(block, """(\(property\s+"Reference"\s+"[^"]+"[\s\S]*?\(at\s+)-?[\d.]+\s+-?[\d.]+""", $"$1{F(x)} {F(y)}"), "move-reference-text");
 
     public ToolResponse<BoardFinishingMutationResult> HideReferenceText(string projectPath, string reference, bool dryRun) => EditReference(projectPath, reference, dryRun, block =>
-        Regex.IsMatch(block, """\(property\s+"Reference"[\s\S]*?\(hide\s+yes\)""") ? block : ReplaceFirst(block, """(\(property\s+"Reference"[\s\S]*?\(layer\s+"[^"]+"\))""", "$1 (hide yes)"), "hide-reference-text");
+        SetReferenceHidden(block), "hide-reference-text");
 
     public ToolResponse<BoardFinishingMutationResult> CleanupSilkscreen(string projectPath, double minimumSpacing, bool dryRun)
     {
@@ -56,7 +56,7 @@ public sealed class BoardFinishingService
         var hide=new HashSet<KiCadFootprint>();
         for(var i=0;i<refs.Length;i++)for(var j=i+1;j<refs.Length;j++)if(Math.Sqrt(Math.Pow(refs[i].X-refs[j].X,2)+Math.Pow(refs[i].Y-refs[j].Y,2))<minimumSpacing)hide.Add(refs[j].Footprint);
         if(hide.Count==0)return ToolResponse<BoardFinishingMutationResult>.Ok("Silkscreen cleanup found no overlapping reference anchors.",new("cleanup-silkscreen","none",loaded.Data.File,true,string.Empty));
-        var text=loaded.Data.Text;foreach(var fp in hide.OrderByDescending(f=>f.SourceStart)){var block=text.Substring(fp.SourceStart,fp.SourceLength);var edited=Regex.IsMatch(block,"""\(property\s+"Reference"[\s\S]*?\(hide\s+yes\)""")?block:ReplaceFirst(block,"""(\(property\s+"Reference"[\s\S]*?\(layer\s+"[^"]+"\))""","$1 (hide yes)");text=text.Remove(fp.SourceStart,fp.SourceLength).Insert(fp.SourceStart,edited);}if(!dryRun)File.WriteAllText(loaded.Data.File,text);
+        var text=loaded.Data.Text;foreach(var fp in hide.OrderByDescending(f=>f.SourceStart)){var block=text.Substring(fp.SourceStart,fp.SourceLength);var edited=SetReferenceHidden(block);text=text.Remove(fp.SourceStart,fp.SourceLength).Insert(fp.SourceStart,edited);}if(!dryRun)File.WriteAllText(loaded.Data.File,text);
         return ToolResponse<BoardFinishingMutationResult>.Ok($"{(dryRun?"Previewed":"Applied")} silkscreen cleanup for {hide.Count} reference(s).",new("cleanup-silkscreen",string.Join(',',hide.Select(f=>f.Reference)),loaded.Data.File,dryRun,"hide overlapping references"));
     }
 
@@ -68,6 +68,17 @@ public sealed class BoardFinishingService
         var uuid = Guid.NewGuid().ToString();
         var text = $"\n\t(footprint \"PCBHelper:TestPoint\" (layer \"F.Cu\") (at {F(x)} {F(y)}) (uuid \"{uuid}\")\n\t\t(property \"Reference\" \"{Escape(reference)}\" (at 0 -2 0) (layer \"F.SilkS\"))\n\t\t(property \"Value\" \"TestPoint\" (at 0 2 0) (layer \"F.Fab\") (hide yes))\n\t\t(pad \"1\" thru_hole circle (at 0 0) (size {F(diameter)} {F(diameter)}) (drill {F(diameter / 2)}) (layers \"*.Cu\" \"*.Mask\") (net {resolved.Code} \"{Escape(resolved.Name)}\"))\n\t)";
         return Insert(loaded.Data, "add-testpoint", reference, text, dryRun);
+    }
+
+    public ToolResponse<BoardFinishingMutationResult> SetBoardPadNet(string projectPath, string reference, string padName, string net, bool dryRun)
+    {
+        var loaded=Load(projectPath);if(!loaded.Success||loaded.Data is null)return Fail(loaded);
+        if(!loaded.Data.Board.Nets.Any(n=>n.Name.Equals(net,StringComparison.OrdinalIgnoreCase)))return Error($"Net not found: {net}","NET_NOT_FOUND");
+        var fp=loaded.Data.Board.Footprints.FirstOrDefault(f=>string.Equals(f.Reference,reference,StringComparison.OrdinalIgnoreCase));if(fp is null)return Error($"Footprint not found: {reference}","FOOTPRINT_NOT_FOUND");
+        var block=loaded.Data.Text.Substring(fp.SourceStart,fp.SourceLength);var pattern=$"\\(pad\\s+\"{Regex.Escape(padName)}\"";var match=Regex.Match(block,pattern);if(!match.Success)return Error($"Pad not found: {reference}.{padName}","PAD_NOT_FOUND");
+        var end=FindEnd(block,match.Index);if(end<0)return Error("Pad block is invalid.","BOARD_PARSE_FAILED");var pad=block.Substring(match.Index,end-match.Index+1);
+        var replacement=Regex.IsMatch(pad,"""\(net\s+(?:\d+\s+)?"[^"]*"\)""")?new Regex("""\(net\s+(?:\d+\s+)?"[^"]*"\)""").Replace(pad,$"(net \"{Escape(net)}\")",1):pad.Insert(pad.LastIndexOf(')'),$"\n\t\t\t(net \"{Escape(net)}\")\n\t\t");
+        var updated=block.Remove(match.Index,pad.Length).Insert(match.Index,replacement);return Replace(loaded.Data,"set-board-pad-net",$"{reference}.{padName}",fp.SourceStart,fp.SourceLength,updated,dryRun);
     }
 
     public ToolResponse<BoardFinishingMutationResult> AddMountingHole(string projectPath, string reference, double x, double y, double drill, double diameter, bool dryRun)
@@ -108,6 +119,19 @@ public sealed class BoardFinishingService
     private static (int Start,int Length,string Text)? FindBlock(string text,string kind,string id) { var i=0; while((i=text.IndexOf("("+kind,i,StringComparison.Ordinal))>=0){var e=FindEnd(text,i);if(e<0)return null;var b=text.Substring(i,e-i+1);if(b.Contains(id,StringComparison.OrdinalIgnoreCase))return(i,e-i+1,b);i=e+1;}return null; }
     private static int FindEnd(string text,int start){var d=0;var q=false;for(var i=start;i<text.Length;i++){if(text[i]=='\"'&&(i==0||text[i-1]!='\\'))q=!q;if(q)continue;if(text[i]=='(')d++;else if(text[i]==')'&&--d==0)return i;}return-1;}
     private static string ReplaceFirst(string input, string pattern, string replacement) => new Regex(pattern).Replace(input, replacement, 1);
+    private static string SetReferenceHidden(string footprintBlock)
+    {
+        var start = Regex.Match(footprintBlock, "\\(property\\s+\"Reference\"");
+        if (!start.Success) return footprintBlock;
+        var next = Regex.Match(footprintBlock[(start.Index + start.Length)..], "\\n\\s*\\(property\\s+\"");
+        var length = next.Success ? start.Length + next.Index : footprintBlock.Length - start.Index;
+        var referenceBlock = footprintBlock.Substring(start.Index, length);
+        if (Regex.IsMatch(referenceBlock, """\(hide\s+yes\)""")) return footprintBlock;
+        var updated = ReplaceFirst(referenceBlock, """(\(layer\s+"[^"]+"\))""", "$1 (hide yes)");
+        return updated == referenceBlock
+            ? footprintBlock
+            : footprintBlock.Remove(start.Index, length).Insert(start.Index, updated);
+    }
     private static string F(double v)=>v.ToString("0.####",CultureInfo.InvariantCulture); private static string Escape(string v)=>v.Replace("\\","\\\\").Replace("\"","\\\"");
     private sealed record LoadedBoard(string File,string Text,KiCadBoardDocument Board);
 }

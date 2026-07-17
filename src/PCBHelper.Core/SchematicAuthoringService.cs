@@ -276,6 +276,70 @@ public sealed class SchematicAuthoringService
         return Mutation("add-net-label", net, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) }, addition);
     }
 
+    public ToolResponse<SchematicMutationResult> ReplaceNetLabel(
+        string projectPath,
+        string currentNet,
+        string newNet,
+        double x,
+        double y,
+        double? toleranceMillimeters,
+        bool dryRun)
+    {
+        if (string.IsNullOrWhiteSpace(newNet) || newNet.Contains('"'))
+        {
+            return ToolResponse<SchematicMutationResult>.Fail("The replacement net name is invalid.", "INVALID_NET_NAME");
+        }
+
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+        }
+
+        var tolerance = NormalizeTolerance(toleranceMillimeters);
+        if (tolerance is null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail("Tolerance must be zero or greater.", "INVALID_TOLERANCE");
+        }
+
+        var matches = schematic.Data.Labels
+            .Where(label => string.Equals(label.Text, currentNet, StringComparison.OrdinalIgnoreCase)
+                && Distance(label.XMillimeters, label.YMillimeters, x, y) <= tolerance.Value)
+            .ToArray();
+        if (matches.Length == 0)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail($"Schematic net label not found near ({x:0.###}, {y:0.###}): {currentNet}", "SCHEMATIC_LABEL_NOT_FOUND");
+        }
+
+        if (matches.Length > 1)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail($"Multiple schematic net labels matched near ({x:0.###}, {y:0.###}); use a tighter tolerance.", "SCHEMATIC_LABEL_AMBIGUOUS");
+        }
+
+        var label = matches[0];
+        var block = schematic.Data.Text.Substring(label.SourceStart, label.SourceLength);
+        var prefix = $"(label \"{label.Text}\"";
+        var replacement = $"(label \"{newNet}\"";
+        var replacedBlock = block.Replace(prefix, replacement, StringComparison.Ordinal);
+        if (string.Equals(block, replacedBlock, StringComparison.Ordinal))
+        {
+            return ToolResponse<SchematicMutationResult>.Fail("The matched schematic label could not be rewritten.", "SCHEMATIC_LABEL_REWRITE_FAILED");
+        }
+
+        var after = schematic.Data.Text.Remove(label.SourceStart, label.SourceLength).Insert(label.SourceStart, replacedBlock);
+        if (!dryRun)
+        {
+            File.WriteAllText(schematic.Data.SchematicFile, after);
+        }
+
+        return Mutation(
+            "replace-net-label",
+            $"{currentNet}-to-{newNet}",
+            dryRun,
+            new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) },
+            replacement);
+    }
+
     public ToolResponse<SchematicMutationResult> DeleteNetLabelByUuid(string projectPath, string uuid, bool dryRun)
     {
         var schematic = LoadSchematic(projectPath);

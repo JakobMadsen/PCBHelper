@@ -29,6 +29,8 @@ public sealed class PCBHelperRuntime
         TransactionStore = new ProjectTransactionStore(Projects);
         Transactions = new ProjectTransactionService(Projects, TransactionStore, new AtomicProjectFileWriter(), () => DateTimeOffset.UtcNow);
         Gates = new EngineeringGateService(CheckSummary, Assembly, Simulations, DesignIntent);
+        AutorouteTransactions = new AutorouteTransactionService(Projects, Transactions, Gates, locator, new FreeRoutingLocator(), runner);
+        FootprintLibraryTransactions = new FootprintLibraryTransactionService(Projects, Transactions, Gates, locator, new FreeRoutingLocator(), runner);
         Releases = new PcbWayReleaseService(Projects, Exports, Assembly, Gates, DesignIntent);
         Plans = new DesignPlanService(Projects, Transactions, Gates);
         Workflows = new ProjectWorkflowService(Projects, BoardSummary, BoardInspection, Components, Gui, TransactionStore, Gates, Assembly, Simulations, DesignIntent, locator, runner);
@@ -57,6 +59,8 @@ public sealed class PCBHelperRuntime
     public ProjectTransactionStore TransactionStore { get; }
     public ProjectTransactionService Transactions { get; }
     public EngineeringGateService Gates { get; }
+    public AutorouteTransactionService AutorouteTransactions { get; }
+    public FootprintLibraryTransactionService FootprintLibraryTransactions { get; }
     public PcbWayReleaseService Releases { get; }
     public DesignPlanService Plans { get; }
     public ProjectWorkflowService Workflows { get; }

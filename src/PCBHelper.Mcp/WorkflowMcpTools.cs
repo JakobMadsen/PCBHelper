@@ -46,6 +46,23 @@ public sealed class WorkflowMcpTools
         CancellationToken cancellationToken = default) =>
         _runtime.Plans.ApplyAsync(projectPath, plan.GetRawText(), expectedPlanHash, acknowledgedDecisionIds, cancellationToken);
 
+    [McpServerTool(Name = "preview_autoroute_board"), Description("Run FreeRouting in an isolated project copy and store an immutable, hash-addressed board preview without modifying the design.")]
+    public Task<ToolResponse<AutoroutePreviewResult>> PreviewAutorouteBoard(string projectPath, CancellationToken cancellationToken = default) =>
+        _runtime.AutorouteTransactions.PreviewAsync(projectPath, cancellationToken);
+
+    [McpServerTool(Name = "apply_autoroute_board"), Description("Apply the exact isolated autoroute preview as a conflict-checked project transaction, then run engineering gates.")]
+    public Task<ToolResponse<AutorouteApplyResult>> ApplyAutorouteBoard(
+        string projectPath, string previewId, string expectedAfterHash, CancellationToken cancellationToken = default) =>
+        _runtime.AutorouteTransactions.ApplyAsync(projectPath, previewId, expectedAfterHash, cancellationToken);
+
+    [McpServerTool(Name = "preview_project_footprint_library"), Description("Prepare an exact project-local PCBHelper.pretty library and board/schematic links in isolation.")]
+    public Task<ToolResponse<FootprintLibraryPreviewResult>> PreviewProjectFootprintLibrary(string projectPath, CancellationToken cancellationToken = default) =>
+        _runtime.FootprintLibraryTransactions.PreviewAsync(projectPath, cancellationToken);
+
+    [McpServerTool(Name = "apply_project_footprint_library"), Description("Apply an exact footprint-library preview as a conflict-checked transaction and run engineering gates.")]
+    public Task<ToolResponse<FootprintLibraryApplyResult>> ApplyProjectFootprintLibrary(string projectPath, string previewId, CancellationToken cancellationToken = default) =>
+        _runtime.FootprintLibraryTransactions.ApplyAsync(projectPath, previewId, cancellationToken);
+
     [McpServerTool(Name = "get_transaction"), Description("Read one project transaction and its gate status.")]
     public ToolResponse<ProjectTransactionResult> GetTransaction(string projectPath, string transactionId) =>
         _runtime.Transactions.Get(projectPath, transactionId);
