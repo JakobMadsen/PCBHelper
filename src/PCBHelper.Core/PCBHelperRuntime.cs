@@ -7,6 +7,7 @@ public sealed class PCBHelperRuntime
     private PCBHelperRuntime(ProjectScopePolicy scope)
     {
         Projects = new ProjectDiscoveryService(scope);
+        ProjectTemplates = new ProjectTemplateService(scope, Projects);
         var locator = new KiCadCliLocator();
         var runner = new ProcessCommandRunner();
         var ngspice = new NgspiceLocator();
@@ -37,6 +38,7 @@ public sealed class PCBHelperRuntime
     public static PCBHelperRuntime ForMcp() => new(ProjectScopePolicy.FromEnvironment());
 
     public ProjectDiscoveryService Projects { get; }
+    public ProjectTemplateService ProjectTemplates { get; }
     public KiCadDoctorService Doctor { get; }
     public CheckRunner Checks { get; }
     public CheckSummaryService CheckSummary { get; }
