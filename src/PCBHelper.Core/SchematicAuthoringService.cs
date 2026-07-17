@@ -1964,6 +1964,12 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("1", -5.08, -2.54), new SchematicPinDefinition("2", -5.08, 0),
             new SchematicPinDefinition("3", -5.08, 2.54), new SchematicPinDefinition("4", -5.08, 5.08)
         }),
+        new("Connector_Generic:Conn_01x05", "Conn_01x05", "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", 50, new[]
+        {
+            new SchematicPinDefinition("1", -5.08, -5.08), new SchematicPinDefinition("2", -5.08, -2.54),
+            new SchematicPinDefinition("3", -5.08, 0), new SchematicPinDefinition("4", -5.08, 2.54),
+            new SchematicPinDefinition("5", -5.08, 5.08)
+        }),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)
@@ -1973,6 +1979,17 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("1", 10.16, -5.08, 1), new SchematicPinDefinition("3", 10.16, 5.08, 1),
             new SchematicPinDefinition("4", -10.16, 0, 1), new SchematicPinDefinition("6", -10.16, 10.16, 1),
             new SchematicPinDefinition("2", 0, 10.16, 2), new SchematicPinDefinition("5", 0, -10.16, 2)
+        }),
+        new("4xxx:4053", "4053", "Package_DIP:DIP-16_W7.62mm", 50, new[]
+        {
+            new SchematicPinDefinition("1", -12.7, 5.08), new SchematicPinDefinition("2", -12.7, 7.62),
+            new SchematicPinDefinition("3", -12.7, -2.54), new SchematicPinDefinition("4", 12.7, 0),
+            new SchematicPinDefinition("5", -12.7, 0), new SchematicPinDefinition("6", -12.7, -7.62),
+            new SchematicPinDefinition("7", 2.54, -22.86), new SchematicPinDefinition("8", 0, -22.86),
+            new SchematicPinDefinition("9", -12.7, -15.24), new SchematicPinDefinition("10", -12.7, -12.7),
+            new SchematicPinDefinition("11", -12.7, -10.16), new SchematicPinDefinition("12", -12.7, 15.24),
+            new SchematicPinDefinition("13", -12.7, 12.7), new SchematicPinDefinition("14", 12.7, 15.24),
+            new SchematicPinDefinition("15", 12.7, 7.62), new SchematicPinDefinition("16", 0, 22.86)
         }),
         new(
             "Amplifier_Operational:OPA2325",
@@ -2024,7 +2041,7 @@ internal static class SchematicFootprintTemplates
 
     public static bool IsSupported(string footprint)
     {
-        return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil"
+        return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
 
@@ -2038,6 +2055,7 @@ internal static class SchematicFootprintTemplates
             "Photodiode_2Pad" => FormatTwoPad("Photodiode_2Pad", reference, value, x, y, rotationDegrees, "F.Cu", new[] { ("1", -2.54, "A"), ("2", 2.54, "K") }, padNets),
             "BatteryHolder_2Pad_Back" => FormatTwoPad("BatteryHolder_2Pad_Back", reference, value, x, y, rotationDegrees, "B.Cu", new[] { ("1", -4.0, "+"), ("2", 4.0, "-") }, padNets),
             "DIP8_300mil" => FormatDip8(reference, value, x, y, rotationDegrees, padNets),
+            "TO92_2N3904_EBC" => FormatTo92_2N3904(reference, value, x, y, rotationDegrees, padNets),
             _ => FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets)
         };
     }
@@ -2169,6 +2187,44 @@ internal static class SchematicFootprintTemplates
             FormatDipPad("8", 7.62, 0, "8", padNets),
             "  )",
             string.Empty
+        });
+    }
+
+    private static string FormatTo92_2N3904(string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        var atText = rotationDegrees is null
+            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
+            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
+        return string.Join(Environment.NewLine, new[]
+        {
+            "  (footprint \"TO92_2N3904_EBC\"",
+            "    (layer \"F.Cu\")",
+            $"    (uuid \"{Guid.NewGuid()}\")",
+            atText,
+            $"    (property \"Reference\" \"{reference}\" (at 2.54 -2.8 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (property \"Value\" \"{value}\" (at 2.54 2.8 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))",
+            // The Q_NPN_BEC symbol uses pin 1=B, 2=E, 3=C. A 2N3904 in TO-92 is physically E-B-C left to right.
+            FormatTo92Pad("2", 0, "E", padNets),
+            FormatTo92Pad("1", 2.54, "B", padNets),
+            FormatTo92Pad("3", 5.08, "C", padNets),
+            "  )",
+            string.Empty
+        });
+    }
+
+    private static string FormatTo92Pad(string padName, double x, string pinFunction, IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        padNets.TryGetValue(padName, out var net);
+        var netText = net is null ? string.Empty : $"{Environment.NewLine}      (net {net.Code} \"{net.Name}\")";
+        return string.Join(Environment.NewLine, new[]
+        {
+            $"    (pad \"{padName}\" thru_hole circle",
+            $"      (at {KiCadBoardParser.FormatNumber(x)} 0)",
+            "      (size 2 2)",
+            "      (drill 0.8)",
+            "      (layers \"*.Cu\" \"*.Mask\")" + netText,
+            $"      (pinfunction \"{pinFunction}\")",
+            "    )"
         });
     }
 

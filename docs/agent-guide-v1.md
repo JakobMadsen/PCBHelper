@@ -4,7 +4,7 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 
 ## Workflow
 
-1. Call `get_capabilities`, then `get_project_context`.
+1. Call `get_capabilities`. If no project exists yet, use `create_project_from_template`; then call `get_project_context`.
 2. Resolve only material requirement ambiguity. Routine reversible work is autonomous.
 3. Build one coherent Design Plan using only operations advertised by `get_capabilities`.
 4. Call `validate_design_plan`, then `preview_design_plan`.

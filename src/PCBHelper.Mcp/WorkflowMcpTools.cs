@@ -20,6 +20,13 @@ public sealed class WorkflowMcpTools
     public ToolResponse<AgentGuideResult> GetAgentGuide() =>
         ToolResponse<AgentGuideResult>.Ok("PCBHelper Agent Guide V1.", _runtime.AgentGuidance.GetGuide());
 
+    [McpServerTool(Name = "create_project_from_template"), Description("Create a new, non-overwriting KiCad project from an approved blank two-layer template inside an authorized root.")]
+    public ToolResponse<ProjectCreationResult> CreateProjectFromTemplate(
+        string templateId, string projectName, string destinationDirectory,
+        double? boardWidthMm = null, double? boardHeightMm = null, double? boardDiameterMm = null) =>
+        _runtime.ProjectTemplates.CreateProjectFromTemplate(
+            templateId, projectName, destinationDirectory, boardWidthMm, boardHeightMm, boardDiameterMm);
+
     [McpServerTool(Name = "get_project_context"), Description("Get concise project, board, schematic, component, net, KiCad capability, and transaction context without running ERC or DRC.")]
     public Task<ToolResponse<ProjectContextResult>> GetProjectContext(string projectPath, CancellationToken cancellationToken) =>
         _runtime.Workflows.GetProjectContextAsync(projectPath, cancellationToken);

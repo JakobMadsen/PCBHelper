@@ -30,16 +30,21 @@ Create a new KiCad project from an approved template.
 
 Inputs:
 
-- `template_id`
-- `project_name`
-- `destination_dir`
-- optional template variables
+- `templateId`: `blank-two-layer-circle` or `blank-two-layer-rectangle`
+- `projectName`: safe file/directory name, maximum 64 characters
+- `destinationDirectory`: existing authorized parent directory
+- optional `boardDiameterMm` for the circular template
+- optional `boardWidthMm` and `boardHeightMm` for the rectangular template
 
 Outputs:
 
 - project path
 - created files
-- warnings
+- board shape and dimensions
+
+The operation never overwrites an existing path. It writes the project into a staging directory and publishes the
+complete `.kicad_pro`, `.kicad_sch`, and `.kicad_pcb` set as one directory move. The default circle is 100 mm in
+diameter; the default rectangle is 100 mm by 80 mm. Dimensions must be between 10 mm and 500 mm.
 
 ### `get_project_summary`
 

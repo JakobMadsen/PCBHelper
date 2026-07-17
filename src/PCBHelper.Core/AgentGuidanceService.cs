@@ -6,7 +6,7 @@ namespace PCBHelper.Core;
 public sealed class AgentGuidanceService
 {
     public const int GuideVersion = 1;
-    public const int CapabilityVersion = 1;
+    public const int CapabilityVersion = 2;
     public const string GuideUri = "pcbhelper://agent-guide/v1";
     public const string DesignPlanSchemaUri = "pcbhelper://design-plan/v1/schema";
 
@@ -21,7 +21,7 @@ public sealed class AgentGuidanceService
         1,
         DesignPlanSchemaUri,
         DesignPlanOperationCatalog.All,
-        new[] { "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "ERC, DRC, simulation, manufacturing review, and PCBWay package generation" },
+        new[] { "Approved blank two-layer project bootstrap", "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "ERC, DRC, simulation, manufacturing review, and PCBWay package generation" },
         new[] { "No arbitrary KiCad text, shell commands, or file operations in Design Plans", "No general autorouting, safety-critical, mains, RF, high-current, or high-speed design", "No order placement, payment, or component substitution approval" });
 
     public string GetDesignPlanSchema() => DesignPlanOperationCatalog.CreateJsonSchema();

@@ -198,6 +198,22 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void CreateSymbol_And_UpdateBoard_Supports_FivePin_Header_And_ThroughHole_4053()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Connector_Generic:Conn_01x05", "J1", 40, 50, "CONTROL", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "4xxx:4053", "U3", 80, 80, "CD4053BE", null, dryRun: false).Success);
+        var update = service.UpdatePcbFromSchematic(fixture.Path, dryRun: false);
+
+        Assert.True(update.Success, update.Error?.Message ?? update.Summary);
+        var board = new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path);
+        Assert.Contains(board.Data!.Footprints, item => item.Reference == "J1" && item.FootprintName.Contains("PinHeader_1x05", StringComparison.Ordinal));
+        Assert.Contains(board.Data.Footprints, item => item.Reference == "U3" && item.FootprintName.Contains("DIP-16_W7.62mm", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ConnectPins_Fails_When_Required_MultiUnit_Symbol_Is_Not_Placed()
     {
         using var fixture = CopyBlankFixture();
