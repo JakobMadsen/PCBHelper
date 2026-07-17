@@ -70,7 +70,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(23, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(25, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());

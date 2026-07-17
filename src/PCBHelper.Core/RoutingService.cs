@@ -752,10 +752,17 @@ public sealed class RoutingService
     private static IReadOnlyList<CopperObstacle> BuildCopperObstacles(KiCadBoardDocument board, int targetNetCode, string layer)
     {
         var obstacles = new List<CopperObstacle>();
+        var targetNet = board.Nets.FirstOrDefault(net => net.Code == targetNetCode);
         foreach (var footprint in board.Footprints.Where(static footprint => footprint.Reference is not null))
         {
-            foreach (var pad in footprint.Pads.Where(pad => pad.NetCode is not null && pad.NetCode != targetNetCode && PadTouchesLayer(pad, layer)))
+            foreach (var pad in footprint.Pads.Where(pad => PadTouchesLayer(pad, layer)))
             {
+                var padNet = ResolveItemNet(board, pad.NetCode, pad.NetName);
+                if (padNet is null || (targetNet is not null && NetReferenceMatches(pad.NetCode, pad.NetName, targetNet)))
+                {
+                    continue;
+                }
+
                 var absolute = BoardInspectionService.CalculateAbsolutePadPosition(footprint, pad);
                 if (absolute.X is null || absolute.Y is null)
                 {
@@ -766,45 +773,55 @@ public sealed class RoutingService
                 obstacles.Add(new CopperObstacle(
                     "pad",
                     $"{footprint.Reference}.{pad.Name}",
-                    pad.NetCode,
-                    pad.NetName,
+                    padNet.Code,
+                    padNet.Name,
                     new RoutingPoint(absolute.X.Value, absolute.Y.Value),
                     null,
                     radius));
             }
         }
 
-        foreach (var segment in board.Segments.Where(segment => segment.NetCode is not null && segment.NetCode != targetNetCode && segment.Layer == layer))
+        foreach (var segment in board.Segments.Where(segment => segment.Layer == layer))
         {
+            var net = ResolveItemNet(board, segment.NetCode, segment.NetName);
+            if (net is null || (targetNet is not null && NetReferenceMatches(segment.NetCode, segment.NetName, targetNet)))
+            {
+                continue;
+            }
+
             if (segment.StartXMillimeters is null || segment.StartYMillimeters is null || segment.EndXMillimeters is null || segment.EndYMillimeters is null)
             {
                 continue;
             }
 
-            var net = board.Nets.FirstOrDefault(item => item.Code == segment.NetCode);
             obstacles.Add(new CopperObstacle(
                 "track",
                 segment.Id,
-                segment.NetCode,
-                net?.Name,
+                net.Code,
+                net.Name,
                 new RoutingPoint(segment.StartXMillimeters.Value, segment.StartYMillimeters.Value),
                 new RoutingPoint(segment.EndXMillimeters.Value, segment.EndYMillimeters.Value),
                 (segment.WidthMillimeters ?? 0.25) / 2));
         }
 
-        foreach (var via in board.Vias.Where(via => via.NetCode is not null && via.NetCode != targetNetCode && ViaTouchesLayer(via, layer)))
+        foreach (var via in board.Vias.Where(via => ViaTouchesLayer(via, layer)))
         {
+            var net = ResolveItemNet(board, via.NetCode, via.NetName);
+            if (net is null || (targetNet is not null && NetReferenceMatches(via.NetCode, via.NetName, targetNet)))
+            {
+                continue;
+            }
+
             if (via.XMillimeters is null || via.YMillimeters is null)
             {
                 continue;
             }
 
-            var net = board.Nets.FirstOrDefault(item => item.Code == via.NetCode);
             obstacles.Add(new CopperObstacle(
                 "via",
                 via.Id,
-                via.NetCode,
-                net?.Name,
+                net.Code,
+                net.Name,
                 new RoutingPoint(via.XMillimeters.Value, via.YMillimeters.Value),
                 null,
                 (via.SizeMillimeters ?? 0.8) / 2));

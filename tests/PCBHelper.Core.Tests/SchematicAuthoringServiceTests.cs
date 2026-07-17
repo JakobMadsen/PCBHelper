@@ -384,6 +384,23 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ReplaceNetLabel_Changes_Only_The_Label_At_The_Selected_Location()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.AddNetLabel(fixture.Path, "GND", 20.32, 50.8, dryRun: false).Success);
+        Assert.True(service.AddNetLabel(fixture.Path, "GND", 40.64, 50.8, dryRun: false).Success);
+
+        var result = service.ReplaceNetLabel(fixture.Path, "GND", "VMID", 20.32, 50.8, 0.001, dryRun: false);
+        var labels = service.ListSymbols(fixture.Path).Data!.Labels;
+
+        Assert.True(result.Success);
+        Assert.Contains(labels, label => label.Text == "VMID" && label.XMillimeters == 20.32);
+        Assert.Contains(labels, label => label.Text == "GND" && label.XMillimeters == 40.64);
+        Assert.DoesNotContain(labels, label => label.Text == "GND" && label.XMillimeters == 20.32);
+    }
+
+    [Fact]
     public void UpdatePcbFromSchematic_Uses_Led_Pad_Pitch_With_Clearance()
     {
         using var fixture = CopyBlankFixture();

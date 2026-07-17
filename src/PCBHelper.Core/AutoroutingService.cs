@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -7,6 +8,7 @@ namespace PCBHelper.Core;
 public sealed class AutoroutingService
 {
     private static readonly TimeSpan DefaultFreeRoutingTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan KiCadPythonTimeout = TimeSpan.FromSeconds(15);
     private readonly ProjectDiscoveryService _projectDiscovery;
     private readonly KiCadCliLocator _kiCadCliLocator;
     private readonly FreeRoutingLocator _freeRoutingLocator;
@@ -35,6 +37,13 @@ public sealed class AutoroutingService
     public async Task<ToolResponse<AutorouteBoardResult>> AutorouteBoardAsync(
         string projectPath,
         bool dryRun,
+        CancellationToken cancellationToken = default)
+        => await AutorouteBoardAsync(projectPath, dryRun, ripupExisting: false, cancellationToken);
+
+    public async Task<ToolResponse<AutorouteBoardResult>> AutorouteBoardAsync(
+        string projectPath,
+        bool dryRun,
+        bool ripupExisting,
         CancellationToken cancellationToken = default)
     {
         var project = _projectDiscovery.GetSummary(projectPath);
@@ -88,6 +97,18 @@ public sealed class AutoroutingService
 
         Directory.CreateDirectory(root);
         var generated = new List<string>();
+        if (ripupExisting)
+        {
+            var pythonPath = ResolveKiCadPythonPath(kiCad.ExecutablePath!);
+            if (pythonPath is null)
+                return ToolResponse<AutorouteBoardResult>.Fail("KiCad Python is required to rip up existing tracks safely.", "ROUTING_BACKEND_UNAVAILABLE");
+            var ripupScriptPath = Path.Combine(root, "kicad-ripup.py");
+            await File.WriteAllTextAsync(ripupScriptPath, BuildPythonRipupScript(project.Data.BoardFile), cancellationToken);
+            var ripup = await RunKiCadPythonAsync(pythonPath, ripupScriptPath, project.Data.ProjectRoot, "KiCad Python track ripup", cancellationToken);
+            await WriteCommandLogAsync(root, "kicad-ripup", ripup, cancellationToken);
+            if (ripup.ExitCode != 0)
+                return ToolResponse<AutorouteBoardResult>.Fail("Could not remove existing tracks before full reroute.", "ROUTING_BACKEND_UNAVAILABLE", ripup.StandardError);
+        }
         var export = await _runner.RunAsync(
             kiCad.ExecutablePath!,
             new[] { "pcb", "export", "dsn", "--output", dsnPath, project.Data.BoardFile },
@@ -103,16 +124,21 @@ public sealed class AutoroutingService
             if (pythonPath is not null)
             {
                 var pythonScript = BuildPythonDsnExportScript(project.Data.BoardFile, dsnPath);
-                var pythonExport = await _runner.RunAsync(
+                var pythonScriptPath = Path.Combine(root, "kicad-export-dsn.py");
+                await File.WriteAllTextAsync(pythonScriptPath, pythonScript, cancellationToken);
+                var pythonExport = await RunKiCadPythonAsync(
                     pythonPath,
-                    new[] { "-c", pythonScript },
+                    pythonScriptPath,
                     project.Data.ProjectRoot,
+                    "KiCad Python DSN export",
                     cancellationToken);
                 await WriteCommandLogAsync(root, "kicad-export-dsn-python", pythonExport, cancellationToken);
                 generated.Add(Path.Combine(root, "kicad-export-dsn-python.stdout.txt"));
                 generated.Add(Path.Combine(root, "kicad-export-dsn-python.stderr.txt"));
 
-                if (pythonExport.ExitCode != 0 || !File.Exists(dsnPath))
+                // pcbnew may finish writing the DSN but keep native GUI threads alive.
+                // The file is the authoritative completion signal after the bounded run.
+                if (!File.Exists(dsnPath))
                 {
                     return ToolResponse<AutorouteBoardResult>.Fail(
                         "KiCad DSN export failed.",
@@ -171,16 +197,21 @@ public sealed class AutoroutingService
             if (pythonPath is not null)
             {
                 var pythonScript = BuildPythonSesImportScript(project.Data.BoardFile, sesPath);
-                var pythonImport = await _runner.RunAsync(
+                var pythonScriptPath = Path.Combine(root, "kicad-import-ses.py");
+                await File.WriteAllTextAsync(pythonScriptPath, pythonScript, cancellationToken);
+                var boardBeforeImport = File.ReadAllText(project.Data.BoardFile);
+                var pythonImport = await RunKiCadPythonAsync(
                     pythonPath,
-                    new[] { "-c", pythonScript },
+                    pythonScriptPath,
                     project.Data.ProjectRoot,
+                    "KiCad Python SES import",
                     cancellationToken);
                 await WriteCommandLogAsync(root, "kicad-import-ses-python", pythonImport, cancellationToken);
                 generated.Add(Path.Combine(root, "kicad-import-ses-python.stdout.txt"));
                 generated.Add(Path.Combine(root, "kicad-import-ses-python.stderr.txt"));
 
-                if (pythonImport.ExitCode != 0)
+                var importChangedBoard = !string.Equals(boardBeforeImport, File.ReadAllText(project.Data.BoardFile), StringComparison.Ordinal);
+                if (pythonImport.ExitCode != 0 && !importChangedBoard)
                 {
                     return ToolResponse<AutorouteBoardResult>.Fail(
                         "KiCad SES import failed.",
@@ -272,10 +303,69 @@ public sealed class AutoroutingService
         }
 
         timeoutCts.Cancel();
+        // A custom or third-party runner may fail to observe cancellation. Do
+        // not turn the timeout itself into an unbounded wait; the production
+        // runner still kills its process tree when it observes the token.
+        _ = runTask.ContinueWith(
+            static task => _ = task.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
         return new CommandExecutionResult(
             -1,
             string.Empty,
             $"{displayName} timed out after {timeout.TotalSeconds:0} seconds. The process may be waiting for GUI or interactive input.");
+    }
+
+    internal async Task<CommandExecutionResult> RunKiCadPythonAsync(
+        string pythonPath,
+        string scriptPath,
+        string workingDirectory,
+        string displayName,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+            return await RunWithTimeoutAsync(pythonPath, new[] { scriptPath }, workingDirectory, displayName, KiCadPythonTimeout, cancellationToken);
+
+        // pcbnew's Windows runtime can stall when its stdout/stderr handles are
+        // redirected directly by a .NET parent. A non-interactive cmd wrapper
+        // gives it ordinary inherited handles while PCBHelper still captures the
+        // wrapper output and retains cancellation/timeout control.
+        var scriptDir = Path.GetDirectoryName(scriptPath)!;
+        var scriptBase = Path.GetFileNameWithoutExtension(scriptPath);
+        var wrapperPath = Path.Combine(scriptDir, $"run-{scriptBase}.cmd");
+        var stdoutLogPath = Path.Combine(scriptDir, $"run-{scriptBase}.stdout.log");
+        var stderrLogPath = Path.Combine(scriptDir, $"run-{scriptBase}.stderr.log");
+        await File.WriteAllTextAsync(wrapperPath,
+            $"@echo off{Environment.NewLine}\"{pythonPath}\" \"{scriptPath}\" >\"{stdoutLogPath}\" 2>\"{stderrLogPath}\"{Environment.NewLine}",
+            cancellationToken);
+        var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = comSpec,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false
+        };
+        startInfo.ArgumentList.Add("/d");
+        startInfo.ArgumentList.Add("/s");
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add(wrapperPath);
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {displayName}.");
+        var wait = process.WaitForExitAsync(cancellationToken);
+        var completed = await Task.WhenAny(wait, Task.Delay(KiCadPythonTimeout, cancellationToken));
+        if (completed != wait)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            return new CommandExecutionResult(-1, string.Empty, $"{displayName} timed out after {KiCadPythonTimeout.TotalSeconds:0} seconds.");
+        }
+        await wait;
+        var stdoutLog = File.Exists(stdoutLogPath) ? await File.ReadAllTextAsync(stdoutLogPath, CancellationToken.None) : string.Empty;
+        var stderrLog = File.Exists(stderrLogPath) ? await File.ReadAllTextAsync(stderrLogPath, CancellationToken.None) : string.Empty;
+        return new CommandExecutionResult(process.ExitCode, stdoutLog, stderrLog);
     }
 
     private static async Task WriteCommandLogAsync(string root, string name, CommandExecutionResult result, CancellationToken cancellationToken)
@@ -309,12 +399,20 @@ public sealed class AutoroutingService
 
     private static string BuildPythonDsnExportScript(string boardFile, string dsnPath)
     {
-        return $"import pcbnew; b=pcbnew.LoadBoard({ToPythonStringLiteral(boardFile)}); pcbnew.ExportSpecctraDSN(b, {ToPythonStringLiteral(dsnPath)})";
+        // KiCad's Windows Python runtime can keep GUI/native threads alive after
+        // pcbnew finishes. Flush the generated file and exit the process without
+        // waiting for native module teardown.
+        return $"import pcbnew,os,sys,threading; threading.Timer(5.0,lambda:os._exit(0)).start(); b=pcbnew.LoadBoard({ToPythonStringLiteral(boardFile)}); pcbnew.ExportSpecctraDSN(b, {ToPythonStringLiteral(dsnPath)}); sys.stdout.flush(); sys.stderr.flush(); os._exit(0)";
+    }
+
+    private static string BuildPythonRipupScript(string boardFile)
+    {
+        return $"import pcbnew,os,sys; p={ToPythonStringLiteral(boardFile)}; b=pcbnew.LoadBoard(p); [b.Remove(t) for t in list(b.GetTracks())]; pcbnew.SaveBoard(p,b); sys.stdout.flush(); sys.stderr.flush(); os._exit(0)";
     }
 
     private static string BuildPythonSesImportScript(string boardFile, string sesPath)
     {
-        return $"import pcbnew,sys; p={ToPythonStringLiteral(boardFile)}; b=pcbnew.LoadBoard(p); ok=pcbnew.ImportSpecctraSES(b, {ToPythonStringLiteral(sesPath)}); pcbnew.SaveBoard(p, b) if ok else None; sys.exit(0 if ok else 1)";
+        return $"import pcbnew,os,sys,threading; threading.Timer(5.0,lambda:os._exit(0)).start(); p={ToPythonStringLiteral(boardFile)}; b=pcbnew.LoadBoard(p); ok=pcbnew.ImportSpecctraSES(b, {ToPythonStringLiteral(sesPath)}); pcbnew.SaveBoard(p, b) if ok else None; sys.stdout.flush(); sys.stderr.flush(); os._exit(0 if ok else 1)";
     }
 
     private static string ToPythonStringLiteral(string value)

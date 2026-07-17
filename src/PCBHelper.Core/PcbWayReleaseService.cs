@@ -58,16 +58,50 @@ public sealed class PcbWayReleaseService
         var manufacturing=await _exports.ExportManufacturingFilesAsync(projectPath,cancellationToken); if(manufacturing.Data is null)return ToolResponse<PcbWayReleaseResult>.Fail(manufacturing.Summary,manufacturing.Error?.Code??"EXPORT_FAILED",manufacturing.Error?.Message);
         var bom=await _assembly.ExportAssemblyBomAsync(projectPath,cancellationToken);var cpl=await _assembly.ExportCplAsync(projectPath,cancellationToken);var validation=_assembly.ValidateAssemblyPackage(projectPath);
         if(bom.Data is null||cpl.Data is null||validation.Data is null||!validation.Data.Valid)return ToolResponse<PcbWayReleaseResult>.Fail("Assembly release validation failed.","ASSEMBLY_VALIDATION_FAILED");
+        var missingFabricationFiles = MissingRequiredFabricationFiles(manufacturing.Data.GeneratedFiles);
+        if (missingFabricationFiles.Count > 0)
+            return ToolResponse<PcbWayReleaseResult>.Fail(
+                $"Manufacturing export is incomplete: {string.Join(", ", missingFabricationFiles)}.",
+                "FABRICATION_OUTPUT_INCOMPLETE");
+
         var root=Path.Combine(project.Data.ProjectRoot,".pcbhelper","releases",DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffZ"));Directory.CreateDirectory(root);
         var gerberZip=Path.Combine(root,$"{project.Data.ProjectName}-gerbers.zip");
-        using(var archive=ZipFile.Open(gerberZip,ZipArchiveMode.Create))foreach(var file in manufacturing.Data.GeneratedFiles.Where(IsFabricationFile))archive.CreateEntryFromFile(file,Path.GetFileName(file));
+        using (var archive = ZipFile.Open(gerberZip, ZipArchiveMode.Create))
+        {
+            foreach (var file in manufacturing.Data.GeneratedFiles.Where(IsPcbWayFabricationFile).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+                archive.CreateEntryFromFile(file, Path.GetFileName(file));
+        }
         var bomPath=Path.Combine(root,$"{project.Data.ProjectName}-bom.csv");var cplPath=Path.Combine(root,$"{project.Data.ProjectName}-cpl.csv");File.Copy(bom.Data.OutputFile,bomPath);File.Copy(cpl.Data.OutputFile,cplPath);
         var settingsPath=Path.Combine(root,"pcbway-order-settings.json");var settings=new PcbWayOrderSettings(2,"FR-4",1.6,"1 oz","green","white","HASL lead free","single pieces","top/bottom according to CPL","Do not approve substitutions without customer confirmation.");await File.WriteAllTextAsync(settingsPath,JsonSerializer.Serialize(settings,JsonOptions),cancellationToken);
         var reviewPath=Path.Combine(root,"release-review.json");var review=new PcbWayReleaseReview(project.Data.ProjectName,DateTimeOffset.UtcNow,gate.Data,requirements.Data!,validation.Data,new[]{"Verify polarized component orientation and pin 1.","Verify connector pinout and mechanical fit.","Confirm component stock, substitutions, shipping, tax, and final price before payment."});await File.WriteAllTextAsync(reviewPath,JsonSerializer.Serialize(review,JsonOptions),cancellationToken);
         var result=new PcbWayReleaseResult(root,gerberZip,bomPath,cplPath,settingsPath,reviewPath,gate.Data,requirements.Data!,validation.Data);
         return ToolResponse<PcbWayReleaseResult>.Ok("Generated a PCBWay release without placing an order.",result);
     }
-    private static bool IsFabricationFile(string path){var n=Path.GetFileName(path).ToLowerInvariant();return n.EndsWith(".gbr")||n.EndsWith(".drl")||n.EndsWith(".gbrjob")||n.EndsWith(".gm1");}
+    internal static IReadOnlyList<string> MissingRequiredFabricationFiles(IEnumerable<string> paths)
+    {
+        var extensions = paths.Select(path => Path.GetExtension(path).ToLowerInvariant()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = new List<string>();
+        Require("top copper (.gtl)", ".gtl");
+        Require("bottom copper (.gbl)", ".gbl");
+        Require("top solder mask (.gts)", ".gts");
+        Require("bottom solder mask (.gbs)", ".gbs");
+        Require("top silkscreen (.gto)", ".gto");
+        Require("board outline (.gm1)", ".gm1");
+        Require("drill file (.drl)", ".drl");
+        return missing;
+
+        void Require(string description, string extension)
+        {
+            if (!extensions.Contains(extension))
+                missing.Add(description);
+        }
+    }
+
+    internal static bool IsPcbWayFabricationFile(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension is ".gtl" or ".gbl" or ".gts" or ".gbs" or ".gto" or ".gbo" or ".gm1" or ".drl" or ".gbrjob";
+    }
 }
 public sealed record ReleaseRequirementCheck(string Id,bool Required,bool Implemented,string? Message);
 public sealed record ReleaseRequirementsResult(bool Passed,IReadOnlyList<ReleaseRequirementCheck> Checks);

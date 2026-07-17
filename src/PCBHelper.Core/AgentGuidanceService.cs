@@ -83,6 +83,7 @@ public static class DesignPlanOperationCatalog
         Op("set-symbol-field", "Set one schematic symbol field.", S("reference"), S("field"), S("value")),
         Op("connect-schematic-pins", "Connect two approved symbol pins.", S("from"), S("to"), S("net", false)),
         Op("add-net-label", "Add a schematic net label.", S("net"), N("xMm"), N("yMm")),
+        Op("replace-net-label", "Replace one schematic net label at an exact location.", S("currentNet"), S("newNet"), N("xMm"), N("yMm"), N("toleranceMm")),
         Op("update-pcb-from-schematic", "Create missing template footprints and board nets."),
         Op("regenerate-board-footprint", "Regenerate one template footprint from schematic data.", S("reference")),
         Op("add-track", "Add one straight copper segment.", S("net"), N("startXmm"), N("startYmm"), N("endXmm"), N("endYmm"), S("layer"), N("widthMm")),
@@ -96,6 +97,7 @@ public static class DesignPlanOperationCatalog
         ,Op("hide-reference-text", "Hide footprint reference text.", S("reference"))
         ,Op("cleanup-silkscreen", "Hide reference anchors that overlap within a threshold.", N("minimumSpacingMm"))
         ,Op("add-testpoint", "Add a through-hole testpoint on a net.", S("reference"), S("net"), N("xMm"), N("yMm"), N("diameterMm"))
+        ,Op("set-board-pad-net", "Restore or change one board pad net by footprint reference and pad name.", S("reference"), S("pad"), S("net"))
         ,Op("add-mounting-hole", "Add an NPTH mounting hole.", S("reference"), N("xMm"), N("yMm"), N("drillMm"), N("diameterMm"))
         ,Op("add-mechanical-keepout", "Add a copper/mechanical keep-out polygon.", S("layer"), S("points"))
     };

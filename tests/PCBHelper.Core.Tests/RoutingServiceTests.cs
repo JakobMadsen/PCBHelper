@@ -77,6 +77,25 @@ public sealed class RoutingServiceTests
         Assert.Equal("ROUTING_CLEARANCE_VIOLATION", violation.Error?.Code);
     }
 
+    [Fact]
+    public void ValidateTrackClearance_Rejects_Crossing_Track_With_Named_Net_Reference()
+    {
+        using var fixture = CopyRoutingFixture();
+        var service = new RoutingService(new ProjectDiscoveryService());
+        var added = service.AddTrackPolyline(fixture.Path, "B", "20,10;20,20", "F.Cu", 0.25, dryRun: false);
+        Assert.True(added.Success);
+
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var boardText = File.ReadAllText(boardFile).Replace("(net 2)", "(net \"B\")", StringComparison.Ordinal);
+        File.WriteAllText(boardFile, boardText);
+
+        var result = service.ValidateTrackClearance(fixture.Path, "A", "10,15;30,15", "F.Cu", 0.25);
+
+        Assert.False(result.Success);
+        Assert.Equal("ROUTING_CLEARANCE_VIOLATION", result.Error?.Code);
+        Assert.Contains("track", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string LedConnectionPoints(RoutingService service, string projectPath)
     {
         var routing = service.GetNetRouting(projectPath, "LED_A").Data!;
