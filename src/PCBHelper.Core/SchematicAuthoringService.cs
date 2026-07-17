@@ -613,7 +613,9 @@ public sealed class SchematicAuthoringService
         }
 
         var x = SnapToSchematicGrid(SnapToSchematicGrid(symbol.XMillimeters.Value) + pin.OffsetX);
-        var y = SnapToSchematicGrid(SnapToSchematicGrid(symbol.YMillimeters.Value) + pin.OffsetY);
+        // KiCad library-symbol Y coordinates use the opposite sign from placed
+        // schematic sheet coordinates. X is translated directly; Y is mirrored.
+        var y = SnapToSchematicGrid(SnapToSchematicGrid(symbol.YMillimeters.Value) - pin.OffsetY);
         return ToolResponse<ResolvedSchematicPin>.Ok("Resolved pin.", new ResolvedSchematicPin(parts[0], parts[1], pin.Unit, x, y, pin.OffsetX, pin.OffsetY));
     }
 
@@ -934,7 +936,7 @@ public sealed class SchematicAuthoringService
     {
         var primary = Math.Abs(pin.OffsetX) >= Math.Abs(pin.OffsetY)
             ? (X: pin.OffsetX < 0 ? -1.0 : 1.0, Y: 0.0)
-            : (X: 0.0, Y: pin.OffsetY < 0 ? -1.0 : 1.0);
+            : (X: 0.0, Y: pin.OffsetY < 0 ? 1.0 : -1.0);
         var directions = new List<(double X, double Y)> { primary };
         foreach (var candidate in new[] { (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0) })
         {
@@ -1751,7 +1753,7 @@ internal sealed class SchematicConnectivity
                 var originY = Snap(symbol.YMillimeters!.Value);
                 return catalog.Pins
                     .Where(pin => pin.Unit == symbol.Unit)
-                    .Select(pin => new SchematicPoint(Snap(originX + pin.OffsetX), Snap(originY + pin.OffsetY)))
+                    .Select(pin => new SchematicPoint(Snap(originX + pin.OffsetX), Snap(originY - pin.OffsetY)))
                     .ToArray();
             })
             .ToArray();
@@ -1958,17 +1960,17 @@ internal static class SchematicSymbolCatalog
         new("Device:D_Photo", "D_Photo", "Photodiode_2Pad", 28, new[] { new SchematicPinDefinition("A", 2.54, 0), new SchematicPinDefinition("K", -5.08, 0) }),
         new("Device:Battery_Cell", "Battery_Cell", "BatteryHolder_2Pad_Back", 50, new[] { new SchematicPinDefinition("+", 0, -5.08), new SchematicPinDefinition("-", 0, 2.54) }),
         new("power:PWR_FLAG", "PWR_FLAG", "", 50, new[] { new SchematicPinDefinition("1", 0, 0) }),
-        new("Connector_Generic:Conn_01x02", "Conn_01x02", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", 50, new[] { new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", -5.08, 2.54) }),
+        new("Connector_Generic:Conn_01x02", "Conn_01x02", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", 50, new[] { new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", -5.08, -2.54) }),
         new("Connector_Generic:Conn_01x04", "Conn_01x04", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", 50, new[]
         {
-            new SchematicPinDefinition("1", -5.08, -2.54), new SchematicPinDefinition("2", -5.08, 0),
-            new SchematicPinDefinition("3", -5.08, 2.54), new SchematicPinDefinition("4", -5.08, 5.08)
+            new SchematicPinDefinition("1", -5.08, 2.54), new SchematicPinDefinition("2", -5.08, 0),
+            new SchematicPinDefinition("3", -5.08, -2.54), new SchematicPinDefinition("4", -5.08, -5.08)
         }),
         new("Connector_Generic:Conn_01x05", "Conn_01x05", "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", 50, new[]
         {
-            new SchematicPinDefinition("1", -5.08, -5.08), new SchematicPinDefinition("2", -5.08, -2.54),
-            new SchematicPinDefinition("3", -5.08, 0), new SchematicPinDefinition("4", -5.08, 2.54),
-            new SchematicPinDefinition("5", -5.08, 5.08)
+            new SchematicPinDefinition("1", -5.08, 5.08), new SchematicPinDefinition("2", -5.08, 2.54),
+            new SchematicPinDefinition("3", -5.08, 0), new SchematicPinDefinition("4", -5.08, -2.54),
+            new SchematicPinDefinition("5", -5.08, -5.08)
         }),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {

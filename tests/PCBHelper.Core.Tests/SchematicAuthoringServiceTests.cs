@@ -214,6 +214,24 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ConnectPins_Mirrors_Library_Y_Offset_Into_Schematic_Coordinates()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "4xxx:4053", "U3", 80, 80, "CD4053BE", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 40, 80, "10k", null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "U3.1", "R1.1", "Y1_TEST", dryRun: false).Success);
+
+        var schematic = service.ListSymbols(fixture.Path).Data!;
+        var symbol = Assert.Single(schematic.Symbols, item => item.Reference == "U3");
+        Assert.Contains(schematic.Wires, wire => IsWireEndpoint(
+            symbol.XMillimeters!.Value - 12.7,
+            symbol.YMillimeters!.Value - 5.08,
+            wire));
+    }
+
+    [Fact]
     public void ConnectPins_Fails_When_Required_MultiUnit_Symbol_Is_Not_Placed()
     {
         using var fixture = CopyBlankFixture();
@@ -296,7 +314,7 @@ public sealed class SchematicAuthoringServiceTests
         var wires = service.ListSymbols(fixture.Path).Data!.Wires;
 
         Assert.Contains(wires, wire => IsWireEndpoint(41.91, 90.17, wire));
-        Assert.Contains(wires, wire => IsWireEndpoint(72.39, 97.79, wire));
+        Assert.Contains(wires, wire => IsWireEndpoint(72.39, 102.87, wire));
     }
 
     [Fact]
