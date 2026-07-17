@@ -66,7 +66,11 @@ public sealed class PcbWayReleaseService
 
         var root=Path.Combine(project.Data.ProjectRoot,".pcbhelper","releases",DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffZ"));Directory.CreateDirectory(root);
         var gerberZip=Path.Combine(root,$"{project.Data.ProjectName}-gerbers.zip");
-        using(var archive=ZipFile.Open(gerberZip,ZipArchiveMode.Create))foreach(var file in manufacturing.Data.GeneratedFiles.Where(IsPcbWayFabricationFile))archive.CreateEntryFromFile(file,Path.GetFileName(file));
+        using (var archive = ZipFile.Open(gerberZip, ZipArchiveMode.Create))
+        {
+            foreach (var file in manufacturing.Data.GeneratedFiles.Where(IsPcbWayFabricationFile).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+                archive.CreateEntryFromFile(file, Path.GetFileName(file));
+        }
         var bomPath=Path.Combine(root,$"{project.Data.ProjectName}-bom.csv");var cplPath=Path.Combine(root,$"{project.Data.ProjectName}-cpl.csv");File.Copy(bom.Data.OutputFile,bomPath);File.Copy(cpl.Data.OutputFile,cplPath);
         var settingsPath=Path.Combine(root,"pcbway-order-settings.json");var settings=new PcbWayOrderSettings(2,"FR-4",1.6,"1 oz","green","white","HASL lead free","single pieces","top/bottom according to CPL","Do not approve substitutions without customer confirmation.");await File.WriteAllTextAsync(settingsPath,JsonSerializer.Serialize(settings,JsonOptions),cancellationToken);
         var reviewPath=Path.Combine(root,"release-review.json");var review=new PcbWayReleaseReview(project.Data.ProjectName,DateTimeOffset.UtcNow,gate.Data,requirements.Data!,validation.Data,new[]{"Verify polarized component orientation and pin 1.","Verify connector pinout and mechanical fit.","Confirm component stock, substitutions, shipping, tax, and final price before payment."});await File.WriteAllTextAsync(reviewPath,JsonSerializer.Serialize(review,JsonOptions),cancellationToken);

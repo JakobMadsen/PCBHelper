@@ -13,9 +13,21 @@ public sealed class FootprintLibraryTransactionService
     private readonly FreeRoutingLocator _freeRouting;
     private readonly ICommandRunner _runner;
 
-    public FootprintLibraryTransactionService(ProjectDiscoveryService projects, ProjectTransactionService transactions,
-        EngineeringGateService gates, KiCadCliLocator kiCad, FreeRoutingLocator freeRouting, ICommandRunner runner)
-    { _projects=projects;_transactions=transactions;_gates=gates;_kiCad=kiCad;_freeRouting=freeRouting;_runner=runner; }
+    public FootprintLibraryTransactionService(
+        ProjectDiscoveryService projects,
+        ProjectTransactionService transactions,
+        EngineeringGateService gates,
+        KiCadCliLocator kiCad,
+        FreeRoutingLocator freeRouting,
+        ICommandRunner runner)
+    {
+        _projects = projects;
+        _transactions = transactions;
+        _gates = gates;
+        _kiCad = kiCad;
+        _freeRouting = freeRouting;
+        _runner = runner;
+    }
 
     public async Task<ToolResponse<FootprintLibraryPreviewResult>> PreviewAsync(string projectPath, CancellationToken cancellationToken=default)
     {
@@ -23,7 +35,8 @@ public sealed class FootprintLibraryTransactionService
         if(!project.Success||project.Data?.BoardFile is null||project.Data.SchematicFile is null)
             return ToolResponse<FootprintLibraryPreviewResult>.Fail(project.Summary,project.Error?.Code??"PROJECT_FILES_MISSING",project.Error?.Message);
         var cli=_kiCad.Locate();
-        var python=cli.ExecutablePath is null?null:ResolvePython(cli.ExecutablePath);
+        if(cli.ExecutablePath is null)return ToolResponse<FootprintLibraryPreviewResult>.Fail("kicad-cli is required.","KICAD_CLI_NOT_FOUND");
+        var python=ResolvePython(cli.ExecutablePath);
         if(python is null)return ToolResponse<FootprintLibraryPreviewResult>.Fail("KiCad Python is required.","KICAD_PYTHON_NOT_FOUND");
         var sandbox=Path.Combine(Path.GetTempPath(),"pcbhelper-footprint-library",Guid.NewGuid().ToString("N"));
         try

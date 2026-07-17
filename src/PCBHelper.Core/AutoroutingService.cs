@@ -331,8 +331,14 @@ public sealed class AutoroutingService
         // redirected directly by a .NET parent. A non-interactive cmd wrapper
         // gives it ordinary inherited handles while PCBHelper still captures the
         // wrapper output and retains cancellation/timeout control.
-        var wrapperPath = Path.Combine(Path.GetDirectoryName(scriptPath)!, $"run-{Path.GetFileNameWithoutExtension(scriptPath)}.cmd");
-        await File.WriteAllTextAsync(wrapperPath, $"@echo off{Environment.NewLine}\"{pythonPath}\" \"{scriptPath}\" >NUL 2>&1{Environment.NewLine}", cancellationToken);
+        var scriptDir = Path.GetDirectoryName(scriptPath)!;
+        var scriptBase = Path.GetFileNameWithoutExtension(scriptPath);
+        var wrapperPath = Path.Combine(scriptDir, $"run-{scriptBase}.cmd");
+        var stdoutLogPath = Path.Combine(scriptDir, $"run-{scriptBase}.stdout.log");
+        var stderrLogPath = Path.Combine(scriptDir, $"run-{scriptBase}.stderr.log");
+        await File.WriteAllTextAsync(wrapperPath,
+            $"@echo off{Environment.NewLine}\"{pythonPath}\" \"{scriptPath}\" >\"{stdoutLogPath}\" 2>\"{stderrLogPath}\"{Environment.NewLine}",
+            cancellationToken);
         var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
         var startInfo = new ProcessStartInfo
         {
@@ -357,7 +363,9 @@ public sealed class AutoroutingService
             return new CommandExecutionResult(-1, string.Empty, $"{displayName} timed out after {KiCadPythonTimeout.TotalSeconds:0} seconds.");
         }
         await wait;
-        return new CommandExecutionResult(process.ExitCode, string.Empty, string.Empty);
+        var stdoutLog = File.Exists(stdoutLogPath) ? await File.ReadAllTextAsync(stdoutLogPath, CancellationToken.None) : string.Empty;
+        var stderrLog = File.Exists(stderrLogPath) ? await File.ReadAllTextAsync(stderrLogPath, CancellationToken.None) : string.Empty;
+        return new CommandExecutionResult(process.ExitCode, stdoutLog, stderrLog);
     }
 
     private static async Task WriteCommandLogAsync(string root, string name, CommandExecutionResult result, CancellationToken cancellationToken)

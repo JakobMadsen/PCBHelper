@@ -54,6 +54,8 @@ public sealed class ProcessCommandRunner : ICommandRunner
                 catch (InvalidOperationException) { }
                 await process.WaitForExitAsync(CancellationToken.None);
             }
+            try { await stdout; } catch { }
+            try { await stderr; } catch { }
             throw;
         }
 
