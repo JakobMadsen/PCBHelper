@@ -2209,6 +2209,7 @@ internal static class SchematicSymbolCatalog
         new("Connector_Generic:Conn_01x06", "Conn_01x06", "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", 50, OneRowConnector(6)),
         new("Connector_Generic:Conn_01x08", "Conn_01x08", "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical", 50, OneRowConnector(8)),
         new("Connector_Generic:Conn_01x10", "Conn_01x10", "Connector_PinHeader_2.54mm:PinHeader_1x10_P2.54mm_Vertical", 50, OneRowConnector(10)),
+        new("Connector_Generic:Conn_02x10_Odd_Even", "Conn_02x10_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x10_P2.54mm_Vertical", 50, TwoRowConnectorOddEven(10)),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)
@@ -2257,6 +2258,18 @@ internal static class SchematicSymbolCatalog
             .ToArray();
     }
 
+    private static IReadOnlyList<SchematicPinDefinition> TwoRowConnectorOddEven(int rows)
+    {
+        var top = Math.Floor((rows - 1) / 2.0) * 2.54;
+        return Enumerable.Range(0, rows)
+            .SelectMany(row => new[]
+            {
+                new SchematicPinDefinition((row * 2 + 1).ToString(CultureInfo.InvariantCulture), -5.08, top - (row * 2.54)),
+                new SchematicPinDefinition((row * 2 + 2).ToString(CultureInfo.InvariantCulture), 7.62, top - (row * 2.54))
+            })
+            .ToArray();
+    }
+
     private static IReadOnlyList<SchematicPinDefinition> TwoPinVertical() => new[]
     {
         new SchematicPinDefinition("1", 0, 3.81),
@@ -2296,7 +2309,6 @@ internal static class SchematicSymbolCatalog
 
 internal static class SchematicFootprintTemplates
 {
-    private const string PinHeader1x05 = "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical";
     private const string Dip16 = "Package_DIP:DIP-16_W7.62mm";
 
     private static readonly string[] KiCadFootprintLibraryRoots =
@@ -2308,7 +2320,7 @@ internal static class SchematicFootprintTemplates
     public static bool IsSupported(string footprint)
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
-            or PinHeader1x05 or Dip16
+            or Dip16
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
 
@@ -2323,7 +2335,6 @@ internal static class SchematicFootprintTemplates
             "BatteryHolder_2Pad_Back" => FormatTwoPad("BatteryHolder_2Pad_Back", reference, value, x, y, rotationDegrees, "B.Cu", new[] { ("1", -4.0, "+"), ("2", 4.0, "-") }, padNets),
             "DIP8_300mil" => FormatDip8(reference, value, x, y, rotationDegrees, padNets),
             "TO92_2N3904_EBC" => FormatTo92_2N3904(reference, value, x, y, rotationDegrees, padNets),
-            PinHeader1x05 => FormatPinHeader1x05(reference, value, x, y, rotationDegrees, padNets),
             Dip16 => FormatDip16(reference, value, x, y, rotationDegrees, padNets),
             _ => FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets)
         };
@@ -2454,29 +2465,6 @@ internal static class SchematicFootprintTemplates
             FormatDipPad("6", 7.62, 5.08, "6", padNets),
             FormatDipPad("7", 7.62, 2.54, "7", padNets),
             FormatDipPad("8", 7.62, 0, "8", padNets),
-            "  )",
-            string.Empty
-        });
-    }
-
-    private static string FormatPinHeader1x05(string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
-    {
-        var atText = rotationDegrees is null
-            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
-            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
-        return string.Join(Environment.NewLine, new[]
-        {
-            $"  (footprint \"{PinHeader1x05}\"",
-            "    (layer \"F.Cu\")",
-            $"    (uuid \"{Guid.NewGuid()}\")",
-            atText,
-            $"    (property \"Reference\" \"{reference}\" (at 0 -2.33 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
-            $"    (property \"Value\" \"{value}\" (at 0 12.49 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))",
-            FormatPinHeaderPad("1", 0, padNets, rectangular: true),
-            FormatPinHeaderPad("2", 2.54, padNets),
-            FormatPinHeaderPad("3", 5.08, padNets),
-            FormatPinHeaderPad("4", 7.62, padNets),
-            FormatPinHeaderPad("5", 10.16, padNets),
             "  )",
             string.Empty
         });

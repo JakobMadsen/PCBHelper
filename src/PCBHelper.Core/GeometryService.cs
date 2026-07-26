@@ -154,6 +154,51 @@ public sealed class GeometryService
             result);
     }
 
+    public ToolResponse<ComponentMoveResult> RotateComponent(
+        string projectPath,
+        string reference,
+        double rotationDegrees,
+        bool dryRun)
+    {
+        if (!double.IsFinite(rotationDegrees))
+        {
+            return ToolResponse<ComponentMoveResult>.Fail("Rotation must be a finite angle.", "INVALID_ROTATION");
+        }
+
+        var board = LoadBoard(projectPath);
+        if (!board.Success || board.Data is null)
+        {
+            return ToolResponse<ComponentMoveResult>.Fail(board.Summary, board.Error?.Code ?? "BOARD_LOAD_FAILED", board.Error?.Message);
+        }
+
+        var footprint = FindFootprint(board.Data, reference);
+        if (footprint is null)
+        {
+            return ToolResponse<ComponentMoveResult>.Fail($"Footprint not found: {reference}", "FOOTPRINT_NOT_FOUND");
+        }
+
+        if (footprint.AtStart is null || footprint.AtLength is null)
+        {
+            return ToolResponse<ComponentMoveResult>.Fail($"Footprint has no top-level position: {reference}", "FOOTPRINT_POSITION_MISSING");
+        }
+
+        var normalizedRotation = ((rotationDegrees % 360) + 360) % 360;
+        var before = ToPlacement(footprint)!;
+        var after = before with { RotationDegrees = normalizedRotation };
+        if (!dryRun)
+        {
+            var replacement = KiCadBoardParser.FormatTopLevelAt(after);
+            var updated = board.Data.Text.Remove(footprint.AtStart.Value, footprint.AtLength.Value)
+                .Insert(footprint.AtStart.Value, replacement);
+            File.WriteAllText(board.Data.BoardFile, updated);
+        }
+
+        var result = new ComponentMoveResult(reference, board.Data.BoardFile, dryRun, before, after);
+        return ToolResponse<ComponentMoveResult>.Ok(
+            $"{(dryRun ? "Previewed" : "Rotated")} {reference} from {before.RotationDegrees ?? 0:0.###} to {normalizedRotation:0.###} degrees.",
+            result);
+    }
+
     private ToolResponse<KiCadBoardDocument> LoadBoard(string projectPath)
     {
         var project = _projectDiscovery.GetSummary(projectPath);

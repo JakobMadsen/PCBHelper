@@ -12,6 +12,7 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 3)]
     [InlineData("Regulator_Linear:LM1117-5.0", "U2", 1)]
     [InlineData("Connector_Generic:Conn_01x03", "J3", 1)]
+    [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "J4", 1)]
     public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
     {
         using var fixture = CopyBlankFixture();
@@ -224,6 +225,29 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void Parser_Reads_KiCad_Multiline_Wire_Point_Lists()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 50, 50, "330R", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:LED", "D1", 70, 50, null, null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "R1.2", "D1.A", "SIG", dryRun: false).Success);
+
+        var schematicFile = Directory.GetFiles(fixture.Path, "*.kicad_sch").Single();
+        var text = File.ReadAllText(schematicFile);
+        var compactClose = "))" + Environment.NewLine + "    (stroke";
+        var multilineClose = ")" + Environment.NewLine + "    )" + Environment.NewLine + "    (stroke";
+        Assert.Contains(compactClose, text, StringComparison.Ordinal);
+        File.WriteAllText(schematicFile, text.Replace(compactClose, multilineClose, StringComparison.Ordinal));
+
+        var parsed = service.ListSymbols(fixture.Path);
+
+        Assert.True(parsed.Success, parsed.Error?.Message);
+        Assert.NotEmpty(parsed.Data!.Wires);
+    }
+
+    [Fact]
     public void ConnectPins_Places_Label_On_A_Created_Wire_Segment()
     {
         using var fixture = CopyBlankFixture();
@@ -271,6 +295,8 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Connector_Generic:Conn_01x03", "3", -2.54)]
     [InlineData("Connector_Generic:Conn_01x05", "1", 5.08)]
     [InlineData("Connector_Generic:Conn_01x05", "5", -5.08)]
+    [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "1", 10.16)]
+    [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "20", -12.7)]
     public void Catalog_Connector_Pin_Offsets_Match_KiCad_Standard_Library(string symbolId, string pinName, double expectedY)
     {
         var catalogType = typeof(SchematicAuthoringService).Assembly.GetType("PCBHelper.Core.SchematicSymbolCatalog")!;
@@ -348,6 +374,27 @@ public sealed class SchematicAuthoringServiceTests
         var inspection = new BoardInspectionService(new ProjectDiscoveryService());
         Assert.Equal(5, inspection.ListFootprintPads(fixture.Path, header.Reference!).Data!.Pads.Count);
         Assert.Equal(16, inspection.ListFootprintPads(fixture.Path, demodulator.Reference!).Data!.Pads.Count);
+        var boardText = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_pcb"));
+        Assert.Contains("(layer \"F.CrtYd\")", boardText, StringComparison.Ordinal);
+        Assert.Contains("PinHeader_1x05_P2.54mm_Vertical.step", boardText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateSymbol_And_UpdateBoard_Supports_Full_TwoByTen_Test_Header_Footprint()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Connector_Generic:Conn_02x10_Odd_Even", "JTEST", 80, 80, "LAB_TEST", null, dryRun: false).Success);
+        var update = service.UpdatePcbFromSchematic(fixture.Path, dryRun: false);
+
+        Assert.True(update.Success, update.Error?.Message ?? update.Summary);
+        var board = new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path);
+        var header = Assert.Single(board.Data!.Footprints, item => item.Reference == "JTEST" && item.FootprintName.Contains("PinHeader_2x10", StringComparison.Ordinal));
+        Assert.Equal(20, new BoardInspectionService(new ProjectDiscoveryService()).ListFootprintPads(fixture.Path, header.Reference!).Data!.Pads.Count);
+        var boardText = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_pcb"));
+        Assert.Contains("(layer \"F.CrtYd\")", boardText, StringComparison.Ordinal);
+        Assert.Contains("PinHeader_2x10_P2.54mm_Vertical.step", boardText, StringComparison.Ordinal);
     }
 
     [Fact]

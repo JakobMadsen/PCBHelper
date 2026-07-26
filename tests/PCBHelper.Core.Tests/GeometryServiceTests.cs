@@ -82,6 +82,35 @@ public sealed class GeometryServiceTests
         Assert.Equal(25, measurement.Data.DistanceMillimeters, precision: 3);
     }
 
+    [Fact]
+    public void RotateComponent_Updates_Only_Target_Top_Level_Rotation()
+    {
+        using var fixture = CopyTutorialFixture();
+        var service = new GeometryService(new ProjectDiscoveryService());
+
+        var result = service.RotateComponent(fixture.Path, "D1", 90, dryRun: false);
+        var summary = new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path);
+
+        Assert.True(result.Success);
+        Assert.Equal(90, summary.Data!.Footprints.Single(footprint => footprint.Reference == "D1").RotationDegrees);
+        Assert.Equal(0, summary.Data.Footprints.Single(footprint => footprint.Reference == "R1").RotationDegrees ?? 0);
+    }
+
+    [Fact]
+    public void RotateComponent_DryRun_Does_Not_Change_Board_File()
+    {
+        using var fixture = CopyTutorialFixture();
+        var boardFile = Path.Combine(fixture.Path, "kicad-getting-started-led.kicad_pcb");
+        var beforeText = File.ReadAllText(boardFile);
+        var service = new GeometryService(new ProjectDiscoveryService());
+
+        var result = service.RotateComponent(fixture.Path, "D1", -90, dryRun: true);
+
+        Assert.True(result.Success);
+        Assert.Equal(270, result.Data!.After.RotationDegrees);
+        Assert.Equal(beforeText, File.ReadAllText(boardFile));
+    }
+
     private static TempDirectory CopyTutorialFixture()
     {
         var temp = new TempDirectory();
