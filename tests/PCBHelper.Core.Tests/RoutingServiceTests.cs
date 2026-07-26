@@ -132,6 +132,32 @@ public sealed class RoutingServiceTests
     }
 
     [Fact]
+    public void AddTrackAndVia_Use_Named_Net_References_For_KiCad10_Boards()
+    {
+        using var fixture = CopyRoutingFixture();
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var lines = File.ReadAllLines(boardFile)
+            .Where(static line => !line.StartsWith("  (net ", StringComparison.Ordinal))
+            .ToArray();
+        var boardText = string.Join(Environment.NewLine, lines)
+            .Replace("(version 20250114)", "(version 20260206)", StringComparison.Ordinal)
+            .Replace("(net 1 \"A\")", "(net \"A\")", StringComparison.Ordinal)
+            .Replace("(net 2 \"B\")", "(net \"B\")", StringComparison.Ordinal);
+        File.WriteAllText(boardFile, boardText);
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var track = service.AddTrackPolyline(fixture.Path, "A", "10,10;10,5;30,5;30,10", "F.Cu", 0.25, dryRun: true);
+        var via = service.AddVia(fixture.Path, "A", 15, 20, 0.8, 0.4, "F.Cu,B.Cu", dryRun: true);
+
+        Assert.True(track.Success, track.Error?.Message);
+        Assert.True(via.Success, via.Error?.Message);
+        Assert.Contains("(net \"A\")", track.Data!.Item.AfterText, StringComparison.Ordinal);
+        Assert.Contains("(net \"A\")", via.Data!.Item.AfterText, StringComparison.Ordinal);
+        Assert.DoesNotContain("(net 1)", track.Data.Item.AfterText, StringComparison.Ordinal);
+        Assert.DoesNotContain("(net 1)", via.Data.Item.AfterText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ValidateTrackClearance_Allows_Route_Between_Rotated_Rectangular_Pads()
     {
         using var fixture = CopyRoutingFixture();

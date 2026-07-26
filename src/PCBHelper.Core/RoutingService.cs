@@ -214,6 +214,7 @@ public sealed class RoutingService
         }
 
         var board = KiCadBoardParser.Parse(validation.Data.BoardFile);
+        var useNamedNetReferences = UsesNamedNetReferences(board);
         var texts = new List<string>();
         var uuids = new List<string>();
         for (var index = 0; index < points.Count - 1; index++)
@@ -222,7 +223,17 @@ public sealed class RoutingService
             var end = points[index + 1];
             var uuid = Guid.NewGuid().ToString();
             uuids.Add(uuid);
-            texts.Add(FormatSegment(start.XMillimeters, start.YMillimeters, end.XMillimeters, end.YMillimeters, widthMillimeters, layer, validation.Data.Net.Code, uuid));
+            texts.Add(FormatSegment(
+                start.XMillimeters,
+                start.YMillimeters,
+                end.XMillimeters,
+                end.YMillimeters,
+                widthMillimeters,
+                layer,
+                validation.Data.Net.Code,
+                validation.Data.Net.Name,
+                useNamedNetReferences,
+                uuid));
         }
 
         var text = string.Concat(texts);
@@ -273,7 +284,17 @@ public sealed class RoutingService
         }
 
         var uuid = Guid.NewGuid().ToString();
-        var text = FormatSegment(startXMillimeters, startYMillimeters, endXMillimeters, endYMillimeters, widthMillimeters, layer, resolved.Data.Code, uuid);
+        var text = FormatSegment(
+            startXMillimeters,
+            startYMillimeters,
+            endXMillimeters,
+            endYMillimeters,
+            widthMillimeters,
+            layer,
+            resolved.Data.Code,
+            resolved.Data.Name,
+            UsesNamedNetReferences(board.Data),
+            uuid);
         if (!dryRun)
         {
             File.WriteAllText(board.Data.BoardFile, InsertRoutingObject(board.Data.Text, text));
@@ -357,7 +378,16 @@ public sealed class RoutingService
         }
 
         var uuid = Guid.NewGuid().ToString();
-        var text = FormatVia(xMillimeters, yMillimeters, sizeMillimeters, drillMillimeters, parsedLayers, resolved.Data.Code, uuid);
+        var text = FormatVia(
+            xMillimeters,
+            yMillimeters,
+            sizeMillimeters,
+            drillMillimeters,
+            parsedLayers,
+            resolved.Data.Code,
+            resolved.Data.Name,
+            UsesNamedNetReferences(board.Data),
+            uuid);
         if (!dryRun)
         {
             File.WriteAllText(board.Data.BoardFile, InsertRoutingObject(board.Data.Text, text));
@@ -1099,7 +1129,17 @@ public sealed class RoutingService
         return !double.IsNaN(value) && !double.IsInfinity(value);
     }
 
-    private static string FormatSegment(double startX, double startY, double endX, double endY, double width, string layer, int netCode, string uuid)
+    private static string FormatSegment(
+        double startX,
+        double startY,
+        double endX,
+        double endY,
+        double width,
+        string layer,
+        int netCode,
+        string netName,
+        bool useNamedNetReference,
+        string uuid)
     {
         return string.Join(Environment.NewLine, new[]
         {
@@ -1108,14 +1148,23 @@ public sealed class RoutingService
             $"    (end {KiCadBoardParser.FormatNumber(endX)} {KiCadBoardParser.FormatNumber(endY)})",
             $"    (width {KiCadBoardParser.FormatNumber(width)})",
             $"    (layer \"{layer}\")",
-            $"    (net {netCode})",
+            $"    (net {FormatNetReference(netCode, netName, useNamedNetReference)})",
             $"    (uuid \"{uuid}\")",
             "  )",
             string.Empty
         });
     }
 
-    private static string FormatVia(double x, double y, double size, double drill, IReadOnlyList<string> layers, int netCode, string uuid)
+    private static string FormatVia(
+        double x,
+        double y,
+        double size,
+        double drill,
+        IReadOnlyList<string> layers,
+        int netCode,
+        string netName,
+        bool useNamedNetReference,
+        string uuid)
     {
         return string.Join(Environment.NewLine, new[]
         {
@@ -1124,12 +1173,23 @@ public sealed class RoutingService
             $"    (size {KiCadBoardParser.FormatNumber(size)})",
             $"    (drill {KiCadBoardParser.FormatNumber(drill)})",
             $"    (layers \"{layers[0]}\" \"{layers[1]}\")",
-            $"    (net {netCode})",
+            $"    (net {FormatNetReference(netCode, netName, useNamedNetReference)})",
             $"    (uuid \"{uuid}\")",
             "  )",
             string.Empty
         });
     }
+
+    private static bool UsesNamedNetReferences(KiCadBoardDocument board)
+        => board.Footprints.SelectMany(static footprint => footprint.Pads)
+            .Any(static pad => pad.NetCode is null && !string.IsNullOrWhiteSpace(pad.NetName))
+            || board.Segments.Any(static segment => segment.NetCode is null && !string.IsNullOrWhiteSpace(segment.NetName))
+            || board.Vias.Any(static via => via.NetCode is null && !string.IsNullOrWhiteSpace(via.NetName));
+
+    private static string FormatNetReference(int netCode, string netName, bool useNamedNetReference)
+        => useNamedNetReference
+            ? $"\"{netName.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\""
+            : netCode.ToString(CultureInfo.InvariantCulture);
 
     private static string InsertRoutingObject(string boardText, string objectText)
     {
