@@ -23,6 +23,7 @@ public sealed class PCBHelperRuntime
         Components = new ComponentService(Projects);
         BoardSummary = new BoardSummaryService(Projects);
         BoardInspection = new BoardInspectionService(Projects);
+        Routing = new RoutingService(Projects);
         DesignIntent = new DesignIntentService(Projects, BoardInspection);
         BoardFinishing = new BoardFinishingService(Projects);
         Gui = new GuiReviewService(locator, new KiCadExecutableLocator(locator), runner);
@@ -31,7 +32,14 @@ public sealed class PCBHelperRuntime
         Gates = new EngineeringGateService(CheckSummary, Assembly, Simulations, DesignIntent);
         AutorouteTransactions = new AutorouteTransactionService(Projects, Transactions, Gates, locator, new FreeRoutingLocator(), runner);
         FootprintLibraryTransactions = new FootprintLibraryTransactionService(Projects, Transactions, Gates, locator, new FreeRoutingLocator(), runner);
-        Releases = new PcbWayReleaseService(Projects, Exports, Assembly, Gates, DesignIntent);
+        Releases = new PcbWayReleaseService(Projects, Exports, Assembly, Gates, DesignIntent, TestSpecs);
+        ReleaseAudits = new ReleaseAuditService(
+            Projects,
+            Components,
+            BoardInspection,
+            Routing,
+            TestSpecs,
+            Simulations.GetCapabilities);
         Plans = new DesignPlanService(Projects, Transactions, Gates);
         Workflows = new ProjectWorkflowService(Projects, BoardSummary, BoardInspection, Components, Gui, TransactionStore, Gates, Assembly, Simulations, DesignIntent, locator, runner);
     }
@@ -53,6 +61,7 @@ public sealed class PCBHelperRuntime
     public ComponentService Components { get; }
     public BoardSummaryService BoardSummary { get; }
     public BoardInspectionService BoardInspection { get; }
+    public RoutingService Routing { get; }
     public DesignIntentService DesignIntent { get; }
     public BoardFinishingService BoardFinishing { get; }
     public GuiReviewService Gui { get; }
@@ -62,6 +71,7 @@ public sealed class PCBHelperRuntime
     public AutorouteTransactionService AutorouteTransactions { get; }
     public FootprintLibraryTransactionService FootprintLibraryTransactions { get; }
     public PcbWayReleaseService Releases { get; }
+    public ReleaseAuditService ReleaseAudits { get; }
     public DesignPlanService Plans { get; }
     public ProjectWorkflowService Workflows { get; }
 }

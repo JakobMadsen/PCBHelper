@@ -24,7 +24,7 @@ public sealed class McpContractTests
             "preview_project_footprint_library", "apply_project_footprint_library",
             "get_transaction", "restore_transaction", "run_engineering_gate",
             "analyze_design_intent", "get_design_intent_report",
-            "generate_review_package", "generate_pcbway_package", "generate_pcbway_release", "validate_release_requirements", "refill_zones", "get_simulation_capabilities",
+            "generate_review_package", "generate_pcbway_package", "generate_pcbway_release", "validate_release_requirements", "run_release_audit", "refill_zones", "get_simulation_capabilities",
             "validate_simulation_tests", "run_simulation_tests", "get_simulation_report", "validate_kicad_simulation_models", "export_kicad_spice_netlist", "run_simulation_sweep"
         }, toolNames);
     }
