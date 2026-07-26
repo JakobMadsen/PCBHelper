@@ -13,6 +13,10 @@ The default public surface is the Design Plan workflow described in [Design Plan
 
 Design Intent adds two read-only workflow tools: `analyze_design_intent` runs deterministic circuit-purpose, test-access, and sourced-rating checks; `get_design_intent_report` reads a prior project-scoped run. Intent changes use the structured `set-design-intent` Design Plan operation rather than arbitrary file writes.
 
+`run_release_audit` evaluates the project-scoped release policy, writes JSON and
+Markdown evidence reports, and returns `READY`, `PROTOTYPE-ONLY`, or `BLOCKED`.
+The audit is read-only with respect to KiCad sources.
+
 ## Design Rules
 
 - The default MCP profile should be small and workflow-oriented.

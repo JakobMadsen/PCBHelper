@@ -5,6 +5,23 @@ namespace PCBHelper.Core.Tests;
 public sealed class PcbWayReleaseServiceTests
 {
     [Fact]
+    public void Release_Requires_Simulation_When_Project_Declares_Tests()
+    {
+        var tests = new TestSpecListResult(
+            "project",
+            "tests",
+            new[] { new TestSpecFileSummary("tests.json", true, 1, new[] { "dc-operating-point" }) });
+
+        var method = typeof(PcbWayReleaseService).GetMethod(
+            "SimulationRequirement",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        Assert.Equal("required", method.Invoke(null, new object?[] { tests }));
+        Assert.Equal("skip", method.Invoke(null, new object?[] { null }));
+    }
+
+    [Fact]
     public void Fabrication_Set_Requires_Standard_PcbWay_Layers_And_Drill()
     {
         var complete = new[]

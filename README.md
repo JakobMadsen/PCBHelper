@@ -11,7 +11,7 @@ Describe what a low-voltage board should do. The agent builds a constrained Desi
 - Reads KiCad projects, components, nets, footprints, routing, and board geometry.
 - Creates and edits supported schematic symbols, values, connections, footprints, placement, routing primitives, zones, and testpoints.
 - Groups changes into hash-bound Design Plans with preview, atomic apply, and conflict-safe restore.
-- Runs KiCad ERC/DRC and creates Gerber, drill, BOM, CPL, review, and PCBWay release packages.
+- Runs KiCad ERC/DRC, policy-driven release audits, and creates Gerber, drill, BOM, CPL, review, and PCBWay release packages.
 - Runs deterministic ngspice assertions for operating-point, AC, transient, tolerance, battery, and noise scenarios.
 - Checks declared design intent: common circuit mistakes, ADC ranges, test access, connector requirements, and sourced component ratings.
 - Reports what was proved, what failed, and what remains unknown instead of asking an LLM to grade its own work.
@@ -186,6 +186,7 @@ KiCad GUI refresh and zone refill are capability-gated. File changes may require
 - [Design Intent Verification](docs/specs/design-intent-verification.md)
 - [Simulation Assertion Tests](docs/specs/simulation-assertion-tests.md)
 - [Board finishing and PCBWay release](docs/specs/board-finishing-and-release.md)
+- [Policy-driven release audit](docs/specs/release-audit-v1.md)
 - [Testing strategy](docs/testing-strategy.md)
 - [Support matrix](docs/support-matrix.md)
 - [Security policy](.github/SECURITY.md)

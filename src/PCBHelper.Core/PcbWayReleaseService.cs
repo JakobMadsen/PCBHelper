@@ -12,8 +12,9 @@ public sealed class PcbWayReleaseService
     private readonly AssemblyService _assembly;
     private readonly EngineeringGateService _gates;
     private readonly DesignIntentService _designIntent;
-    public PcbWayReleaseService(ProjectDiscoveryService projects, ExportService exports, AssemblyService assembly, EngineeringGateService gates, DesignIntentService designIntent)
-    { _projects=projects; _exports=exports; _assembly=assembly; _gates=gates; _designIntent=designIntent; }
+    private readonly TestSpecService? _tests;
+    public PcbWayReleaseService(ProjectDiscoveryService projects, ExportService exports, AssemblyService assembly, EngineeringGateService gates, DesignIntentService designIntent, TestSpecService? tests = null)
+    { _projects=projects; _exports=exports; _assembly=assembly; _gates=gates; _designIntent=designIntent; _tests=tests; }
     public PcbWayReleaseService(ProjectDiscoveryService projects, ExportService exports, AssemblyService assembly, EngineeringGateService gates)
         : this(projects, exports, assembly, gates, new DesignIntentService(projects, new BoardInspectionService(projects))) { }
 
@@ -51,7 +52,8 @@ public sealed class PcbWayReleaseService
         if (intent.Data is null || !intent.Data.Passed)
             return ToolResponse<PcbWayReleaseResult>.Fail("Design-intent release gate did not pass.", intent.Error?.Code ?? "DESIGN_INTENT_GATE_FAILED", intent.Error?.Message ?? intent.Summary);
 
-        var releaseRequirements = new EngineeringGateRequirements("required", "required", "required", "skip", "required");
+        var simulationRequirement = SimulationRequirement(_tests?.ListTests(project.Data.ProjectRoot).Data);
+        var releaseRequirements = new EngineeringGateRequirements("required", "required", "required", simulationRequirement, "required");
         var gate = await _gates.RunAsync(projectPath, releaseRequirements, cancellationToken);
         if (!gate.Success || gate.Data?.Status != EngineeringGateStatus.Passed)
             return ToolResponse<PcbWayReleaseResult>.Fail("Engineering release gate did not pass.", "RELEASE_GATE_FAILED", gate.Error?.Message);
@@ -95,6 +97,11 @@ public sealed class PcbWayReleaseService
             if (!extensions.Contains(extension))
                 missing.Add(description);
         }
+    }
+
+    internal static string SimulationRequirement(TestSpecListResult? tests)
+    {
+        return (tests?.Files.Sum(static file => file.TestCount) ?? 0) > 0 ? "required" : "skip";
     }
 
     internal static bool IsPcbWayFabricationFile(string path)

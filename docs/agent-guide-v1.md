@@ -10,9 +10,10 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 4. Call `validate_design_plan`, then `preview_design_plan`.
 5. Apply the identical plan with the returned `planHash` as `expectedPlanHash`.
 6. Run required engineering gates, including Design Intent when the project declares it. Inspect and autonomously correct ordinary findings with another plan.
-7. Regenerate review and manufacturing outputs after the final mutation.
+7. When the project declares `.pcbhelper/release-policy.json`, run `run_release_audit` and resolve every blocking finding.
+8. Regenerate review and manufacturing outputs after the final mutation.
    Prefer `generate_pcbway_release` for an order-review bundle with a fabrication ZIP, BOM, CPL, settings, and review report.
-8. Report evidence, limitations, and unresolved decisions without overstating confidence.
+9. Report evidence, limitations, and unresolved decisions without overstating confidence.
 
 ## Do
 

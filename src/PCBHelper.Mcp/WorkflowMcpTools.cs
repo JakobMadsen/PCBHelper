@@ -99,6 +99,13 @@ public sealed class WorkflowMcpTools
     [McpServerTool(Name = "validate_release_requirements"), Description("Detect documented release requirements such as required testpoints or mounting holes and verify their board implementation.")]
     public ToolResponse<ReleaseRequirementsResult> ValidateReleaseRequirements(string projectPath) => _runtime.Releases.ValidateRequirements(projectPath);
 
+    [McpServerTool(Name = "run_release_audit"), Description("Run the project release policy as a deterministic blocking gate and write machine-readable JSON plus Markdown reports.")]
+    public ToolResponse<ReleaseAuditResult> RunReleaseAudit(
+        string projectPath,
+        string? policyPath = null,
+        string? outputDirectory = null) =>
+        _runtime.ReleaseAudits.Audit(projectPath, policyPath, outputDirectory);
+
     [McpServerTool(Name = "refill_zones"), Description("Request zone refill when supported; otherwise return a stable capability error without pretending success.")]
     public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath) => _runtime.BoardFinishing.RefillZones(projectPath);
 

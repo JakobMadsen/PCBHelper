@@ -14,6 +14,11 @@ public sealed class ProjectDiscoveryService
         _scope = scope;
     }
 
+    public ToolResponse<string> AuthorizePath(string path)
+    {
+        return _scope.Authorize(path);
+    }
+
     public ToolResponse<ProjectSummary> GetSummary(string projectPath)
     {
         if (string.IsNullOrWhiteSpace(projectPath))

@@ -4,6 +4,8 @@ All notable changes will be documented here. PCBHelper uses semantic versioning 
 
 ## Unreleased
 
+- Added a project-policy-driven release audit with CLI and workflow MCP surfaces, blocking evidence checks, and JSON/Markdown reports.
+
 ### Added
 
 - Transactional Design Plan workflow and reduced MCP surface.

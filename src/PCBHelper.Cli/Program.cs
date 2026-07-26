@@ -52,7 +52,8 @@ var app = new CliApp(
     planRuntime.Simulations,
     planRuntime.Releases,
     planRuntime.KiCadSimulationNetlists,
-    planRuntime.DesignIntent);
+    planRuntime.DesignIntent,
+    planRuntime.ReleaseAudits);
 
 return await app.RunAsync(args);
 
@@ -89,6 +90,7 @@ public sealed class CliApp
     private readonly PcbWayReleaseService _releases;
     private readonly KiCadSimulationNetlistService _kicadSimulationNetlists;
     private readonly DesignIntentService _designIntent;
+    private readonly ReleaseAuditService _releaseAudits;
 
     public CliApp(
         KiCadDoctorService doctor,
@@ -116,7 +118,8 @@ public sealed class CliApp
         SimulationService simulations,
         PcbWayReleaseService releases,
         KiCadSimulationNetlistService kicadSimulationNetlists,
-        DesignIntentService designIntent)
+        DesignIntentService designIntent,
+        ReleaseAuditService releaseAudits)
     {
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
@@ -144,6 +147,7 @@ public sealed class CliApp
         _releases = releases;
         _kicadSimulationNetlists = kicadSimulationNetlists;
         _designIntent = designIntent;
+        _releaseAudits = releaseAudits;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -214,6 +218,7 @@ public sealed class CliApp
             "package-assembly" => await RunPackageAssemblyAsync(positional, json, cancellationToken),
             "generate-pcbway-release" => await RunPcbWayReleaseAsync(positional, json, cancellationToken),
             "validate-release-requirements" => RunReleaseRequirements(positional, json),
+            "release" => RunReleaseAudit(positional, json),
             "export-kicad-spice-netlist" => await RunKiCadSpiceNetlistAsync(positional, json, cancellationToken),
             "open" => RunOpen(positional, json),
             "kicad-gui-status" => await RunGuiStatusAsync(positional, json, cancellationToken),
@@ -229,6 +234,28 @@ public sealed class CliApp
     { if(args.Count<2){Write(ToolResponse<object>.Fail("generate-pcbway-release requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=await _releases.GenerateAsync(args[1],cancellationToken);Write(result,json);return result.Success?0:1; }
     private int RunReleaseRequirements(IReadOnlyList<string> args,bool json)
     { if(args.Count<2){Write(ToolResponse<object>.Fail("validate-release-requirements requires <project-path>.","PROJECT_PATH_REQUIRED"),json);return 2;}var result=_releases.ValidateRequirements(args[1]);Write(result,json);return result.Data?.Passed==true?0:1; }
+    private int RunReleaseAudit(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 3 || args[1] != "audit")
+        {
+            Write(ToolResponse<object>.Fail(
+                "Usage: pcbhelper release audit <project-path> [--policy <policy.json>] [--output-dir <directory>]",
+                "RELEASE_AUDIT_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _releaseAudits.Audit(
+            args[2],
+            GetOption(args, "--policy"),
+            GetOption(args, "--output-dir"));
+        Write(result, json);
+        if (!result.Success || result.Data is null)
+        {
+            return 2;
+        }
+
+        return result.Data.Disposition == ReleaseAuditDispositions.Blocked ? 1 : 0;
+    }
     private int RunIntent(IReadOnlyList<string> args, bool json)
     {
         if (args.Count < 3 || args[1] is not ("validate" or "analyze" or "report"))
@@ -1380,6 +1407,7 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper export-cpl <project-path> [--json]");
         Console.WriteLine("  pcbhelper validate-assembly-package <project-path> [--json]");
         Console.WriteLine("  pcbhelper package-assembly <project-path> [--json]");
+        Console.WriteLine("  pcbhelper release audit <project-path> [--policy <policy.json>] [--output-dir <directory>] [--json]");
         Console.WriteLine("  pcbhelper open <project-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper kicad-gui-status <project-path> [--json]");
         Console.WriteLine("  pcbhelper refresh-gui <project-path> [--json]");
