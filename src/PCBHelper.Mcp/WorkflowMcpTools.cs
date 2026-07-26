@@ -46,9 +46,12 @@ public sealed class WorkflowMcpTools
         CancellationToken cancellationToken = default) =>
         _runtime.Plans.ApplyAsync(projectPath, plan.GetRawText(), expectedPlanHash, acknowledgedDecisionIds, cancellationToken);
 
-    [McpServerTool(Name = "preview_autoroute_board"), Description("Run FreeRouting in an isolated project copy and store an immutable, hash-addressed board preview without modifying the design.")]
-    public Task<ToolResponse<AutoroutePreviewResult>> PreviewAutorouteBoard(string projectPath, CancellationToken cancellationToken = default) =>
-        _runtime.AutorouteTransactions.PreviewAsync(projectPath, cancellationToken);
+    [McpServerTool(Name = "preview_autoroute_board"), Description("Run FreeRouting in an isolated project copy and store an immutable, hash-addressed board preview without modifying the design. Optionally reject previews containing tracks outside allowedTrackLayers.")]
+    public Task<ToolResponse<AutoroutePreviewResult>> PreviewAutorouteBoard(
+        string projectPath,
+        [Description("Optional copper-layer allowlist, for example [\"F.Cu\"]. The preview fails if FreeRouting uses any other track layer.")] string[]? allowedTrackLayers = null,
+        CancellationToken cancellationToken = default) =>
+        _runtime.AutorouteTransactions.PreviewAsync(projectPath, allowedTrackLayers, cancellationToken);
 
     [McpServerTool(Name = "apply_autoroute_board"), Description("Apply the exact isolated autoroute preview as a conflict-checked project transaction, then run engineering gates.")]
     public Task<ToolResponse<AutorouteApplyResult>> ApplyAutorouteBoard(

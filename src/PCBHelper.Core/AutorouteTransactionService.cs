@@ -36,8 +36,16 @@ public sealed class AutorouteTransactionService
 
     public async Task<ToolResponse<AutoroutePreviewResult>> PreviewAsync(
         string projectPath,
+        string[]? allowedTrackLayers = null,
         CancellationToken cancellationToken = default)
     {
+        var normalizedLayers = NormalizeAllowedTrackLayers(allowedTrackLayers);
+        if (!normalizedLayers.Success)
+            return ToolResponse<AutoroutePreviewResult>.Fail(
+                normalizedLayers.Summary,
+                normalizedLayers.Error?.Code ?? "AUTOROUTE_LAYER_CONSTRAINT_INVALID",
+                normalizedLayers.Error?.Message);
+
         var project = _projects.GetSummary(projectPath);
         if (!project.Success || project.Data?.BoardFile is null)
             return ToolResponse<AutoroutePreviewResult>.Fail(project.Summary, project.Error?.Code ?? "BOARD_FILE_MISSING", project.Error?.Message);
@@ -57,6 +65,17 @@ public sealed class AutorouteTransactionService
 
             var beforeContent = await File.ReadAllTextAsync(project.Data.BoardFile, cancellationToken);
             var afterContent = await File.ReadAllTextAsync(routed.Data.BoardFile, cancellationToken);
+            if (normalizedLayers.Data is { Count: > 0 } allowedLayers)
+            {
+                var disallowedTracks = FindDisallowedTracks(routed.Data.BoardFile, allowedLayers);
+                if (disallowedTracks.Count > 0)
+                    return ToolResponse<AutoroutePreviewResult>.Fail(
+                        $"Autorouter used {disallowedTracks.Count} track segment(s) outside the allowed layer set.",
+                        "AUTOROUTE_LAYER_CONSTRAINT_VIOLATION",
+                        string.Join(", ", disallowedTracks.Take(12)
+                            .Select(track => $"{track.NetName ?? track.NetCode?.ToString() ?? "<no-net>"} on {track.Layer} ({track.Uuid ?? track.Id})")));
+            }
+
             var beforePads = PadNets(project.Data.BoardFile);
             var afterPads = PadNets(routed.Data.BoardFile);
             var changedPadNets = beforePads.Where(pair => !afterPads.TryGetValue(pair.Key, out var afterNet) || !string.Equals(pair.Value, afterNet, StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -166,6 +185,42 @@ public sealed class AutorouteTransactionService
         Path.Combine(projectRoot, ".pcbhelper", "autoroute-previews", previewId);
 
     private static bool IsPreviewId(string value) => value.Length == 32 && value.All(Uri.IsHexDigit);
+
+    private static ToolResponse<HashSet<string>?> NormalizeAllowedTrackLayers(string[]? layers)
+    {
+        if (layers is null)
+            return ToolResponse<HashSet<string>?>.Ok("No autoroute layer constraint requested.", null);
+
+        var normalized = layers
+            .Where(static layer => !string.IsNullOrWhiteSpace(layer))
+            .Select(static layer => layer.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (normalized.Count == 0)
+            return ToolResponse<HashSet<string>?>.Fail(
+                "allowedTrackLayers must contain at least one copper layer.",
+                "AUTOROUTE_LAYER_CONSTRAINT_INVALID");
+        if (normalized.Any(static layer => layer is not ("F.Cu" or "B.Cu")))
+            return ToolResponse<HashSet<string>?>.Fail(
+                "allowedTrackLayers only accepts F.Cu and B.Cu.",
+                "AUTOROUTE_LAYER_CONSTRAINT_INVALID");
+
+        return ToolResponse<HashSet<string>?>.Ok("Autoroute layer constraint validated.", normalized);
+    }
+
+    public static IReadOnlyList<TrackSummary> FindDisallowedTracks(
+        string boardFile,
+        IReadOnlySet<string> allowedLayers)
+    {
+        var routing = new RoutingService(new ProjectDiscoveryService(ProjectScopePolicy.Unrestricted()));
+        var tracks = routing.ListTracks(boardFile);
+        if (!tracks.Success || tracks.Data is null)
+            throw new InvalidOperationException(tracks.Error?.Message ?? tracks.Summary);
+
+        return tracks.Data.Tracks
+            .Where(track => track.Layer is not null && !allowedLayers.Contains(track.Layer))
+            .ToArray();
+    }
+
     private static Dictionary<string,string> PadNets(string boardFile)
     {
         var board=KiCadBoardParser.Parse(boardFile);var result=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
