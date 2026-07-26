@@ -1383,10 +1383,12 @@ public sealed class SchematicAuthoringService
         var symbolName = catalog.SymbolId.Split(':').Last();
         var unitBlocks = string.Concat(catalog.Units.Select(unit =>
         {
-            var pins = string.Concat(catalog.Pins.Where(pin => pin.Unit == unit).Select(FormatLibSymbolPin));
+            var graphics = FormatFallbackSymbolGraphics(catalog, unit);
+            var pins = string.Concat(catalog.Pins.Where(pin => pin.Unit == unit).Select(pin => FormatLibSymbolPin(catalog, pin)));
             return string.Join(Environment.NewLine, new[]
             {
                 $"      (symbol \"{symbolName}_{unit}_1\"",
+                graphics.TrimEnd(),
                 pins.TrimEnd(),
                 "      )",
                 string.Empty
@@ -1409,6 +1411,43 @@ public sealed class SchematicAuthoringService
             "      )",
             unitBlocks.TrimEnd(),
             "    )",
+            string.Empty
+        });
+    }
+
+    private static string FormatFallbackSymbolGraphics(SchematicSymbolCatalogEntry catalog, int unit)
+    {
+        if (!catalog.SymbolId.StartsWith("Amplifier_Operational:", StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        if (unit == 3)
+        {
+            return string.Join(Environment.NewLine, new[]
+            {
+                "        (rectangle",
+                "          (start -5.08 5.08)",
+                "          (end 5.08 -5.08)",
+                "          (stroke (width 0) (type default))",
+                "          (fill (type background))",
+                "        )",
+                string.Empty
+            });
+        }
+
+        return string.Join(Environment.NewLine, new[]
+        {
+            "        (polyline",
+            "          (pts",
+            "            (xy -5.08 5.08)",
+            "            (xy 5.08 0)",
+            "            (xy -5.08 -5.08)",
+            "            (xy -5.08 5.08)",
+            "          )",
+            "          (stroke (width 0) (type default))",
+            "          (fill (type background))",
+            "        )",
             string.Empty
         });
     }
@@ -1581,14 +1620,19 @@ public sealed class SchematicAuthoringService
         return string.Join(Environment.NewLine, block.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').Select(line => prefix + line.TrimEnd()));
     }
 
-    private static string FormatLibSymbolPin(SchematicPinDefinition pin)
+    private static string FormatLibSymbolPin(SchematicSymbolCatalogEntry catalog, SchematicPinDefinition pin)
     {
         var pinAtX = pin.OffsetX;
         var pinAtY = Math.Abs(pin.OffsetY) > Math.Abs(pin.OffsetX) ? -pin.OffsetY : pin.OffsetY;
         var rotation = PinRotation(pinAtX, pinAtY);
+        var electricalType = catalog.SymbolId.StartsWith("Amplifier_Operational:", StringComparison.Ordinal)
+            ? pin.Unit == 3
+                ? "power_in"
+                : pin.Name is "1" or "7" ? "output" : "input"
+            : "passive";
         return string.Join(Environment.NewLine, new[]
         {
-            "        (pin passive line",
+            $"        (pin {electricalType} line",
             $"          (at {KiCadSchematicParser.FormatNumber(pinAtX)} {KiCadSchematicParser.FormatNumber(pinAtY)} {KiCadSchematicParser.FormatNumber(rotation)})",
             "          (length 2.54)",
             $"          (name \"{pin.Name}\" (effects (font (size 1.27 1.27))))",
@@ -2310,6 +2354,7 @@ internal static class SchematicSymbolCatalog
 internal static class SchematicFootprintTemplates
 {
     private const string Dip16 = "Package_DIP:DIP-16_W7.62mm";
+    private const string PinHeaderLibrary = "Connector_PinHeader_2.54mm";
 
     private static readonly string[] KiCadFootprintLibraryRoots =
     {
@@ -2321,11 +2366,20 @@ internal static class SchematicFootprintTemplates
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
             or Dip16
+            || TryParseStandardVerticalPinHeader(footprint, out _, out _)
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
 
     public static string Format(string footprint, string reference, string value, double x, double y, IReadOnlyDictionary<string, KiCadNet> padNets, double? rotationDegrees = null)
     {
+        if (TryParseStandardVerticalPinHeader(footprint, out var columns, out var rows))
+        {
+            var libraryFootprint = FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets);
+            return string.IsNullOrWhiteSpace(libraryFootprint)
+                ? FormatPinHeaderFallback(footprint, reference, value, x, y, rotationDegrees, columns, rows, padNets)
+                : libraryFootprint;
+        }
+
         return footprint switch
         {
             "R_Axial_2Pad" => FormatTwoPad("R_Axial_2Pad", reference, value, x, y, rotationDegrees, "F.Cu", new[] { ("1", 0.0, "1"), ("2", 10.16, "2") }, padNets),
@@ -2382,6 +2436,82 @@ internal static class SchematicFootprintTemplates
         }
 
         return null;
+    }
+
+    private static bool TryParseStandardVerticalPinHeader(string footprint, out int columns, out int rows)
+    {
+        var match = Regex.Match(
+            footprint,
+            $"^{Regex.Escape(PinHeaderLibrary)}:PinHeader_(?<columns>[12])x(?<rows>\\d{{2}})_P2\\.54mm_Vertical$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success
+            || !int.TryParse(match.Groups["columns"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out columns)
+            || !int.TryParse(match.Groups["rows"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out rows)
+            || rows < 1)
+        {
+            columns = 0;
+            rows = 0;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string FormatPinHeaderFallback(
+        string footprint,
+        string reference,
+        string value,
+        double x,
+        double y,
+        double? rotationDegrees,
+        int columns,
+        int rows,
+        IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        var atText = rotationDegrees is null
+            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
+            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
+        var lastX = (columns - 1) * 2.54;
+        var lastY = (rows - 1) * 2.54;
+        var centerX = lastX / 2;
+        var lines = new List<string>
+        {
+            $"  (footprint \"{footprint}\"",
+            "    (layer \"F.Cu\")",
+            $"    (uuid \"{Guid.NewGuid()}\")",
+            atText,
+            "    (attr through_hole)",
+            $"    (property \"Reference\" \"{reference}\" (at {KiCadBoardParser.FormatNumber(centerX)} -2.33 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (property \"Value\" \"{value}\" (at {KiCadBoardParser.FormatNumber(centerX)} {KiCadBoardParser.FormatNumber(lastY + 2.33)} 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (fp_rect (start -1.33 -1.33) (end {KiCadBoardParser.FormatNumber(lastX + 1.33)} {KiCadBoardParser.FormatNumber(lastY + 1.33)}) (stroke (width 0.25) (type default)) (fill (type none)) (layer \"F.SilkS\"))",
+            $"    (fp_rect (start -1.27 -1.27) (end {KiCadBoardParser.FormatNumber(lastX + 1.27)} {KiCadBoardParser.FormatNumber(lastY + 1.27)}) (stroke (width 0.1) (type default)) (fill (type none)) (layer \"F.Fab\"))",
+            $"    (fp_rect (start -1.4 -1.4) (end {KiCadBoardParser.FormatNumber(lastX + 1.4)} {KiCadBoardParser.FormatNumber(lastY + 1.4)}) (stroke (width 0.05) (type default)) (fill (type none)) (layer \"F.CrtYd\"))",
+            "    (fp_line (start -1.33 -1.33) (end 0 -1.33) (stroke (width 0.5) (type default)) (layer \"F.SilkS\"))"
+        };
+
+        for (var row = 0; row < rows; row++)
+        {
+            for (var column = 0; column < columns; column++)
+            {
+                var padNumber = columns == 1 ? row + 1 : (row * columns) + column + 1;
+                lines.Add(FormatPinHeaderPad(
+                    padNumber.ToString(CultureInfo.InvariantCulture),
+                    column * 2.54,
+                    row * 2.54,
+                    padNets,
+                    rectangular: padNumber == 1));
+            }
+        }
+
+        var modelName = $"PinHeader_{columns}x{rows:00}_P2.54mm_Vertical.step";
+        lines.Add($"    (model \"${{KICAD10_3DMODEL_DIR}}/{PinHeaderLibrary}.3dshapes/{modelName}\"");
+        lines.Add("      (offset (xyz 0 0 0))");
+        lines.Add("      (scale (xyz 1 1 1))");
+        lines.Add("      (rotate (xyz 0 0 0))");
+        lines.Add("    )");
+        lines.Add("  )");
+        lines.Add(string.Empty);
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string ReplaceFirstTopLevelLine(string text, string head, string replacement, string insertAfterHead)
@@ -2497,14 +2627,14 @@ internal static class SchematicFootprintTemplates
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string FormatPinHeaderPad(string padName, double y, IReadOnlyDictionary<string, KiCadNet> padNets, bool rectangular = false)
+    private static string FormatPinHeaderPad(string padName, double x, double y, IReadOnlyDictionary<string, KiCadNet> padNets, bool rectangular = false)
     {
         padNets.TryGetValue(padName, out var net);
         var netText = net is null ? string.Empty : $"{Environment.NewLine}      (net {net.Code} \"{EscapeKiCadString(net.Name)}\")";
         return string.Join(Environment.NewLine, new[]
         {
             $"    (pad \"{padName}\" thru_hole {(rectangular ? "rect" : "oval")}",
-            $"      (at 0 {KiCadBoardParser.FormatNumber(y)})",
+            $"      (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})",
             "      (size 1.7 1.7)",
             "      (drill 1)",
             "      (layers \"*.Cu\" \"*.Mask\")" + netText,
