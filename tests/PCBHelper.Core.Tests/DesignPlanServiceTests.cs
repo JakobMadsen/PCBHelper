@@ -70,7 +70,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(28, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(30, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
@@ -117,6 +117,43 @@ public sealed class DesignPlanServiceTests
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Data!.ChangedFiles);
         Assert.Equal(before, File.ReadAllText(board));
+    }
+
+    [Fact]
+    public void DeleteSchematicWire_Is_Available_As_A_Transactional_DesignPlan_Operation()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var authoring = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(authoring.CreateSymbol(fixture.Path, "Device:R", "R99", 50, 50, "0R", null, 1, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(fixture.Path, "Device:R", "R100", 70, 50, "0R", null, 1, dryRun: false).Success);
+        Assert.True(authoring.ConnectPins(fixture.Path, "R99.2", "R100.1", "JUMPER_TEST", dryRun: false).Success);
+        var schematic = authoring.ListSymbols(fixture.Path);
+        Assert.True(schematic.Success, schematic.Error?.Message);
+        var wire = Assert.Single(schematic.Data!.Wires.Take(1));
+        var plan = $$"""
+        {
+          "version": 1,
+          "goal": "Remove one exact schematic wire",
+          "operations": [
+            {
+              "id": "delete-wire",
+              "type": "delete-schematic-wire-by-uuid",
+              "uuid": "{{wire.Uuid}}"
+            }
+          ],
+          "engineeringGate": {
+            "erc": "skip",
+            "drc": "skip",
+            "manufacturingValidation": "skip"
+          }
+        }
+        """;
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file => file.RelativePath.EndsWith(".kicad_sch", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

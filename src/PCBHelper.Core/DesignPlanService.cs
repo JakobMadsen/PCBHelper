@@ -360,6 +360,8 @@ public sealed class DesignPlanService
             "replace-schematic-symbol" => Box(context.Schematic.ReplaceSymbol(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "symbol"), false)),
             "set-symbol-field" => Box(context.Schematic.SetSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), RequiredString(p, "value"), false)),
             "connect-schematic-pins" => Box(context.Schematic.ConnectPins(context.ProjectPath, RequiredString(p, "from"), RequiredString(p, "to"), OptionalString(p, "net"), false)),
+            "delete-schematic-wire-by-uuid" => Box(context.Schematic.DeleteSchematicWireByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
+            "delete-schematic-wire" => Box(context.Schematic.DeleteSchematicWire(context.ProjectPath, RequiredDouble(p, "x1Mm"), RequiredDouble(p, "y1Mm"), RequiredDouble(p, "x2Mm"), RequiredDouble(p, "y2Mm"), RequiredDouble(p, "toleranceMm"), false)),
             "add-net-label" => Box(context.Schematic.AddNetLabel(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
             "replace-net-label" => Box(context.Schematic.ReplaceNetLabel(context.ProjectPath, RequiredString(p, "currentNet"), RequiredString(p, "newNet"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "toleranceMm"), false)),
             "update-pcb-from-schematic" => Box(context.Schematic.UpdatePcbFromSchematic(context.ProjectPath, false)),
