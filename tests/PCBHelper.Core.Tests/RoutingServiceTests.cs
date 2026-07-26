@@ -96,6 +96,43 @@ public sealed class RoutingServiceTests
         Assert.Contains("track", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void ValidateTrackClearance_Allows_Route_Between_Rotated_Rectangular_Pads()
+    {
+        using var fixture = CopyRoutingFixture();
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var footprint = """
+          (footprint "Resistor_SMD:R_0805_2012Metric"
+            (layer "F.Cu")
+            (at 20 20 90)
+            (property "Reference" "R99" (at 0 -2 90) (layer "F.SilkS"))
+            (property "Value" "0R" (at 0 2 90) (layer "F.Fab"))
+            (pad "1" smd roundrect
+              (at -0.9125 0)
+              (size 1.025 1.4)
+              (layers "F.Cu" "F.Mask" "F.Paste")
+              (roundrect_rratio 0.243902)
+              (net 2 "B")
+            )
+            (pad "2" smd roundrect
+              (at 0.9125 0)
+              (size 1.025 1.4)
+              (layers "F.Cu" "F.Mask" "F.Paste")
+              (roundrect_rratio 0.243902)
+              (net 2 "B")
+            )
+          )
+        """;
+        File.WriteAllText(
+            boardFile,
+            File.ReadAllText(boardFile).Replace("(embedded_fonts no)", footprint + Environment.NewLine + "  (embedded_fonts no)", StringComparison.Ordinal));
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var result = service.ValidateTrackClearance(fixture.Path, "A", "15,20;25,20", "F.Cu", 0.2);
+
+        Assert.True(result.Success, result.Error?.Message);
+    }
+
     private static string LedConnectionPoints(RoutingService service, string projectPath)
     {
         var routing = service.GetNetRouting(projectPath, "LED_A").Data!;

@@ -697,7 +697,7 @@ public sealed class RoutingService
             {
                 var gap = obstacle.Kind == "track"
                     ? SegmentToSegmentDistance(start, end, obstacle.Start!.Value, obstacle.End!.Value) - proposedRadius - obstacle.RadiusMillimeters
-                    : PointToSegmentDistance(obstacle.Start!.Value, start, end) - proposedRadius - obstacle.RadiusMillimeters;
+                    : SegmentToObstacleDistance(start, end, obstacle) - proposedRadius;
                 if (gap < clearanceMillimeters - 0.000001)
                 {
                     violations.Add(new RoutingClearanceViolation(
@@ -732,7 +732,7 @@ public sealed class RoutingService
         {
             var gap = obstacle.Kind == "track"
                 ? PointToSegmentDistance(proposed, obstacle.Start!.Value, obstacle.End!.Value) - proposedRadius - obstacle.RadiusMillimeters
-                : Distance(proposed.XMillimeters, proposed.YMillimeters, obstacle.Start!.Value.XMillimeters, obstacle.Start.Value.YMillimeters) - proposedRadius - obstacle.RadiusMillimeters;
+                : PointToObstacleDistance(proposed, obstacle) - proposedRadius;
             if (gap < clearanceMillimeters - 0.000001)
             {
                 violations.Add(new RoutingClearanceViolation(
@@ -769,7 +769,9 @@ public sealed class RoutingService
                     continue;
                 }
 
-                var radius = Math.Max(pad.SizeXMillimeters ?? 0.6, pad.SizeYMillimeters ?? 0.6) / 2;
+                var sizeX = pad.SizeXMillimeters ?? 0.6;
+                var sizeY = pad.SizeYMillimeters ?? 0.6;
+                var isRectangular = pad.Shape is "rect" or "roundrect";
                 obstacles.Add(new CopperObstacle(
                     "pad",
                     $"{footprint.Reference}.{pad.Name}",
@@ -777,7 +779,10 @@ public sealed class RoutingService
                     padNet.Name,
                     new RoutingPoint(absolute.X.Value, absolute.Y.Value),
                     null,
-                    radius));
+                    isRectangular ? 0 : Math.Max(sizeX, sizeY) / 2,
+                    isRectangular ? sizeX / 2 : null,
+                    isRectangular ? sizeY / 2 : null,
+                    footprint.RotationDegrees ?? 0));
             }
         }
 
@@ -801,7 +806,10 @@ public sealed class RoutingService
                 net.Name,
                 new RoutingPoint(segment.StartXMillimeters.Value, segment.StartYMillimeters.Value),
                 new RoutingPoint(segment.EndXMillimeters.Value, segment.EndYMillimeters.Value),
-                (segment.WidthMillimeters ?? 0.25) / 2));
+                (segment.WidthMillimeters ?? 0.25) / 2,
+                null,
+                null,
+                0));
         }
 
         foreach (var via in board.Vias.Where(via => ViaTouchesLayer(via, layer)))
@@ -824,10 +832,86 @@ public sealed class RoutingService
                 net.Name,
                 new RoutingPoint(via.XMillimeters.Value, via.YMillimeters.Value),
                 null,
-                (via.SizeMillimeters ?? 0.8) / 2));
+                (via.SizeMillimeters ?? 0.8) / 2,
+                null,
+                null,
+                0));
         }
 
         return obstacles;
+    }
+
+    private static double SegmentToObstacleDistance(RoutingPoint start, RoutingPoint end, CopperObstacle obstacle)
+    {
+        if (obstacle.HalfWidthMillimeters is null || obstacle.HalfHeightMillimeters is null)
+        {
+            return PointToSegmentDistance(obstacle.Start!.Value, start, end) - obstacle.RadiusMillimeters;
+        }
+
+        var localStart = RotateAround(start, obstacle.Start!.Value, -obstacle.RotationDegrees);
+        var localEnd = RotateAround(end, obstacle.Start.Value, -obstacle.RotationDegrees);
+        return SegmentToAxisAlignedRectangleDistance(
+            localStart,
+            localEnd,
+            obstacle.HalfWidthMillimeters.Value,
+            obstacle.HalfHeightMillimeters.Value);
+    }
+
+    private static double PointToObstacleDistance(RoutingPoint point, CopperObstacle obstacle)
+    {
+        if (obstacle.HalfWidthMillimeters is null || obstacle.HalfHeightMillimeters is null)
+        {
+            return Distance(point.XMillimeters, point.YMillimeters, obstacle.Start!.Value.XMillimeters, obstacle.Start.Value.YMillimeters)
+                - obstacle.RadiusMillimeters;
+        }
+
+        var local = RotateAround(point, obstacle.Start!.Value, -obstacle.RotationDegrees);
+        var dx = Math.Max(Math.Abs(local.XMillimeters) - obstacle.HalfWidthMillimeters.Value, 0);
+        var dy = Math.Max(Math.Abs(local.YMillimeters) - obstacle.HalfHeightMillimeters.Value, 0);
+        return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static double SegmentToAxisAlignedRectangleDistance(
+        RoutingPoint start,
+        RoutingPoint end,
+        double halfWidth,
+        double halfHeight)
+    {
+        var corners = new[]
+        {
+            new RoutingPoint(-halfWidth, -halfHeight),
+            new RoutingPoint(halfWidth, -halfHeight),
+            new RoutingPoint(halfWidth, halfHeight),
+            new RoutingPoint(-halfWidth, halfHeight)
+        };
+
+        if (PointInsideRectangle(start, halfWidth, halfHeight) || PointInsideRectangle(end, halfWidth, halfHeight))
+        {
+            return 0;
+        }
+
+        var minimum = double.PositiveInfinity;
+        for (var index = 0; index < corners.Length; index++)
+        {
+            minimum = Math.Min(
+                minimum,
+                SegmentToSegmentDistance(start, end, corners[index], corners[(index + 1) % corners.Length]));
+        }
+
+        return minimum;
+    }
+
+    private static bool PointInsideRectangle(RoutingPoint point, double halfWidth, double halfHeight)
+        => Math.Abs(point.XMillimeters) <= halfWidth && Math.Abs(point.YMillimeters) <= halfHeight;
+
+    private static RoutingPoint RotateAround(RoutingPoint point, RoutingPoint origin, double rotationDegrees)
+    {
+        var radians = rotationDegrees * Math.PI / 180;
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var dx = point.XMillimeters - origin.XMillimeters;
+        var dy = point.YMillimeters - origin.YMillimeters;
+        return new RoutingPoint((dx * cos) - (dy * sin), (dx * sin) + (dy * cos));
     }
 
     private static bool PadTouchesLayer(KiCadPad pad, string layer)
@@ -1183,7 +1267,10 @@ internal sealed record CopperObstacle(
     string? NetName,
     RoutingPoint? Start,
     RoutingPoint? End,
-    double RadiusMillimeters);
+    double RadiusMillimeters,
+    double? HalfWidthMillimeters,
+    double? HalfHeightMillimeters,
+    double RotationDegrees);
 
 internal sealed class DisjointSet
 {
