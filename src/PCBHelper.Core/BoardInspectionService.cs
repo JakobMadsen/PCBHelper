@@ -142,7 +142,10 @@ public sealed class BoardInspectionService
         }
 
         var rotation = footprint.RotationDegrees ?? 0;
-        var radians = rotation * Math.PI / 180;
+        // KiCad board coordinates use a downward-positive Y axis, so footprint
+        // rotations transform local pad coordinates with the opposite sign from
+        // the conventional Cartesian rotation matrix.
+        var radians = -rotation * Math.PI / 180;
         var cos = Math.Cos(radians);
         var sin = Math.Sin(radians);
         var x = footprint.XMillimeters.Value + pad.XMillimeters.Value * cos - pad.YMillimeters.Value * sin;
