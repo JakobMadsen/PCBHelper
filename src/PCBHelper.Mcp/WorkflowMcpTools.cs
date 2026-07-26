@@ -35,6 +35,10 @@ public sealed class WorkflowMcpTools
     public ToolResponse<SchematicSymbolListResult> GetSchematicContext(string projectPath) =>
         new SchematicAuthoringService(_runtime.Projects).ListSymbols(projectPath);
 
+    [McpServerTool(Name = "get_net_routing_context"), Description("Read one board net's pads, track segments, vias, layers, coordinates, and UUIDs for precise Design Plan authoring.")]
+    public ToolResponse<NetRoutingResult> GetNetRoutingContext(string projectPath, string net) =>
+        new RoutingService(_runtime.Projects).GetNetRouting(projectPath, net);
+
     [McpServerTool(Name = "validate_design_plan"), Description("Validate a declarative PCBHelper Design Plan and return its canonical SHA-256 hash.")]
     public ToolResponse<DesignPlanValidationResult> ValidateDesignPlan(string projectPath, JsonElement plan) =>
         _runtime.Plans.Validate(projectPath, plan.GetRawText());
