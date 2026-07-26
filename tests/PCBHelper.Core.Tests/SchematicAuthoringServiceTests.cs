@@ -903,6 +903,45 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void RegenerateBoardFootprint_Preserves_KiCad10_Named_Pad_Nets()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        var pads = new BoardInspectionService(new ProjectDiscoveryService());
+        var boardFile = Path.Combine(fixture.Path, "blank-authoring.kicad_pcb");
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 50, 50, "0R", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:LED", "D1", 70, 50, null, null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "R1.2", "D1.A", "SIG", dryRun: false).Success);
+        Assert.True(service.UpdatePcbFromSchematic(fixture.Path, dryRun: false).Success);
+        Assert.True(service.SetSymbolField(fixture.Path, "R1", "Footprint", "Resistor_SMD:R_0805_2012Metric", dryRun: false).Success);
+
+        var listed = service.ListSymbols(fixture.Path).Data!;
+        foreach (var label in listed.Labels)
+        {
+            Assert.True(service.DeleteNetLabelByUuid(fixture.Path, label.Uuid!, dryRun: false).Success);
+        }
+
+        foreach (var wire in listed.Wires)
+        {
+            Assert.True(service.DeleteSchematicWireByUuid(fixture.Path, wire.Uuid!, dryRun: false).Success);
+        }
+
+        var boardText = File.ReadAllText(boardFile);
+        boardText = System.Text.RegularExpressions.Regex.Replace(
+            boardText,
+            @"\(net\s+\d+\s+""SIG""\)",
+            "(net \"SIG\")");
+        File.WriteAllText(boardFile, boardText);
+
+        var result = service.RegenerateBoardFootprint(fixture.Path, "R1", dryRun: false);
+        var after = pads.ListFootprintPads(fixture.Path, "R1");
+
+        Assert.True(result.Success);
+        Assert.Contains(after.Data!.Pads, pad => pad.Name == "2" && pad.NetName == "SIG");
+    }
+
+    [Fact]
     public void Real_Mutations_Support_Receiver_Core_Symbols_And_Footprints()
     {
         using var fixture = CopyBlankFixture();
