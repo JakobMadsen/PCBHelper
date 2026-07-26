@@ -52,6 +52,28 @@ public sealed class SimulationServiceTests
         Assert.All(result.Data.Scenarios, scenario => Assert.True(scenario.Passed));
     }
 
+    [Fact]
+    public async Task Run_Compiles_Structured_Sine_Stimulus()
+    {
+        using var fixture = TestProject.Create();
+        Directory.CreateDirectory(Path.Combine(fixture.Path, "simulation"));
+        File.WriteAllText(Path.Combine(fixture.Path, "simulation", "filter.cir"), "R1 IN OUT 1k\n");
+        fixture.WriteSpec("""
+        { "version": 1, "tests": [{ "id": "sine", "type": "simulation.tran",
+          "circuit": { "source": "spice-file", "path": "simulation/filter.cir" },
+          "analysis": { "stepSeconds": 0.00001, "stopSeconds": 0.002 },
+          "stimuli": [{ "name": "IN", "kind": "sine-voltage", "positiveNet": "IN", "negativeNet": "0", "offsetV": 0, "amplitudeV": 0.01, "frequencyHz": 1000 }],
+          "measurements": [{ "name": "swing", "kind": "peakToPeak", "net": "OUT", "unit": "V" }],
+          "asserts": [{ "measurement": "swing", "between": [0.01, 0.03] }] }] }
+        """);
+        var backend = new CapturingBackend();
+
+        var result = await CreateService(fixture.Path, backend).RunAsync(fixture.Path);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Contains("SIN(0 0.01 1000)", backend.Control, StringComparison.Ordinal);
+    }
+
     private static SimulationService CreateService(string path, ISimulationBackend backend)
     {
         var projects = new ProjectDiscoveryService();
@@ -76,6 +98,23 @@ public sealed class SimulationServiceTests
             File.WriteAllText(vectors, "frequency gain\n10 -0.1\n100 -0.5\n1000 -10\n");
             var circuitPath = Path.Combine(outputDirectory, "circuit.cir"); File.WriteAllText(circuitPath, circuit + analysisControl);
             var log = Path.Combine(outputDirectory, "simulator.log"); File.WriteAllText(log, "ok");
+            return Task.FromResult(ToolResponse<SimulationBackendResult>.Ok("ok", new(0, circuitPath, log, vectors)));
+        }
+    }
+
+    private sealed class CapturingBackend : ISimulationBackend
+    {
+        public string Control { get; private set; } = string.Empty;
+        public SimulationCapabilities GetCapabilities() => new(true, "fake", "fake", "test", null);
+        public Task<ToolResponse<SimulationBackendResult>> RunAsync(string circuit, string analysisControl, string outputDirectory, CancellationToken cancellationToken)
+        {
+            Control = analysisControl;
+            var vectors = Path.Combine(outputDirectory, "vectors.dat");
+            File.WriteAllText(vectors, "time swing\n0 -0.01\n0.001 0.01\n");
+            var circuitPath = Path.Combine(outputDirectory, "circuit.cir");
+            File.WriteAllText(circuitPath, circuit + analysisControl);
+            var log = Path.Combine(outputDirectory, "simulator.log");
+            File.WriteAllText(log, "ok");
             return Task.FromResult(ToolResponse<SimulationBackendResult>.Ok("ok", new(0, circuitPath, log, vectors)));
         }
     }

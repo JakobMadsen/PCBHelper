@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace PCBHelper.Core;
 
@@ -276,6 +277,8 @@ public sealed class DesignPlanService
                 Directory.CreateDirectory(Path.GetDirectoryName(intentTarget)!);
                 File.Copy(intentSource, intentTarget);
             }
+            CopyProjectFiles(project.ProjectRoot, sandbox, Path.Combine(".pcbhelper", "tests"), "*.json");
+            CopyProjectFiles(project.ProjectRoot, sandbox, "simulation", "*.cir");
 
             var before = CaptureDesignFiles(project.ProjectRoot);
             var sandboxProjects = new ProjectDiscoveryService(ProjectScopePolicy.Unrestricted());
@@ -285,11 +288,12 @@ public sealed class DesignPlanService
             var routing = new RoutingService(sandboxProjects);
             var finishing = new BoardFinishingService(sandboxProjects);
             var designIntent = new DesignIntentService(sandboxProjects, new BoardInspectionService(sandboxProjects));
+            var simulationFixtures = new SimulationFixtureService(sandboxProjects);
             var preparedOperations = new List<PreparedOperation>();
             var warnings = new List<string>();
             foreach (var operation in plan.Operations)
             {
-                var result = Execute(operation, sandbox, component, geometry, schematic, routing, finishing, designIntent);
+                var result = Execute(operation, sandbox, component, geometry, schematic, routing, finishing, designIntent, simulationFixtures);
                 if (!result.Success)
                 {
                     return ToolResponse<PlanPreparation>.Fail(
@@ -330,11 +334,12 @@ public sealed class DesignPlanService
 
     private static ToolResponse<object> Execute(
         PlanOperation operation, string projectPath, ComponentService component, GeometryService geometry,
-        SchematicAuthoringService schematic, RoutingService routing, BoardFinishingService finishing, DesignIntentService designIntent)
+        SchematicAuthoringService schematic, RoutingService routing, BoardFinishingService finishing, DesignIntentService designIntent,
+        SimulationFixtureService simulationFixtures)
     {
         if (!OperationHandlers.TryGetValue(operation.Type, out var handler))
             return ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED");
-        var prepared = handler.Prepare(operation, new PlanPreparationContext(projectPath, component, geometry, schematic, routing, finishing, designIntent));
+        var prepared = handler.Prepare(operation, new PlanPreparationContext(projectPath, component, geometry, schematic, routing, finishing, designIntent, simulationFixtures));
         return prepared.Success
             ? ToolResponse<object>.Ok(prepared.Summary, prepared.Data!, prepared.Warnings)
             : ToolResponse<object>.Fail(prepared.Summary, prepared.Error?.Code ?? "PLAN_PREPARATION_FAILED", prepared.Error?.Message);
@@ -347,11 +352,18 @@ public sealed class DesignPlanService
         {
             "set-component-value" => Box(context.Components.SetValue(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "value"), String(p, "scope", "available"), false)),
             "set-design-intent" => Box(context.DesignIntent.SetIntent(context.ProjectPath, p.GetProperty("intent"), false)),
+            "set-simulation-fixture" => Box(context.SimulationFixtures.SetFixture(context.ProjectPath, p.GetProperty("fixture"), false)),
             "move-component" => Box(context.Geometry.MoveComponent(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
+            "rotate-component" => Box(context.Geometry.RotateComponent(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "rotationDegrees"), false)),
             "set-component-spacing" => Box(context.Geometry.SetComponentSpacing(context.ProjectPath, RequiredString(p, "fixedReference"), RequiredString(p, "movingReference"), RequiredDouble(p, "distanceMm"), String(p, "axis", "x"), false)),
             "create-schematic-symbol" => Box(context.Schematic.CreateSymbol(context.ProjectPath, RequiredString(p, "symbol"), RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), OptionalString(p, "value"), OptionalString(p, "footprint"), OptionalInt(p, "unit", 1), false)),
+            "delete-schematic-symbol" => Box(context.Schematic.DeleteSymbol(context.ProjectPath, RequiredString(p, "reference"), false)),
+            "replace-schematic-symbol" => Box(context.Schematic.ReplaceSymbol(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "symbol"), false)),
             "set-symbol-field" => Box(context.Schematic.SetSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), RequiredString(p, "value"), false)),
             "connect-schematic-pins" => Box(context.Schematic.ConnectPins(context.ProjectPath, RequiredString(p, "from"), RequiredString(p, "to"), OptionalString(p, "net"), false)),
+            "delete-schematic-wire-by-uuid" => Box(context.Schematic.DeleteSchematicWireByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
+            "delete-schematic-wire" => Box(context.Schematic.DeleteSchematicWire(context.ProjectPath, RequiredDouble(p, "x1Mm"), RequiredDouble(p, "y1Mm"), RequiredDouble(p, "x2Mm"), RequiredDouble(p, "y2Mm"), RequiredDouble(p, "toleranceMm"), false)),
+            "delete-net-label-by-uuid" => Box(context.Schematic.DeleteNetLabelByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
             "add-net-label" => Box(context.Schematic.AddNetLabel(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
             "replace-net-label" => Box(context.Schematic.ReplaceNetLabel(context.ProjectPath, RequiredString(p, "currentNet"), RequiredString(p, "newNet"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "toleranceMm"), false)),
             "update-pcb-from-schematic" => Box(context.Schematic.UpdatePcbFromSchematic(context.ProjectPath, false)),
@@ -398,7 +410,27 @@ public sealed class DesignPlanService
             .ToDictionary(path => Path.GetRelativePath(root, path), File.ReadAllText, StringComparer.OrdinalIgnoreCase);
         var intent = Path.Combine(root, ".pcbhelper", "design-intent.json");
         if (File.Exists(intent)) files[Path.GetRelativePath(root, intent)] = File.ReadAllText(intent);
+        CaptureProjectFiles(root, files, Path.Combine(".pcbhelper", "tests"), "*.json");
+        CaptureProjectFiles(root, files, "simulation", "*.cir");
         return files;
+    }
+
+    private static void CopyProjectFiles(string sourceRoot, string targetRoot, string relativeDirectory, string searchPattern)
+    {
+        var source = Path.Combine(sourceRoot, relativeDirectory);
+        if (!Directory.Exists(source)) return;
+        var target = Path.Combine(targetRoot, relativeDirectory);
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.GetFiles(source, searchPattern, SearchOption.TopDirectoryOnly))
+            File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
+    }
+
+    private static void CaptureProjectFiles(string root, IDictionary<string, string> files, string relativeDirectory, string searchPattern)
+    {
+        var directory = Path.Combine(root, relativeDirectory);
+        if (!Directory.Exists(directory)) return;
+        foreach (var file in Directory.GetFiles(directory, searchPattern, SearchOption.TopDirectoryOnly))
+            files[Path.GetRelativePath(root, file)] = File.ReadAllText(file);
     }
 
     private static string Canonicalize(JsonElement element)
@@ -441,9 +473,18 @@ public static class PlanRiskEvaluator
 {
     public static PlanRiskResult Evaluate(string planHash, ParsedDesignPlan plan)
     {
-        var blockedTerms = new[] { "mains", "high-current", "high current", "high-speed", "high speed", "medical", "safety-critical", "safety critical", "radio frequency", " rf " };
         var searchable = $" {plan.Goal} {plan.Root.GetRawText()} ";
-        if (blockedTerms.Any(term => searchable.Contains(term, StringComparison.OrdinalIgnoreCase)))
+        var blockedDomain = Regex.IsMatch(
+            searchable,
+            @"(?ix)
+            (?<![a-z0-9])mains(?![a-z0-9])
+            |(?<![a-z0-9])high[-\s]+current(?![a-z0-9])
+            |(?<![a-z0-9])high[-\s]+speed(?![a-z0-9])
+            |(?<![a-z0-9])medical(?![a-z0-9])
+            |(?<![a-z0-9])safety[-\s]+critical(?![a-z0-9])
+            |(?<![a-z0-9])radio\s+frequency(?![a-z0-9])
+            |(?<![a-z0-9])rf(?![a-z0-9])");
+        if (blockedDomain)
         {
             var id = DecisionId(planHash, "unsupported-domain");
             return new PlanRiskResult(PlanRisk.Blocked,
@@ -482,4 +523,12 @@ public interface IPlanOperationHandler
     string OperationType { get; }
     ToolResponse<PreparedOperation> Prepare(PlanOperation operation, PlanPreparationContext context);
 }
-public sealed record PlanPreparationContext(string ProjectPath, ComponentService Components, GeometryService Geometry, SchematicAuthoringService Schematic, RoutingService Routing, BoardFinishingService Finishing, DesignIntentService DesignIntent);
+public sealed record PlanPreparationContext(
+    string ProjectPath,
+    ComponentService Components,
+    GeometryService Geometry,
+    SchematicAuthoringService Schematic,
+    RoutingService Routing,
+    BoardFinishingService Finishing,
+    DesignIntentService DesignIntent,
+    SimulationFixtureService SimulationFixtures);

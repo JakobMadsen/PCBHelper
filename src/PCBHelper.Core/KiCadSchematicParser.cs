@@ -264,7 +264,7 @@ internal static partial class KiCadSchematicParser
     [GeneratedRegex(@"\(property\s+""(?<name>[^""]+)""\s+""(?<value>(?:\\""|[^""])*)""")]
     private static partial Regex PropertyRegex();
 
-    [GeneratedRegex(@"\(pts\s+\(xy\s+(?<x1>-?\d+(?:\.\d+)?)\s+(?<y1>-?\d+(?:\.\d+)?)\)\s+\(xy\s+(?<x2>-?\d+(?:\.\d+)?)\s+(?<y2>-?\d+(?:\.\d+)?)\)\)")]
+    [GeneratedRegex(@"\(pts\s+\(xy\s+(?<x1>-?\d+(?:\.\d+)?)\s+(?<y1>-?\d+(?:\.\d+)?)\)\s+\(xy\s+(?<x2>-?\d+(?:\.\d+)?)\s+(?<y2>-?\d+(?:\.\d+)?)\)\s*\)")]
     private static partial Regex WirePointsRegex();
 
     [GeneratedRegex(@"\(label\s+""(?<text>[^""]+)""[\s\S]*?\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+-?\d+(?:\.\d+)?)?\)")]

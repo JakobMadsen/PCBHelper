@@ -70,7 +70,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(25, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(32, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
@@ -98,6 +98,10 @@ public sealed class DesignPlanServiceTests
         Assert.Equal(AgentGuidanceService.GuideVersion, guide.GuideVersion);
         Assert.Equal(guide.Uri, capabilities.AgentGuideUri);
         Assert.Equal(DesignPlanOperationCatalog.All.Count, capabilities.Operations.Count);
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Amplifier_Operational:OPA1612AxD");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Regulator_Linear:LM1117-5.0");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_01x03");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x10_Odd_Even");
         Assert.All(AgentPolicyRules.All, rule => Assert.Contains(rule.Id, guide.Markdown, StringComparison.Ordinal));
     }
 
@@ -114,6 +118,130 @@ public sealed class DesignPlanServiceTests
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Data!.ChangedFiles);
         Assert.Equal(before, File.ReadAllText(board));
+    }
+
+    [Fact]
+    public void RotateComponent_Is_Available_As_A_Transactional_DesignPlan_Operation()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var plan = """
+        {
+          "version": 1,
+          "goal": "Rotate one footprint",
+          "operations": [
+            {
+              "id": "rotate-led",
+              "type": "rotate-component",
+              "reference": "D1",
+              "rotationDegrees": 270
+            }
+          ],
+          "engineeringGate": {
+            "erc": "skip",
+            "drc": "skip",
+            "manufacturingValidation": "skip"
+          }
+        }
+        """;
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file =>
+            file.RelativePath.EndsWith(".kicad_pcb", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DeleteSchematicWire_Is_Available_As_A_Transactional_DesignPlan_Operation()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var authoring = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(authoring.CreateSymbol(fixture.Path, "Device:R", "R99", 50, 50, "0R", null, 1, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(fixture.Path, "Device:R", "R100", 70, 50, "0R", null, 1, dryRun: false).Success);
+        Assert.True(authoring.ConnectPins(fixture.Path, "R99.2", "R100.1", "JUMPER_TEST", dryRun: false).Success);
+        var schematic = authoring.ListSymbols(fixture.Path);
+        Assert.True(schematic.Success, schematic.Error?.Message);
+        var wire = Assert.Single(schematic.Data!.Wires.Take(1));
+        var plan = $$"""
+        {
+          "version": 1,
+          "goal": "Remove one exact schematic wire",
+          "operations": [
+            {
+              "id": "delete-wire",
+              "type": "delete-schematic-wire-by-uuid",
+              "uuid": "{{wire.Uuid}}"
+            }
+          ],
+          "engineeringGate": {
+            "erc": "skip",
+            "drc": "skip",
+            "manufacturingValidation": "skip"
+          }
+        }
+        """;
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file => file.RelativePath.EndsWith(".kicad_sch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DeleteNetLabel_Is_Available_As_A_Transactional_DesignPlan_Operation()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var authoring = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(authoring.AddNetLabel(fixture.Path, "STALE_LABEL", 50, 50, dryRun: false).Success);
+        var schematic = authoring.ListSymbols(fixture.Path);
+        Assert.True(schematic.Success, schematic.Error?.Message);
+        var label = Assert.Single(schematic.Data!.Labels, item => item.Text == "STALE_LABEL");
+        var plan = $$"""
+        {
+          "version": 1,
+          "goal": "Remove one exact schematic net label",
+          "operations": [
+            {
+              "id": "delete-label",
+              "type": "delete-net-label-by-uuid",
+              "uuid": "{{label.Uuid}}"
+            }
+          ],
+          "engineeringGate": {
+            "erc": "skip",
+            "drc": "skip",
+            "manufacturingValidation": "skip"
+          }
+        }
+        """;
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file => file.RelativePath.EndsWith(".kicad_sch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Preview_Does_Not_Confuse_Remains_With_Mains()
+    {
+        using var fixture = CopyTutorialFixture();
+        var plan = """
+        {
+          "version": 1,
+          "goal": "Signal remains within limits",
+          "operations": [
+            { "id": "value", "type": "set-component-value", "reference": "R1", "value": "300R" }
+          ]
+        }
+        """;
+
+        var preview = PCBHelperRuntime.ForCli().Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.NotEqual(PlanRisk.Blocked, preview.Data!.Risk);
     }
 
     [Fact]

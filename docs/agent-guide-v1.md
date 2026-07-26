@@ -7,6 +7,8 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 1. Call `get_capabilities`. If no project exists yet, use `create_project_from_template`; then call `get_project_context`.
 2. Resolve only material requirement ambiguity. Routine reversible work is autonomous.
 3. Build one coherent Design Plan using only operations advertised by `get_capabilities`.
+   Select schematic symbols only from `approvedSymbols`; treat each entry's source, pin units, and default footprint as the authoritative catalog contract.
+   Use `set-simulation-fixture` for project-contained ngspice evidence. It accepts only structured elements and declarative tests, never raw SPICE commands or arbitrary paths.
 4. Call `validate_design_plan`, then `preview_design_plan`.
 5. Apply the identical plan with the returned `planHash` as `expectedPlanHash`.
 6. Run required engineering gates, including Design Intent when the project declares it. Inspect and autonomously correct ordinary findings with another plan.

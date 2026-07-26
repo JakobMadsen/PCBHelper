@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace PCBHelper.Core;
@@ -98,6 +99,7 @@ public sealed class SchematicAuthoringService
 
         var footprintValue = footprint ?? catalog.DefaultFootprint;
         var text = FormatSymbol(catalog, reference, value ?? catalog.DefaultValue, footprintValue, x, y, unit);
+        text = EnsureSymbolInstance(text, reference, unit, Path.GetFileNameWithoutExtension(schematic.Data.SchematicFile), FindRootSchematicUuid(schematic.Data.Text));
         var withLibrarySymbol = EnsureLibSymbolDefinition(schematic.Data.Text, catalog);
         var after = InsertBeforeSymbolInstances(withLibrarySymbol, text);
         if (!dryRun)
@@ -143,6 +145,112 @@ public sealed class SchematicAuthoringService
         }
 
         return Mutation("set-symbol-field", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, before, after) }, $"{field}={value}");
+    }
+
+    public ToolResponse<SchematicMutationResult> DeleteSymbol(string projectPath, string reference, bool dryRun)
+    {
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+
+        var symbols = FindSymbols(schematic.Data, reference).OrderByDescending(static item => item.SourceStart).ToArray();
+        if (symbols.Length == 0)
+            return ToolResponse<SchematicMutationResult>.Fail($"Schematic symbol not found: {reference}", "SCHEMATIC_SYMBOL_NOT_FOUND");
+
+        var before = schematic.Data.Text;
+        var after = before;
+        foreach (var symbol in symbols)
+        {
+            var removal = ExpandRemovalRange(after, symbol.SourceStart, symbol.SourceLength);
+            after = after.Remove(removal.Start, removal.Length);
+        }
+        if (!dryRun) File.WriteAllText(schematic.Data.SchematicFile, after);
+        return Mutation("delete-schematic-symbol", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, before, after) }, $"Deleted {symbols.Length} unit(s).");
+    }
+
+    public ToolResponse<SchematicMutationResult> ReplaceSymbol(string projectPath, string reference, string symbolId, bool dryRun)
+    {
+        var target = SchematicSymbolCatalog.Find(symbolId);
+        if (target is null)
+            return ToolResponse<SchematicMutationResult>.Fail($"Unsupported schematic symbol: {symbolId}", "SCHEMATIC_SYMBOL_UNSUPPORTED");
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+        var symbols = FindSymbols(schematic.Data, reference).OrderByDescending(static item => item.SourceStart).ToArray();
+        if (symbols.Length == 0)
+            return ToolResponse<SchematicMutationResult>.Fail($"Schematic symbol not found: {reference}", "SCHEMATIC_SYMBOL_NOT_FOUND");
+
+        foreach (var existing in symbols)
+        {
+            var source = existing.LibId is null ? null : SchematicSymbolCatalog.Find(existing.LibId);
+            if (source is null || !target.Units.Contains(existing.Unit))
+                return ToolResponse<SchematicMutationResult>.Fail("Source and replacement symbol units are not catalog-compatible.", "SCHEMATIC_SYMBOL_INCOMPATIBLE");
+            var sourcePins = source.Pins.Where(pin => pin.Unit == existing.Unit).Select(pin => pin.Name).Order().ToArray();
+            var targetPins = target.Pins.Where(pin => pin.Unit == existing.Unit).Select(pin => pin.Name).Order().ToArray();
+            if (!sourcePins.SequenceEqual(targetPins, StringComparer.Ordinal))
+                return ToolResponse<SchematicMutationResult>.Fail("Replacement symbol pin identities do not match the existing symbol.", "SCHEMATIC_SYMBOL_PIN_MISMATCH");
+        }
+
+        var before = schematic.Data.Text;
+        var after = before;
+        foreach (var existing in symbols)
+        {
+            var block = after.Substring(existing.SourceStart, existing.SourceLength);
+            var replaced = new Regex(@"\(lib_id\s+""[^""]+""\)").Replace(block, $"(lib_id \"{target.SymbolId}\")", 1);
+            replaced = EnsureSymbolPins(replaced, target, existing.Unit);
+            replaced = EnsureSymbolInstance(replaced, reference, existing.Unit, Path.GetFileNameWithoutExtension(schematic.Data.SchematicFile), FindRootSchematicUuid(before));
+            after = after.Remove(existing.SourceStart, existing.SourceLength).Insert(existing.SourceStart, replaced);
+        }
+        after = EnsureLibSymbolDefinition(after, target);
+        if (!dryRun) File.WriteAllText(schematic.Data.SchematicFile, after);
+        return Mutation("replace-schematic-symbol", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, before, after) }, symbolId);
+    }
+
+    private static string FindRootSchematicUuid(string text)
+    {
+        var match = Regex.Match(text, @"(?m)^\s*\(uuid\s+""([^""]+)""\)");
+        if (!match.Success) throw new InvalidOperationException("Schematic root UUID is missing.");
+        return match.Groups[1].Value;
+    }
+
+    private static string EnsureSymbolInstance(string symbolBlock, string reference, int unit, string projectName, string rootUuid)
+    {
+        if (Regex.IsMatch(symbolBlock, @"(?m)^\s*\(instances\s*$")) return symbolBlock;
+        var closing = symbolBlock.LastIndexOf(')');
+        if (closing < 0) throw new InvalidOperationException("Schematic symbol block is malformed.");
+        var instance = string.Join(Environment.NewLine, new[]
+        {
+            "    (instances",
+            $"      (project \"{EscapeKiCadString(projectName)}\"",
+            $"        (path \"/{rootUuid}\"",
+            $"          (reference \"{EscapeKiCadString(reference)}\")",
+            $"          (unit {unit})",
+            "        )",
+            "      )",
+            "    )",
+            string.Empty
+        });
+        return symbolBlock.Insert(closing, instance);
+    }
+
+    private static string EnsureSymbolPins(string symbolBlock, SchematicSymbolCatalogEntry catalog, int unit)
+    {
+        var additions = new List<string>();
+        foreach (var pin in catalog.Pins.Where(item => item.Unit == unit))
+        {
+            if (symbolBlock.Contains($"(pin \"{pin.Name}\"", StringComparison.Ordinal)) continue;
+            additions.Add(string.Join(Environment.NewLine, new[]
+            {
+                $"    (pin \"{EscapeKiCadString(pin.Name)}\"",
+                $"      (uuid \"{Guid.NewGuid()}\")",
+                "    )"
+            }));
+        }
+        if (additions.Count == 0) return symbolBlock;
+        var insertion = Regex.Match(symbolBlock, @"(?m)^\s*\(instances\s*$");
+        var index = insertion.Success ? insertion.Index : symbolBlock.LastIndexOf(')');
+        if (index < 0) throw new InvalidOperationException("Schematic symbol block is malformed.");
+        return symbolBlock.Insert(index, string.Join(Environment.NewLine, additions) + Environment.NewLine);
     }
 
     public ToolResponse<SchematicMutationResult> ConnectPins(string projectPath, string from, string to, string? net, bool dryRun)
@@ -1199,11 +1307,12 @@ public sealed class SchematicAuthoringService
 
     private static string EnsureLibSymbolDefinition(string text, SchematicSymbolCatalogEntry catalog)
     {
-        var libSymbolsStart = text.IndexOf("  (lib_symbols", StringComparison.Ordinal);
-        if (libSymbolsStart < 0)
+        var libSymbolsMatch = Regex.Match(text, @"(?m)^[ \t]*\(lib_symbols\b");
+        if (!libSymbolsMatch.Success)
         {
             return text;
         }
+        var libSymbolsStart = libSymbolsMatch.Index + libSymbolsMatch.Value.LastIndexOf('(');
 
         var libSymbolsEnd = KiCadSchematicParser.FindMatchingParenthesis(text, libSymbolsStart);
         if (libSymbolsEnd < 0)
@@ -1212,13 +1321,31 @@ public sealed class SchematicAuthoringService
         }
 
         var libSymbolsText = text.Substring(libSymbolsStart, libSymbolsEnd - libSymbolsStart + 1);
-        if (libSymbolsText.Contains($"(symbol \"{catalog.SymbolId}\"", StringComparison.Ordinal))
+        var existingSymbolMarker = $"(symbol \"{catalog.SymbolId}\"";
+        var existingSymbolOffset = libSymbolsText.IndexOf(existingSymbolMarker, StringComparison.Ordinal);
+        if (existingSymbolOffset >= 0)
         {
+            var existingSymbolStart = libSymbolsStart + existingSymbolOffset;
+            var existingSymbolEnd = KiCadSchematicParser.FindMatchingParenthesis(text, existingSymbolStart);
+            if (existingSymbolEnd >= existingSymbolStart)
+            {
+                var existingDefinition = text.Substring(existingSymbolStart, existingSymbolEnd - existingSymbolStart + 1);
+                if (existingDefinition.Contains("(extends ", StringComparison.Ordinal))
+                {
+                    var selfContainedDefinition = TryFormatLibraryExactLibSymbolDefinition(catalog);
+                    if (selfContainedDefinition is not null)
+                    {
+                        return text.Remove(existingSymbolStart, existingDefinition.Length)
+                            .Insert(existingSymbolStart, selfContainedDefinition.TrimEnd());
+                    }
+                }
+            }
+
             return text;
         }
 
         var definition = TryFormatLibraryExactLibSymbolDefinition(catalog) ?? FormatLibSymbolDefinition(catalog);
-        if (string.Equals(libSymbolsText, "  (lib_symbols)", StringComparison.Ordinal))
+        if (Regex.IsMatch(libSymbolsText, @"^\(lib_symbols\s*\)$"))
         {
             return text.Remove(libSymbolsStart, libSymbolsText.Length)
                 .Insert(libSymbolsStart, $"  (lib_symbols{Environment.NewLine}{definition}  )");
@@ -1256,10 +1383,12 @@ public sealed class SchematicAuthoringService
         var symbolName = catalog.SymbolId.Split(':').Last();
         var unitBlocks = string.Concat(catalog.Units.Select(unit =>
         {
-            var pins = string.Concat(catalog.Pins.Where(pin => pin.Unit == unit).Select(FormatLibSymbolPin));
+            var graphics = FormatFallbackSymbolGraphics(catalog, unit);
+            var pins = string.Concat(catalog.Pins.Where(pin => pin.Unit == unit).Select(pin => FormatLibSymbolPin(catalog, pin)));
             return string.Join(Environment.NewLine, new[]
             {
                 $"      (symbol \"{symbolName}_{unit}_1\"",
+                graphics.TrimEnd(),
                 pins.TrimEnd(),
                 "      )",
                 string.Empty
@@ -1282,6 +1411,43 @@ public sealed class SchematicAuthoringService
             "      )",
             unitBlocks.TrimEnd(),
             "    )",
+            string.Empty
+        });
+    }
+
+    private static string FormatFallbackSymbolGraphics(SchematicSymbolCatalogEntry catalog, int unit)
+    {
+        if (!catalog.SymbolId.StartsWith("Amplifier_Operational:", StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        if (unit == 3)
+        {
+            return string.Join(Environment.NewLine, new[]
+            {
+                "        (rectangle",
+                "          (start -5.08 5.08)",
+                "          (end 5.08 -5.08)",
+                "          (stroke (width 0) (type default))",
+                "          (fill (type background))",
+                "        )",
+                string.Empty
+            });
+        }
+
+        return string.Join(Environment.NewLine, new[]
+        {
+            "        (polyline",
+            "          (pts",
+            "            (xy -5.08 5.08)",
+            "            (xy 5.08 0)",
+            "            (xy -5.08 -5.08)",
+            "            (xy -5.08 5.08)",
+            "          )",
+            "          (stroke (width 0) (type default))",
+            "          (fill (type background))",
+            "        )",
             string.Empty
         });
     }
@@ -1327,11 +1493,43 @@ public sealed class SchematicAuthoringService
                 continue;
             }
 
+            // KiCad uses lightweight aliases for many real parts.  For example,
+            // LM358 only contains properties and extends LM2904, which owns the
+            // graphics and pins.  An embedded schematic library cannot resolve
+            // that external parent, so embed the first self-contained ancestor.
+            var resolvedSymbolName = parts[1];
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { parts[1] };
+            while (TryGetExtendedSymbolName(block, out var parentName) && visited.Add(parentName))
+            {
+                var parentBlock = ExtractLibrarySymbolBlock(text, parentName);
+                if (parentBlock is null)
+                {
+                    break;
+                }
+
+                block = parentBlock;
+                resolvedSymbolName = parentName;
+            }
+
             var renamed = RenameTopLevelSymbol(block, catalog.SymbolId);
+            if (!resolvedSymbolName.Equals(parts[1], StringComparison.Ordinal))
+            {
+                renamed = renamed.Replace(
+                    $"(symbol \"{resolvedSymbolName}_",
+                    $"(symbol \"{parts[1]}_",
+                    StringComparison.Ordinal);
+            }
             return IndentBlock(renamed, 4) + Environment.NewLine;
         }
 
         return null;
+    }
+
+    private static bool TryGetExtendedSymbolName(string symbolBlock, out string parentName)
+    {
+        var match = Regex.Match(symbolBlock, @"\(extends\s+\""(?<name>[^\""\r\n]+)\""\)");
+        parentName = match.Success ? match.Groups["name"].Value : string.Empty;
+        return match.Success;
     }
 
     private static IEnumerable<string> GetKiCadSymbolLibraryCandidates(string libraryName)
@@ -1422,14 +1620,19 @@ public sealed class SchematicAuthoringService
         return string.Join(Environment.NewLine, block.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').Select(line => prefix + line.TrimEnd()));
     }
 
-    private static string FormatLibSymbolPin(SchematicPinDefinition pin)
+    private static string FormatLibSymbolPin(SchematicSymbolCatalogEntry catalog, SchematicPinDefinition pin)
     {
         var pinAtX = pin.OffsetX;
         var pinAtY = Math.Abs(pin.OffsetY) > Math.Abs(pin.OffsetX) ? -pin.OffsetY : pin.OffsetY;
         var rotation = PinRotation(pinAtX, pinAtY);
+        var electricalType = catalog.SymbolId.StartsWith("Amplifier_Operational:", StringComparison.Ordinal)
+            ? pin.Unit == 3
+                ? "power_in"
+                : pin.Name is "1" or "7" ? "output" : "input"
+            : "passive";
         return string.Join(Environment.NewLine, new[]
         {
-            "        (pin passive line",
+            $"        (pin {electricalType} line",
             $"          (at {KiCadSchematicParser.FormatNumber(pinAtX)} {KiCadSchematicParser.FormatNumber(pinAtY)} {KiCadSchematicParser.FormatNumber(rotation)})",
             "          (length 2.54)",
             $"          (name \"{pin.Name}\" (effects (font (size 1.27 1.27))))",
@@ -2006,7 +2209,13 @@ internal sealed record SchematicWireIsland(IReadOnlyList<KiCadSchematicWire> Wir
 
 internal sealed record SchematicPoint(double X, double Y);
 
-internal sealed record SchematicSymbolCatalogEntry(string SymbolId, string DefaultValue, string DefaultFootprint, double DefaultBoardY, IReadOnlyList<SchematicPinDefinition> Pins)
+internal sealed record SchematicSymbolCatalogEntry(
+    string SymbolId,
+    string DefaultValue,
+    string DefaultFootprint,
+    double DefaultBoardY,
+    IReadOnlyList<SchematicPinDefinition> Pins,
+    string Source = "KiCad 10 standard library")
 {
     public IReadOnlyList<int> Units { get; } = Pins.Select(static pin => pin.Unit).Distinct().OrderBy(static unit => unit).ToArray();
 }
@@ -2017,25 +2226,34 @@ internal static class SchematicSymbolCatalog
 {
     private static readonly SchematicSymbolCatalogEntry[] Entries =
     {
-        new("Device:R", "R", "R_Axial_2Pad", 35, new[] { new SchematicPinDefinition("1", 0, -3.81), new SchematicPinDefinition("2", 0, 3.81) }),
-        new("Device:C", "C", "C_Disc_2Pad", 42, new[] { new SchematicPinDefinition("1", 0, -3.81), new SchematicPinDefinition("2", 0, 3.81) }),
+        new("Device:R", "R", "R_Axial_2Pad", 35, TwoPinVertical()),
+        new("Device:C", "C", "C_Disc_2Pad", 42, TwoPinVertical()),
+        new("Device:C_Polarized", "C_Polarized", "C_Disc_2Pad", 42, TwoPinVertical()),
+        new("Device:L", "L", "Inductor_SMD:L_0805_2012Metric", 42, TwoPinVertical()),
+        new("Device:Fuse", "Fuse", "Fuse:Fuse_0805_2012Metric", 42, TwoPinVertical()),
         new("Device:LED", "LED", "LED_2Pad", 35, new[] { new SchematicPinDefinition("A", 3.81, 0), new SchematicPinDefinition("K", -3.81, 0) }),
         new("Device:D", "D", "LED_2Pad", 35, new[] { new SchematicPinDefinition("A", 3.81, 0), new SchematicPinDefinition("K", -3.81, 0) }),
+        new("Device:D_Schottky", "D_Schottky", "Diode_SMD:D_0805_2012Metric_Pad1.05x0.95mm_HandSolder", 35, new[] { new SchematicPinDefinition("A", 3.81, 0), new SchematicPinDefinition("K", -3.81, 0) }),
+        new("Device:D_Zener", "D_Zener", "Diode_SMD:D_0805_2012Metric_Pad1.05x0.95mm_HandSolder", 35, new[] { new SchematicPinDefinition("A", 3.81, 0), new SchematicPinDefinition("K", -3.81, 0) }),
+        new("Device:D_TVS", "D_TVS", "Diode_SMD:D_0805_2012Metric_Pad1.05x0.95mm_HandSolder", 35, new[] { new SchematicPinDefinition("A", 3.81, 0), new SchematicPinDefinition("K", -3.81, 0) }),
         new("Device:D_Photo", "D_Photo", "Photodiode_2Pad", 28, new[] { new SchematicPinDefinition("A", 2.54, 0), new SchematicPinDefinition("K", -5.08, 0) }),
+        new("Sensor_Optical:SFH309", "SFH309", "Photodiode_2Pad", 50, new[]
+        {
+            new SchematicPinDefinition("C", 2.54, 0), new SchematicPinDefinition("E", -5.08, 0)
+        }),
+        new("power:+5V", "+5V", "", 50, new[] { new SchematicPinDefinition("1", 0, 0) }),
+        new("power:GND", "GND", "", 50, new[] { new SchematicPinDefinition("1", 0, 0) }),
         new("Device:Battery_Cell", "Battery_Cell", "BatteryHolder_2Pad_Back", 50, new[] { new SchematicPinDefinition("+", 0, -5.08), new SchematicPinDefinition("-", 0, 2.54) }),
         new("power:PWR_FLAG", "PWR_FLAG", "", 50, new[] { new SchematicPinDefinition("1", 0, 0) }),
-        new("Connector_Generic:Conn_01x02", "Conn_01x02", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", 50, new[] { new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", -5.08, -2.54) }),
-        new("Connector_Generic:Conn_01x04", "Conn_01x04", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", 50, new[]
-        {
-            new SchematicPinDefinition("1", -5.08, 2.54), new SchematicPinDefinition("2", -5.08, 0),
-            new SchematicPinDefinition("3", -5.08, -2.54), new SchematicPinDefinition("4", -5.08, -5.08)
-        }),
-        new("Connector_Generic:Conn_01x05", "Conn_01x05", "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", 50, new[]
-        {
-            new SchematicPinDefinition("1", -5.08, 5.08), new SchematicPinDefinition("2", -5.08, 2.54),
-            new SchematicPinDefinition("3", -5.08, 0), new SchematicPinDefinition("4", -5.08, -2.54),
-            new SchematicPinDefinition("5", -5.08, -5.08)
-        }),
+        new("Connector_Generic:Conn_01x01", "Conn_01x01", "Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical", 50, OneRowConnector(1)),
+        new("Connector_Generic:Conn_01x02", "Conn_01x02", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", 50, OneRowConnector(2)),
+        new("Connector_Generic:Conn_01x03", "Conn_01x03", "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical", 50, OneRowConnector(3)),
+        new("Connector_Generic:Conn_01x04", "Conn_01x04", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", 50, OneRowConnector(4)),
+        new("Connector_Generic:Conn_01x05", "Conn_01x05", "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", 50, OneRowConnector(5)),
+        new("Connector_Generic:Conn_01x06", "Conn_01x06", "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", 50, OneRowConnector(6)),
+        new("Connector_Generic:Conn_01x08", "Conn_01x08", "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical", 50, OneRowConnector(8)),
+        new("Connector_Generic:Conn_01x10", "Conn_01x10", "Connector_PinHeader_2.54mm:PinHeader_1x10_P2.54mm_Vertical", 50, OneRowConnector(10)),
+        new("Connector_Generic:Conn_02x10_Odd_Even", "Conn_02x10_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x10_P2.54mm_Vertical", 50, TwoRowConnectorOddEven(10)),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)
@@ -2057,50 +2275,86 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("13", -12.7, 12.7), new SchematicPinDefinition("14", 12.7, 15.24),
             new SchematicPinDefinition("15", 12.7, 7.62), new SchematicPinDefinition("16", 0, 22.86)
         }),
-        new(
-            "Amplifier_Operational:OPA2325",
-            "OPA2325",
-            "DIP8_300mil",
-            45,
-            new[]
-            {
-                new SchematicPinDefinition("1", 7.62, 0, 1),
-                new SchematicPinDefinition("2", -7.62, -2.54, 1),
-                new SchematicPinDefinition("3", -7.62, 2.54, 1),
-                new SchematicPinDefinition("4", -2.54, 7.62, 3),
-                new SchematicPinDefinition("5", -7.62, 2.54, 2),
-                new SchematicPinDefinition("6", -7.62, -2.54, 2),
-                new SchematicPinDefinition("7", 7.62, 0, 2),
-                new SchematicPinDefinition("8", -2.54, -7.62, 3)
-            }),
-        new(
-            "Amplifier_Operational:OPA2388",
-            "OPA2388",
-            "DIP8_300mil",
-            45,
-            new[]
-            {
-                new SchematicPinDefinition("1", 7.62, 0, 1),
-                new SchematicPinDefinition("2", -7.62, -2.54, 1),
-                new SchematicPinDefinition("3", -7.62, 2.54, 1),
-                new SchematicPinDefinition("4", -2.54, 7.62, 3),
-                new SchematicPinDefinition("5", -7.62, 2.54, 2),
-                new SchematicPinDefinition("6", -7.62, -2.54, 2),
-                new SchematicPinDefinition("7", 7.62, 0, 2),
-                new SchematicPinDefinition("8", -2.54, -7.62, 3)
-            })
+        DualOpAmp("Amplifier_Operational:LM2904", "LM2904", "DIP8_300mil"),
+        DualOpAmp("Amplifier_Operational:LM358", "LM358", "DIP8_300mil"),
+        DualOpAmp("Amplifier_Operational:OPA2325", "OPA2325", "DIP8_300mil"),
+        DualOpAmp("Amplifier_Operational:OPA2388", "OPA2388", "DIP8_300mil"),
+        DualOpAmp("Amplifier_Operational:OPA1612AxD", "OPA1612AxD"),
+        DualOpAmp("Amplifier_Operational:NE5532", "NE5532"),
+        DualOpAmp("Amplifier_Operational:TL072", "TL072"),
+        LinearRegulator("Regulator_Linear:LM1117-5.0", "LM1117-5.0", "PCBHelper approved component preset; TI pinout"),
+        LinearRegulator("Regulator_Linear:AMS1117-3.3", "AMS1117-3.3"),
+        LinearRegulator("Regulator_Linear:AMS1117-5.0", "AMS1117-5.0")
     };
+
+    public static IReadOnlyList<SchematicSymbolCatalogEntry> All => Entries;
 
     public static SchematicSymbolCatalogEntry? Find(string symbolId)
     {
         return Entries.FirstOrDefault(entry => string.Equals(entry.SymbolId, symbolId, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static IReadOnlyList<SchematicPinDefinition> OneRowConnector(int count)
+    {
+        var top = Math.Floor((count - 1) / 2.0) * 2.54;
+        return Enumerable.Range(1, count)
+            .Select(pin => new SchematicPinDefinition(pin.ToString(CultureInfo.InvariantCulture), -5.08, top - ((pin - 1) * 2.54)))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SchematicPinDefinition> TwoRowConnectorOddEven(int rows)
+    {
+        var top = Math.Floor((rows - 1) / 2.0) * 2.54;
+        return Enumerable.Range(0, rows)
+            .SelectMany(row => new[]
+            {
+                new SchematicPinDefinition((row * 2 + 1).ToString(CultureInfo.InvariantCulture), -5.08, top - (row * 2.54)),
+                new SchematicPinDefinition((row * 2 + 2).ToString(CultureInfo.InvariantCulture), 7.62, top - (row * 2.54))
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SchematicPinDefinition> TwoPinVertical() => new[]
+    {
+        new SchematicPinDefinition("1", 0, 3.81),
+        new SchematicPinDefinition("2", 0, -3.81)
+    };
+
+    private static SchematicSymbolCatalogEntry DualOpAmp(string symbolId, string value, string footprint = "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm") => new(
+        symbolId,
+        value,
+        footprint,
+        45,
+        new[]
+        {
+            new SchematicPinDefinition("1", 7.62, 0, 1),
+            new SchematicPinDefinition("2", -7.62, -2.54, 1),
+            new SchematicPinDefinition("3", -7.62, 2.54, 1),
+            new SchematicPinDefinition("4", -2.54, -7.62, 3),
+            new SchematicPinDefinition("5", -7.62, 2.54, 2),
+            new SchematicPinDefinition("6", -7.62, -2.54, 2),
+            new SchematicPinDefinition("7", 7.62, 0, 2),
+            new SchematicPinDefinition("8", -2.54, 7.62, 3)
+        });
+
+    private static SchematicSymbolCatalogEntry LinearRegulator(string symbolId, string value, string source = "KiCad 10 standard library") => new(
+        symbolId,
+        value,
+        "Package_TO_SOT_SMD:SOT-223-3_TabPin2",
+        50,
+        new[]
+        {
+            new SchematicPinDefinition("1", 0, -7.62),
+            new SchematicPinDefinition("2", 7.62, 0),
+            new SchematicPinDefinition("3", -7.62, 0)
+        },
+        source);
 }
 
 internal static class SchematicFootprintTemplates
 {
-    private const string PinHeader1x05 = "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical";
     private const string Dip16 = "Package_DIP:DIP-16_W7.62mm";
+    private const string PinHeaderLibrary = "Connector_PinHeader_2.54mm";
 
     private static readonly string[] KiCadFootprintLibraryRoots =
     {
@@ -2111,12 +2365,21 @@ internal static class SchematicFootprintTemplates
     public static bool IsSupported(string footprint)
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
-            or PinHeader1x05 or Dip16
+            or Dip16
+            || TryParseStandardVerticalPinHeader(footprint, out _, out _)
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
 
     public static string Format(string footprint, string reference, string value, double x, double y, IReadOnlyDictionary<string, KiCadNet> padNets, double? rotationDegrees = null)
     {
+        if (TryParseStandardVerticalPinHeader(footprint, out var columns, out var rows))
+        {
+            var libraryFootprint = FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets);
+            return string.IsNullOrWhiteSpace(libraryFootprint)
+                ? FormatPinHeaderFallback(footprint, reference, value, x, y, rotationDegrees, columns, rows, padNets)
+                : libraryFootprint;
+        }
+
         return footprint switch
         {
             "R_Axial_2Pad" => FormatTwoPad("R_Axial_2Pad", reference, value, x, y, rotationDegrees, "F.Cu", new[] { ("1", 0.0, "1"), ("2", 10.16, "2") }, padNets),
@@ -2126,7 +2389,6 @@ internal static class SchematicFootprintTemplates
             "BatteryHolder_2Pad_Back" => FormatTwoPad("BatteryHolder_2Pad_Back", reference, value, x, y, rotationDegrees, "B.Cu", new[] { ("1", -4.0, "+"), ("2", 4.0, "-") }, padNets),
             "DIP8_300mil" => FormatDip8(reference, value, x, y, rotationDegrees, padNets),
             "TO92_2N3904_EBC" => FormatTo92_2N3904(reference, value, x, y, rotationDegrees, padNets),
-            PinHeader1x05 => FormatPinHeader1x05(reference, value, x, y, rotationDegrees, padNets),
             Dip16 => FormatDip16(reference, value, x, y, rotationDegrees, padNets),
             _ => FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets)
         };
@@ -2174,6 +2436,82 @@ internal static class SchematicFootprintTemplates
         }
 
         return null;
+    }
+
+    private static bool TryParseStandardVerticalPinHeader(string footprint, out int columns, out int rows)
+    {
+        var match = Regex.Match(
+            footprint,
+            $"^{Regex.Escape(PinHeaderLibrary)}:PinHeader_(?<columns>[12])x(?<rows>\\d{{2}})_P2\\.54mm_Vertical$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success
+            || !int.TryParse(match.Groups["columns"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out columns)
+            || !int.TryParse(match.Groups["rows"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out rows)
+            || rows < 1)
+        {
+            columns = 0;
+            rows = 0;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string FormatPinHeaderFallback(
+        string footprint,
+        string reference,
+        string value,
+        double x,
+        double y,
+        double? rotationDegrees,
+        int columns,
+        int rows,
+        IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        var atText = rotationDegrees is null
+            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
+            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
+        var lastX = (columns - 1) * 2.54;
+        var lastY = (rows - 1) * 2.54;
+        var centerX = lastX / 2;
+        var lines = new List<string>
+        {
+            $"  (footprint \"{footprint}\"",
+            "    (layer \"F.Cu\")",
+            $"    (uuid \"{Guid.NewGuid()}\")",
+            atText,
+            "    (attr through_hole)",
+            $"    (property \"Reference\" \"{reference}\" (at {KiCadBoardParser.FormatNumber(centerX)} -2.33 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (property \"Value\" \"{value}\" (at {KiCadBoardParser.FormatNumber(centerX)} {KiCadBoardParser.FormatNumber(lastY + 2.33)} 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))",
+            $"    (fp_rect (start -1.33 -1.33) (end {KiCadBoardParser.FormatNumber(lastX + 1.33)} {KiCadBoardParser.FormatNumber(lastY + 1.33)}) (stroke (width 0.25) (type default)) (fill (type none)) (layer \"F.SilkS\"))",
+            $"    (fp_rect (start -1.27 -1.27) (end {KiCadBoardParser.FormatNumber(lastX + 1.27)} {KiCadBoardParser.FormatNumber(lastY + 1.27)}) (stroke (width 0.1) (type default)) (fill (type none)) (layer \"F.Fab\"))",
+            $"    (fp_rect (start -1.4 -1.4) (end {KiCadBoardParser.FormatNumber(lastX + 1.4)} {KiCadBoardParser.FormatNumber(lastY + 1.4)}) (stroke (width 0.05) (type default)) (fill (type none)) (layer \"F.CrtYd\"))",
+            "    (fp_line (start -1.33 -1.33) (end 0 -1.33) (stroke (width 0.5) (type default)) (layer \"F.SilkS\"))"
+        };
+
+        for (var row = 0; row < rows; row++)
+        {
+            for (var column = 0; column < columns; column++)
+            {
+                var padNumber = columns == 1 ? row + 1 : (row * columns) + column + 1;
+                lines.Add(FormatPinHeaderPad(
+                    padNumber.ToString(CultureInfo.InvariantCulture),
+                    column * 2.54,
+                    row * 2.54,
+                    padNets,
+                    rectangular: padNumber == 1));
+            }
+        }
+
+        var modelName = $"PinHeader_{columns}x{rows:00}_P2.54mm_Vertical.step";
+        lines.Add($"    (model \"${{KICAD10_3DMODEL_DIR}}/{PinHeaderLibrary}.3dshapes/{modelName}\"");
+        lines.Add("      (offset (xyz 0 0 0))");
+        lines.Add("      (scale (xyz 1 1 1))");
+        lines.Add("      (rotate (xyz 0 0 0))");
+        lines.Add("    )");
+        lines.Add("  )");
+        lines.Add(string.Empty);
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string ReplaceFirstTopLevelLine(string text, string head, string replacement, string insertAfterHead)
@@ -2262,29 +2600,6 @@ internal static class SchematicFootprintTemplates
         });
     }
 
-    private static string FormatPinHeader1x05(string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
-    {
-        var atText = rotationDegrees is null
-            ? $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
-            : $"    (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)} {KiCadBoardParser.FormatNumber(rotationDegrees.Value)})";
-        return string.Join(Environment.NewLine, new[]
-        {
-            $"  (footprint \"{PinHeader1x05}\"",
-            "    (layer \"F.Cu\")",
-            $"    (uuid \"{Guid.NewGuid()}\")",
-            atText,
-            $"    (property \"Reference\" \"{reference}\" (at 0 -2.33 0) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))",
-            $"    (property \"Value\" \"{value}\" (at 0 12.49 0) (layer \"F.Fab\") (effects (font (size 1 1) (thickness 0.1))))",
-            FormatPinHeaderPad("1", 0, padNets, rectangular: true),
-            FormatPinHeaderPad("2", 2.54, padNets),
-            FormatPinHeaderPad("3", 5.08, padNets),
-            FormatPinHeaderPad("4", 7.62, padNets),
-            FormatPinHeaderPad("5", 10.16, padNets),
-            "  )",
-            string.Empty
-        });
-    }
-
     private static string FormatDip16(string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
     {
         var atText = rotationDegrees is null
@@ -2312,14 +2627,14 @@ internal static class SchematicFootprintTemplates
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string FormatPinHeaderPad(string padName, double y, IReadOnlyDictionary<string, KiCadNet> padNets, bool rectangular = false)
+    private static string FormatPinHeaderPad(string padName, double x, double y, IReadOnlyDictionary<string, KiCadNet> padNets, bool rectangular = false)
     {
         padNets.TryGetValue(padName, out var net);
         var netText = net is null ? string.Empty : $"{Environment.NewLine}      (net {net.Code} \"{EscapeKiCadString(net.Name)}\")";
         return string.Join(Environment.NewLine, new[]
         {
             $"    (pad \"{padName}\" thru_hole {(rectangular ? "rect" : "oval")}",
-            $"      (at 0 {KiCadBoardParser.FormatNumber(y)})",
+            $"      (at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})",
             "      (size 1.7 1.7)",
             "      (drill 1)",
             "      (layers \"*.Cu\" \"*.Mask\")" + netText,
