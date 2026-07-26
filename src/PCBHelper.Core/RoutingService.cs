@@ -707,7 +707,7 @@ public sealed class RoutingService
                         obstacle.NetName,
                         gap,
                         clearanceMillimeters,
-                        $"Proposed track segment {index + 1} is {FormatDistance(gap)} mm from {obstacle.Kind} {obstacle.Id} on net {obstacle.NetName}."));
+                        $"Proposed track segment {index + 1} is {FormatDistance(gap)} mm from {DescribeObstacle(obstacle)}."));
                 }
             }
         }
@@ -742,7 +742,7 @@ public sealed class RoutingService
                     obstacle.NetName,
                     gap,
                     clearanceMillimeters,
-                    $"Proposed via is {FormatDistance(gap)} mm from {obstacle.Kind} {obstacle.Id} on net {obstacle.NetName}."));
+                    $"Proposed via is {FormatDistance(gap)} mm from {DescribeObstacle(obstacle)}."));
             }
         }
 
@@ -758,7 +758,7 @@ public sealed class RoutingService
             foreach (var pad in footprint.Pads.Where(pad => PadTouchesLayer(pad, layer)))
             {
                 var padNet = ResolveItemNet(board, pad.NetCode, pad.NetName);
-                if (padNet is null || (targetNet is not null && NetReferenceMatches(pad.NetCode, pad.NetName, targetNet)))
+                if (targetNet is not null && NetReferenceMatches(pad.NetCode, pad.NetName, targetNet))
                 {
                     continue;
                 }
@@ -775,8 +775,8 @@ public sealed class RoutingService
                 obstacles.Add(new CopperObstacle(
                     "pad",
                     $"{footprint.Reference}.{pad.Name}",
-                    padNet.Code,
-                    padNet.Name,
+                    padNet?.Code,
+                    padNet?.Name,
                     new RoutingPoint(absolute.X.Value, absolute.Y.Value),
                     null,
                     isRectangular ? 0 : Math.Max(sizeX, sizeY) / 2,
@@ -840,6 +840,11 @@ public sealed class RoutingService
 
         return obstacles;
     }
+
+    private static string DescribeObstacle(CopperObstacle obstacle)
+        => string.IsNullOrWhiteSpace(obstacle.NetName)
+            ? $"{obstacle.Kind} {obstacle.Id} without an assigned net"
+            : $"{obstacle.Kind} {obstacle.Id} on net {obstacle.NetName}";
 
     private static double SegmentToObstacleDistance(RoutingPoint start, RoutingPoint end, CopperObstacle obstacle)
     {

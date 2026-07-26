@@ -97,6 +97,41 @@ public sealed class RoutingServiceTests
     }
 
     [Fact]
+    public void ValidateTrackClearance_Rejects_Unnetted_Npth_Mounting_Hole()
+    {
+        using var fixture = CopyRoutingFixture();
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var mountingHole = """
+          (footprint "MountingHole:MountingHole_3.2mm_M3"
+            (layer "F.Cu")
+            (at 20 20)
+            (property "Reference" "H1" (at 0 -3 0) (layer "F.SilkS"))
+            (property "Value" "MountingHole" (at 0 3 0) (layer "F.Fab"))
+            (pad "" np_thru_hole circle
+              (at 0 0)
+              (size 3.2 3.2)
+              (drill 3.2)
+              (layers "*.Cu" "*.Mask")
+            )
+          )
+        """;
+        File.WriteAllText(
+            boardFile,
+            File.ReadAllText(boardFile).Replace(
+                "(embedded_fonts no)",
+                mountingHole + Environment.NewLine + "  (embedded_fonts no)",
+                StringComparison.Ordinal));
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var result = service.ValidateTrackClearance(fixture.Path, "A", "10,20;30,20", "F.Cu", 0.2);
+
+        Assert.False(result.Success);
+        Assert.Equal("ROUTING_CLEARANCE_VIOLATION", result.Error?.Code);
+        Assert.Contains("H1.", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without an assigned net", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ValidateTrackClearance_Allows_Route_Between_Rotated_Rectangular_Pads()
     {
         using var fixture = CopyRoutingFixture();
