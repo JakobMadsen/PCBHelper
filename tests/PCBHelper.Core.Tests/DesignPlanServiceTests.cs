@@ -70,7 +70,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(25, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(28, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
@@ -98,6 +98,9 @@ public sealed class DesignPlanServiceTests
         Assert.Equal(AgentGuidanceService.GuideVersion, guide.GuideVersion);
         Assert.Equal(guide.Uri, capabilities.AgentGuideUri);
         Assert.Equal(DesignPlanOperationCatalog.All.Count, capabilities.Operations.Count);
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Amplifier_Operational:OPA1612AxD");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Regulator_Linear:LM1117-5.0");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_01x03");
         Assert.All(AgentPolicyRules.All, rule => Assert.Contains(rule.Id, guide.Markdown, StringComparison.Ordinal));
     }
 
@@ -114,6 +117,26 @@ public sealed class DesignPlanServiceTests
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Data!.ChangedFiles);
         Assert.Equal(before, File.ReadAllText(board));
+    }
+
+    [Fact]
+    public void Preview_Does_Not_Confuse_Remains_With_Mains()
+    {
+        using var fixture = CopyTutorialFixture();
+        var plan = """
+        {
+          "version": 1,
+          "goal": "Signal remains within limits",
+          "operations": [
+            { "id": "value", "type": "set-component-value", "reference": "R1", "value": "300R" }
+          ]
+        }
+        """;
+
+        var preview = PCBHelperRuntime.ForCli().Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.NotEqual(PlanRisk.Blocked, preview.Data!.Risk);
     }
 
     [Fact]

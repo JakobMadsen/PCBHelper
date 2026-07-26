@@ -434,7 +434,7 @@ public sealed record TestCaseSpec(
 }
 
 public sealed record TestMeasurementSpec(string Name, string Kind, string? Unit, string? Net = null, string? InputNet = null,
-    string? OutputNet = null, string? Source = null, double? FrequencyHz = null, double? TargetValue = null,
+    string? OutputNet = null, string? ComparisonNet = null, string? Source = null, double? FrequencyHz = null, double? TargetValue = null,
     [property: JsonPropertyName("measurementTolerance")] double? MeasurementTolerance = null);
 
 public sealed record SimulationCircuitSpec(string Source, string? Path);
@@ -442,7 +442,7 @@ public sealed record SimulationAnalysisSpec(double? StartHz = null, double? Stop
     double? StepSeconds = null, double? StopSeconds = null);
 public sealed record SimulationStimulusSpec(string Name, string Kind, string PositiveNet, string NegativeNet,
     double? AmplitudeV = null, double? DcV = null, double? InitialV = null, double? PulsedV = null,
-    double? PulseWidthSeconds = null, double? PeriodSeconds = null);
+    double? PulseWidthSeconds = null, double? PeriodSeconds = null, double? OffsetV = null, double? FrequencyHz = null);
 
 public sealed record TestAssertionSpec(
     string Measurement,

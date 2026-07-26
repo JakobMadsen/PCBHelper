@@ -21,6 +21,12 @@ public sealed class AgentGuidanceService
         1,
         DesignPlanSchemaUri,
         DesignPlanOperationCatalog.All,
+        SchematicSymbolCatalog.All.Select(static entry => new ApprovedSchematicSymbol(
+            entry.SymbolId,
+            entry.DefaultValue,
+            entry.DefaultFootprint,
+            entry.Units,
+            entry.Source)).ToArray(),
         new[] { "Approved blank two-layer project bootstrap", "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "ERC, DRC, simulation, manufacturing review, policy-driven release audit, and PCBWay package generation" },
         new[] { "No arbitrary KiCad text, shell commands, or file operations in Design Plans", "No general autorouting, safety-critical, mains, RF, high-current, or high-speed design", "No order placement, payment, or component substitution approval" });
 
@@ -60,7 +66,9 @@ public sealed record AgentPolicyRule(string Id, string Instruction);
 public sealed record AgentGuideResult(int GuideVersion, string Uri, string Markdown, IReadOnlyList<AgentPolicyRule> PolicyRules);
 public sealed record ServerCapabilitiesResult(int CapabilityVersion, string ServerVersion, string Profile, int AgentGuideVersion, string AgentGuideUri,
     int DesignPlanVersion, string DesignPlanSchemaUri, IReadOnlyList<DesignPlanOperationDefinition> Operations,
+    IReadOnlyList<ApprovedSchematicSymbol> ApprovedSymbols,
     IReadOnlyList<string> Capabilities, IReadOnlyList<string> Limitations);
+public sealed record ApprovedSchematicSymbol(string SymbolId, string DefaultValue, string DefaultFootprint, IReadOnlyList<int> Units, string Source);
 
 public enum DesignPlanPropertyKind { String, Number, Integer, Object }
 public sealed record DesignPlanPropertyDefinition(string Name, DesignPlanPropertyKind Kind, bool Required, object? DefaultValue = null);
@@ -77,9 +85,12 @@ public static class DesignPlanOperationCatalog
     {
         Op("set-component-value", "Set a component value in available design files.", S("reference"), S("value"), S("scope", false, "available")),
         Op("set-design-intent", "Set the structured, project-scoped design intent used by deterministic verification.", O("intent")),
+        Op("set-simulation-fixture", "Compile a structured, project-contained ngspice fixture and its declarative assertions.", O("fixture")),
         Op("move-component", "Move one board footprint.", S("reference"), N("xMm"), N("yMm")),
         Op("set-component-spacing", "Set axis-limited spacing between footprints.", S("fixedReference"), S("movingReference"), N("distanceMm"), S("axis", false, "x")),
         Op("create-schematic-symbol", "Place an approved schematic symbol.", S("symbol"), S("reference"), N("xMm"), N("yMm"), S("value", false), S("footprint", false), I("unit", 1)),
+        Op("delete-schematic-symbol", "Delete every schematic unit with one reference while leaving surrounding wires unchanged.", S("reference")),
+        Op("replace-schematic-symbol", "Replace an approved schematic symbol while preserving placement, fields, instances, and compatible pin wiring.", S("reference"), S("symbol")),
         Op("set-symbol-field", "Set one schematic symbol field.", S("reference"), S("field"), S("value")),
         Op("connect-schematic-pins", "Connect two approved symbol pins.", S("from"), S("to"), S("net", false)),
         Op("add-net-label", "Add a schematic net label.", S("net"), N("xMm"), N("yMm")),

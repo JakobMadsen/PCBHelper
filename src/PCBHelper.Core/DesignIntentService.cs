@@ -166,7 +166,7 @@ public sealed class DesignIntentService
                 var symbol = group.FirstOrDefault(item => item.Unit == definition.Unit);
                 if (symbol?.XMillimeters is null || symbol.YMillimeters is null) continue;
                 var x = Snap(symbol.XMillimeters.Value + definition.OffsetX);
-                var y = Snap(symbol.YMillimeters.Value + definition.OffsetY);
+                var y = Snap(symbol.YMillimeters.Value - definition.OffsetY);
                 pins.Add(new(definition.Name, connectivity.NetNamesAtPoint(x, y).FirstOrDefault(), x, y));
             }
             components.Add(new(first.Reference!, first.LibId!, Value(first), pins));

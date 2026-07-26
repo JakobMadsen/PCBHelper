@@ -197,19 +197,39 @@ public sealed class SimulationService
         if (t.Analysis is null) errors.Add(D("TEST_SPEC_INVALID", "Simulation analysis is required."));
         else if (t.Type == "simulation.ac" && (!(t.Analysis.StartHz > 0) || !(t.Analysis.StopHz > t.Analysis.StartHz) || t.Analysis.PointsPerDecade is < 1)) errors.Add(D("TEST_SPEC_INVALID", "AC analysis requires valid startHz, stopHz, and pointsPerDecade."));
         else if (t.Type == "simulation.tran" && (!(t.Analysis.StepSeconds > 0) || !(t.Analysis.StopSeconds > t.Analysis.StepSeconds))) errors.Add(D("TEST_SPEC_INVALID", "Transient analysis requires valid stepSeconds and stopSeconds."));
-        foreach (var s in t.Stimuli) if (!new[] { "ac-voltage", "dc-voltage", "pulse-voltage" }.Contains(s.Kind) || !SafeToken(s.PositiveNet) || !SafeToken(s.NegativeNet) || !SafeToken(s.Name)) errors.Add(D("TEST_SPEC_INVALID", $"Invalid stimulus: {s.Name}."));
+        foreach (var s in t.Stimuli)
+        {
+            if (!new[] { "ac-voltage", "dc-voltage", "pulse-voltage", "sine-voltage" }.Contains(s.Kind)
+                || !SafeToken(s.PositiveNet) || !SafeToken(s.NegativeNet) || !SafeToken(s.Name))
+                errors.Add(D("TEST_SPEC_INVALID", $"Invalid stimulus: {s.Name}."));
+            if (s.Kind == "sine-voltage" && (!(s.FrequencyHz > 0) || s.AmplitudeV is null || !double.IsFinite(s.AmplitudeV.Value)))
+                errors.Add(D("TEST_SPEC_INVALID", $"Sine stimulus {s.Name} requires finite amplitudeV and positive frequencyHz."));
+        }
         foreach (var m in t.Measurements)
         {
             if (!MeasurementUnits.TryGetValue(m.Kind, out var unit)) errors.Add(D("TEST_MEASUREMENT_UNSUPPORTED", $"Unsupported measurement: {m.Kind}."));
             else if (!string.IsNullOrWhiteSpace(m.Unit) && !m.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase)) errors.Add(D("TEST_SPEC_INVALID", $"{m.Kind} requires unit {unit}."));
-            if (new[] { m.Net, m.InputNet, m.OutputNet, m.Source }.Where(static x => x is not null).Any(x => !SafeToken(x!))) errors.Add(D("TEST_SPEC_INVALID", $"Unsafe net or source in measurement {m.Name}."));
+            if (new[] { m.Net, m.InputNet, m.OutputNet, m.ComparisonNet, m.Source }.Where(static x => x is not null).Any(x => !SafeToken(x!))) errors.Add(D("TEST_SPEC_INVALID", $"Unsafe net or source in measurement {m.Name}."));
         }
         return errors;
         TestSpecDiagnostic D(string code, string message) => new(item.File, code, message, t.Id);
     }
 
     private static readonly Dictionary<string, string> MeasurementUnits = new(StringComparer.OrdinalIgnoreCase)
-    { ["nodeVoltage"]="V", ["branchCurrent"]="A", ["gainDbAt"]="dB", ["peakFrequency"]="Hz", ["cutoffFrequency"]="Hz", ["minVoltage"]="V", ["maxVoltage"]="V", ["peakToPeak"]="V", ["settlingTime"]="s" };
+    {
+        ["nodeVoltage"]="V",
+        ["branchCurrent"]="A",
+        ["gainDbAt"]="dB",
+        ["gainDifferenceDbAt"]="dB",
+        ["peakFrequency"]="Hz",
+        ["cutoffFrequency"]="Hz",
+        ["lowerCutoffFrequency"]="Hz",
+        ["upperCutoffFrequency"]="Hz",
+        ["minVoltage"]="V",
+        ["maxVoltage"]="V",
+        ["peakToPeak"]="V",
+        ["settlingTime"]="s"
+    };
     private static bool SafeToken(string value) => value == "0" || Regex.IsMatch(value, "^[A-Za-z_][A-Za-z0-9_.:+-]*$");
     private static string SafeName(string value) => Regex.Replace(value, "[^A-Za-z0-9_-]", "_");
     private static string ResolveContained(string root, string relative)
@@ -220,17 +240,26 @@ public sealed class SimulationService
         var list = new List<string>();
         foreach (var m in test.Measurements)
         {
-            string vector = m.Kind switch
+            foreach (var vector in VectorsForMeasurement(m))
             {
-                "branchCurrent" => $"i({m.Source})",
-                "gainDbAt" => $"db(v({m.OutputNet})/v({m.InputNet}))",
-                "peakFrequency" or "cutoffFrequency" => $"db(v({m.Net}))",
-                _ => $"v({m.Net})"
-            };
-            if (!list.Contains(vector, StringComparer.OrdinalIgnoreCase)) list.Add(vector);
+                if (!list.Contains(vector, StringComparer.OrdinalIgnoreCase)) list.Add(vector);
+            }
         }
         return list;
     }
+
+    private static IReadOnlyList<string> VectorsForMeasurement(TestMeasurementSpec measurement) => measurement.Kind switch
+    {
+        "branchCurrent" => new[] { $"i({measurement.Source})" },
+        "gainDbAt" => new[] { $"db(v({measurement.OutputNet})/v({measurement.InputNet}))" },
+        "gainDifferenceDbAt" => new[]
+        {
+            $"db(v({measurement.OutputNet})/v({measurement.InputNet}))",
+            $"db(v({measurement.ComparisonNet})/v({measurement.InputNet}))"
+        },
+        "peakFrequency" or "cutoffFrequency" or "lowerCutoffFrequency" or "upperCutoffFrequency" => new[] { $"db(v({measurement.Net}))" },
+        _ => new[] { $"v({measurement.Net})" }
+    };
 
     private static string BuildControl(TestCaseSpec t, IReadOnlyList<string> vectors)
     {
@@ -238,7 +267,13 @@ public sealed class SimulationService
         foreach (var s in t.Stimuli)
         {
             sb.Append('V').Append(s.Name).Append(' ').Append(s.PositiveNet).Append(' ').Append(s.NegativeNet).Append(' ');
-            sb.Append(s.Kind switch { "ac-voltage" => $"AC {F(s.AmplitudeV ?? 1)}", "dc-voltage" => $"DC {F(s.DcV ?? 0)}", _ => $"PULSE({F(s.InitialV ?? 0)} {F(s.PulsedV ?? 1)} 0 1n 1n {F(s.PulseWidthSeconds ?? 0.001)} {F(s.PeriodSeconds ?? 0.002)})" }).AppendLine();
+            sb.Append(s.Kind switch
+            {
+                "ac-voltage" => $"AC {F(s.AmplitudeV ?? 1)}",
+                "dc-voltage" => $"DC {F(s.DcV ?? 0)}",
+                "sine-voltage" => $"SIN({F(s.OffsetV ?? 0)} {F(s.AmplitudeV ?? 1)} {F(s.FrequencyHz ?? 1000)})",
+                _ => $"PULSE({F(s.InitialV ?? 0)} {F(s.PulsedV ?? 1)} 0 1n 1n {F(s.PulseWidthSeconds ?? 0.001)} {F(s.PeriodSeconds ?? 0.002)})"
+            }).AppendLine();
         }
         sb.AppendLine(".control").AppendLine("set wr_vecnames").AppendLine("set wr_singlescale");
         if (t.Type == "simulation.ac") sb.AppendLine($"ac dec {t.Analysis!.PointsPerDecade} {F(t.Analysis.StartHz!.Value)} {F(t.Analysis.StopHz!.Value)}");
@@ -266,16 +301,22 @@ public sealed class SimulationService
         var vectors = BuildVectors(test); var output = new List<TestMeasurementResult>();
         foreach (var m in test.Measurements)
         {
-            var expression = m.Kind == "branchCurrent" ? $"i({m.Source})" : m.Kind == "gainDbAt" ? $"db(v({m.OutputNet})/v({m.InputNet}))"
-                : m.Kind is "peakFrequency" or "cutoffFrequency" ? $"db(v({m.Net}))" : $"v({m.Net})";
+            var expressions = VectorsForMeasurement(m);
+            var expression = expressions[0];
             var y = series[vectors.FindIndex(v => v.Equals(expression, StringComparison.OrdinalIgnoreCase))]; double value;
             switch (m.Kind)
             {
                 case "nodeVoltage": value = y[^1]; break;
                 case "branchCurrent": value = y[^1]; break;
                 case "gainDbAt": value = Interpolate(x, y, m.FrequencyHz ?? 0); break;
+                case "gainDifferenceDbAt":
+                    var comparison = series[vectors.FindIndex(v => v.Equals(expressions[1], StringComparison.OrdinalIgnoreCase))];
+                    value = Math.Abs(Interpolate(x, y, m.FrequencyHz ?? 0) - Interpolate(x, comparison, m.FrequencyHz ?? 0));
+                    break;
                 case "peakFrequency": value = x[Array.IndexOf(y, y.Max())]; break;
                 case "cutoffFrequency": var target = y.Max() - 3; value = x[Enumerable.Range(0, y.Length).MinBy(i => Math.Abs(y[i] - target))]; break;
+                case "lowerCutoffFrequency": value = FindCutoff(x, y, lower: true); break;
+                case "upperCutoffFrequency": value = FindCutoff(x, y, lower: false); break;
                 case "minVoltage": value = y.Min(); break;
                 case "maxVoltage": value = y.Max(); break;
                 case "peakToPeak": value = y.Max() - y.Min(); break;
@@ -290,6 +331,31 @@ public sealed class SimulationService
     }
     private static double Interpolate(double[] x, double[] y, double at)
     { if (at < x[0] || at > x[^1]) throw new InvalidOperationException("Measurement point is outside the analysis range."); var hi = Array.FindIndex(x, value => value >= at); if (hi <= 0) return y[0]; var ratio = (at-x[hi-1])/(x[hi]-x[hi-1]); return y[hi-1]+ratio*(y[hi]-y[hi-1]); }
+
+    private static double FindCutoff(double[] x, double[] y, bool lower)
+    {
+        var peak = Array.IndexOf(y, y.Max());
+        var target = y[peak] - 3;
+        if (lower)
+        {
+            for (var i = peak; i > 0; i--)
+                if ((y[i] - target) * (y[i - 1] - target) <= 0)
+                    return InterpolateCrossing(x[i - 1], y[i - 1], x[i], y[i], target);
+        }
+        else
+        {
+            for (var i = peak; i < y.Length - 1; i++)
+                if ((y[i] - target) * (y[i + 1] - target) <= 0)
+                    return InterpolateCrossing(x[i], y[i], x[i + 1], y[i + 1], target);
+        }
+        throw new InvalidOperationException(lower ? "Lower -3 dB crossing was not found." : "Upper -3 dB crossing was not found.");
+    }
+
+    private static double InterpolateCrossing(double x1, double y1, double x2, double y2, double target)
+    {
+        if (Math.Abs(y2 - y1) < 1e-15) return x1;
+        return x1 + ((target - y1) / (y2 - y1)) * (x2 - x1);
+    }
 }
 
 public sealed record SimulationCapabilities(bool Available, string Backend, string? ExecutablePath, string Source, string? Message);

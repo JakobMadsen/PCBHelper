@@ -6,6 +6,122 @@ public sealed class SchematicAuthoringServiceTests
 {
     private const double SchematicGridMillimeters = 1.27;
 
+    [Theory]
+    [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 1)]
+    [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 2)]
+    [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 3)]
+    [InlineData("Regulator_Linear:LM1117-5.0", "U2", 1)]
+    [InlineData("Connector_Generic:Conn_01x03", "J3", 1)]
+    public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        var created = service.CreateSymbol(fixture.Path, symbol, reference, 80, 50, null, null, unit, dryRun: false);
+
+        Assert.True(created.Success, created.Error?.Message);
+        Assert.Contains(service.ListSymbols(fixture.Path).Data!.Symbols,
+            item => item.Reference == reference && item.SymbolId == symbol && item.Unit == unit);
+    }
+
+    [Fact]
+    public void ConnectPins_Resolves_Lm358_Power_Pins_To_Their_Displayed_Positions()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Amplifier_Operational:LM358", "U1", 80, 50, null, null, unit: 1, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Amplifier_Operational:LM358", "U1", 80, 65, null, null, unit: 2, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Amplifier_Operational:LM358", "U1", 80, 80, null, null, unit: 3, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:C", "C1", 110, 65, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:C", "C2", 110, 95, null, null, dryRun: false).Success);
+
+        Assert.True(service.ConnectPins(fixture.Path, "U1.8", "C1.1", "+5V", dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "U1.4", "C2.2", "GND", dryRun: false).Success);
+
+        var result = service.ListSymbols(fixture.Path).Data!;
+        var powerUnit = Assert.Single(result.Symbols, symbol => symbol.Reference == "U1" && symbol.Unit == 3);
+        var pinX = powerUnit.XMillimeters!.Value - 2.54;
+        var pin8Y = powerUnit.YMillimeters!.Value - 7.62;
+        var pin4Y = powerUnit.YMillimeters.Value + 7.62;
+        Assert.Contains(result.Wires, wire => Touches(wire, pinX, pin8Y));
+        Assert.Contains(result.Wires, wire => Touches(wire, pinX, pin4Y));
+
+        static bool Touches(SchematicWireSummary wire, double x, double y) =>
+            (Math.Abs(wire.X1Millimeters - x) < 0.001 && Math.Abs(wire.Y1Millimeters - y) < 0.001) ||
+            (Math.Abs(wire.X2Millimeters - x) < 0.001 && Math.Abs(wire.Y2Millimeters - y) < 0.001);
+    }
+
+    [Fact]
+    public void CreateSymbol_Embeds_SelfContained_Graphics_For_Inherited_Lm358()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        var created = service.CreateSymbol(
+            fixture.Path,
+            "Amplifier_Operational:LM358",
+            "U1",
+            80,
+            60,
+            "LM358",
+            null,
+            dryRun: false);
+
+        Assert.True(created.Success, created.Error?.Message);
+        var schematicText = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_sch"));
+        var definitionStart = schematicText.IndexOf("(symbol \"Amplifier_Operational:LM358\"", StringComparison.Ordinal);
+        Assert.True(definitionStart >= 0);
+        var definitionEnd = FindMatchingParenthesis(schematicText, definitionStart);
+        var definition = schematicText.Substring(definitionStart, definitionEnd - definitionStart + 1);
+        Assert.DoesNotContain("(extends ", definition, StringComparison.Ordinal);
+        Assert.DoesNotContain("(symbol \"LM2904_", definition, StringComparison.Ordinal);
+        Assert.Contains("(symbol \"LM358_1_1\"", definition, StringComparison.Ordinal);
+        Assert.Contains("(polyline", definition, StringComparison.Ordinal);
+        Assert.Contains("(pin input", definition, StringComparison.Ordinal);
+        Assert.Contains("(pin power_in", definition, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReplaceSymbol_Preserves_Reference_Value_Position_And_Wires_For_Compatible_Pins()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:C", "C1", 70, 50, "10uF", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 70, 70, "10k", null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "C1.2", "R1.1", "VMID", dryRun: false).Success);
+        var before = service.ListSymbols(fixture.Path).Data!;
+
+        var replaced = service.ReplaceSymbol(fixture.Path, "C1", "Device:C_Polarized", dryRun: false);
+        var after = service.ListSymbols(fixture.Path).Data!;
+
+        Assert.True(replaced.Success, replaced.Error?.Message);
+        var capacitor = Assert.Single(after.Symbols, item => item.Reference == "C1");
+        Assert.Equal("Device:C_Polarized", capacitor.SymbolId);
+        Assert.Equal("10uF", capacitor.Value);
+        Assert.Equal(before.WireCount, after.WireCount);
+        var schematicText = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_sch"));
+        Assert.Contains("(instances", schematicText, StringComparison.Ordinal);
+        Assert.Contains("(reference \"C1\")", schematicText, StringComparison.Ordinal);
+        Assert.Contains("(pin \"1\"", schematicText, StringComparison.Ordinal);
+        Assert.Contains("(pin \"2\"", schematicText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DeleteSymbol_Removes_Only_The_Selected_Symbol()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:C", "C1", 70, 50, "10uF", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 70, 70, "10k", null, dryRun: false).Success);
+
+        var deleted = service.DeleteSymbol(fixture.Path, "C1", dryRun: false);
+        var symbols = service.ListSymbols(fixture.Path).Data!.Symbols;
+
+        Assert.True(deleted.Success, deleted.Error?.Message);
+        Assert.DoesNotContain(symbols, item => item.Reference == "C1");
+        Assert.Contains(symbols, item => item.Reference == "R1");
+    }
+
     [Fact]
     public void Parser_Reads_Symbols_Wires_And_Labels()
     {
@@ -146,6 +262,24 @@ public sealed class SchematicAuthoringServiceTests
                 Assert.True(IsOnSchematicGrid(offsetY), $"{symbolId} pin {name} OffsetY is off grid: {offsetY}");
             }
         }
+    }
+
+    [Theory]
+    [InlineData("Connector_Generic:Conn_01x02", "1", 0)]
+    [InlineData("Connector_Generic:Conn_01x02", "2", -2.54)]
+    [InlineData("Connector_Generic:Conn_01x03", "1", 2.54)]
+    [InlineData("Connector_Generic:Conn_01x03", "3", -2.54)]
+    [InlineData("Connector_Generic:Conn_01x05", "1", 5.08)]
+    [InlineData("Connector_Generic:Conn_01x05", "5", -5.08)]
+    public void Catalog_Connector_Pin_Offsets_Match_KiCad_Standard_Library(string symbolId, string pinName, double expectedY)
+    {
+        var catalogType = typeof(SchematicAuthoringService).Assembly.GetType("PCBHelper.Core.SchematicSymbolCatalog")!;
+        var find = catalogType.GetMethod("Find", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
+        var entry = find.Invoke(null, new object[] { symbolId })!;
+        var pins = (System.Collections.IEnumerable)entry.GetType().GetProperty("Pins")!.GetValue(entry)!;
+        var pin = pins.Cast<object>().Single(item => (string)item.GetType().GetProperty("Name")!.GetValue(item)! == pinName);
+
+        Assert.Equal(expectedY, (double)pin.GetType().GetProperty("OffsetY")!.GetValue(pin)!, 3);
     }
 
     [Fact]
