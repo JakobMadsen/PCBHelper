@@ -19,7 +19,7 @@ public sealed class McpContractTests
         Assert.Equal(new HashSet<string>(StringComparer.Ordinal)
         {
             "get_capabilities", "get_agent_guide", "create_project_from_template",
-            "get_project_context", "validate_design_plan", "preview_design_plan", "apply_design_plan",
+            "get_project_context", "get_schematic_context", "validate_design_plan", "preview_design_plan", "apply_design_plan",
             "preview_autoroute_board", "apply_autoroute_board",
             "preview_project_footprint_library", "apply_project_footprint_library",
             "get_transaction", "restore_transaction", "run_engineering_gate",

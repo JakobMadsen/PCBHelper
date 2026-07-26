@@ -31,6 +31,10 @@ public sealed class WorkflowMcpTools
     public Task<ToolResponse<ProjectContextResult>> GetProjectContext(string projectPath, CancellationToken cancellationToken) =>
         _runtime.Workflows.GetProjectContextAsync(projectPath, cancellationToken);
 
+    [McpServerTool(Name = "get_schematic_context"), Description("Read schematic symbols, fields, wires, labels, coordinates, and UUIDs for precise Design Plan authoring.")]
+    public ToolResponse<SchematicSymbolListResult> GetSchematicContext(string projectPath) =>
+        new SchematicAuthoringService(_runtime.Projects).ListSymbols(projectPath);
+
     [McpServerTool(Name = "validate_design_plan"), Description("Validate a declarative PCBHelper Design Plan and return its canonical SHA-256 hash.")]
     public ToolResponse<DesignPlanValidationResult> ValidateDesignPlan(string projectPath, JsonElement plan) =>
         _runtime.Plans.Validate(projectPath, plan.GetRawText());
