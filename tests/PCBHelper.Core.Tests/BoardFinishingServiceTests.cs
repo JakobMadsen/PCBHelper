@@ -36,6 +36,22 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
+    public void MoveReferenceText_Preserves_Regex_Capture_When_X_Starts_With_Digits()
+    {
+        using var fixture=CopyTutorial();var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var moved=service.MoveReferenceText(fixture.Path,"R1",100,140.5,false);
+
+        Assert.True(moved.Success,moved.Error?.Message);
+        var text=File.ReadAllText(Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single());
+        Assert.Contains("(at 100 140.5",text,StringComparison.Ordinal);
+        Assert.DoesNotContain("$1100",text,StringComparison.Ordinal);
+        var summary=new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path);
+        Assert.True(summary.Success,summary.Error?.Message);
+        Assert.Contains(summary.Data!.Footprints,f=>f.Reference=="R1");
+    }
+
+    [Fact]
     public void ReleaseRequirements_Block_Missing_Required_Testpoints()
     {
         using var fixture=CopyTutorial();File.WriteAllText(Path.Combine(fixture.Path,"requirements.md"),"Testpoints required.");

@@ -121,8 +121,14 @@ public sealed class EngineeringGateService
             return;
         }
 
-        var findings = summary.Data!.Findings.Count(finding => finding.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase));
-        var status = raw.ExitCode == 0 && findings == 0
+        var matchingFindings = summary.Data!.Findings
+            .Where(finding => finding.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var findings = matchingFindings.Length;
+        var blockingFindings = matchingFindings.Count(static finding =>
+            !string.Equals(finding.Severity, "warning", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(finding.Severity, "info", StringComparison.OrdinalIgnoreCase));
+        var status = raw.ExitCode == 0 && blockingFindings == 0
             ? EngineeringGateCheckStatus.Passed
             : File.Exists(raw.ReportPath)
                 ? EngineeringGateCheckStatus.FindingsPresent

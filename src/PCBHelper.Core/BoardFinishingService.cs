@@ -43,7 +43,10 @@ public sealed class BoardFinishingService
     }
 
     public ToolResponse<BoardFinishingMutationResult> MoveReferenceText(string projectPath, string reference, double x, double y, bool dryRun) => EditReference(projectPath, reference, dryRun, block =>
-        ReplaceFirst(block, """(\(property\s+"Reference"\s+"[^"]+"[\s\S]*?\(at\s+)-?[\d.]+\s+-?[\d.]+""", $"$1{F(x)} {F(y)}"), "move-reference-text");
+        new Regex("""(\(property\s+"Reference"\s+"[^"]+"[\s\S]*?\(at\s+)-?[\d.]+\s+-?[\d.]+""").Replace(
+            block,
+            match => $"{match.Groups[1].Value}{F(x)} {F(y)}",
+            1), "move-reference-text");
 
     public ToolResponse<BoardFinishingMutationResult> HideReferenceText(string projectPath, string reference, bool dryRun) => EditReference(projectPath, reference, dryRun, block =>
         SetReferenceHidden(block), "hide-reference-text");

@@ -89,6 +89,64 @@ public sealed class ComponentInspectionServiceTests
     }
 
     [Fact]
+    public void BoardInspection_Uses_KiCad_Clockwise_Coordinates_For_Rotated_Pads()
+    {
+        using var fixture = new TempDirectory();
+        File.WriteAllText(Path.Combine(fixture.Path, "rotated.kicad_pro"), "{}");
+        File.WriteAllText(
+            Path.Combine(fixture.Path, "rotated.kicad_pcb"),
+            """
+            (kicad_pcb
+              (version 20250114)
+              (generator "PCBHelper.Tests")
+              (net 1 "SIGNAL")
+              (footprint "Test:Header"
+                (layer "F.Cu")
+                (uuid "11111111-1111-1111-1111-111111111111")
+                (at 112 137 -90)
+                (property "Reference" "J1")
+                (pad "1" thru_hole circle
+                  (at 2.54 20.32)
+                  (size 1.7 1.7)
+                  (drill 1)
+                  (layers "*.Cu" "*.Mask")
+                  (net 1 "SIGNAL")))
+              (footprint "Test:Point"
+                (layer "F.Cu")
+                (uuid "22222222-2222-2222-2222-222222222222")
+                (at 80 139.54)
+                (property "Reference" "TP1")
+                (pad "1" thru_hole circle
+                  (at 0 0)
+                  (size 1.7 1.7)
+                  (drill 1)
+                  (layers "*.Cu" "*.Mask")
+                  (net 1 "SIGNAL")))
+              (segment
+                (start 80 139.54)
+                (end 91.68 139.54)
+                (width 0.25)
+                (layer "F.Cu")
+                (net 1)
+                (uuid "33333333-3333-3333-3333-333333333333"))
+            )
+            """);
+        var discovery = new ProjectDiscoveryService();
+        var inspection = new BoardInspectionService(discovery);
+        var routing = new RoutingService(discovery);
+
+        var pads = inspection.ListFootprintPads(fixture.Path, "J1");
+        var unrouted = routing.ListUnroutedConnections(fixture.Path, "SIGNAL");
+
+        Assert.True(pads.Success);
+        var pad = Assert.Single(pads.Data!.Pads);
+        Assert.Equal(91.68, pad.AbsoluteXMillimeters!.Value, precision: 3);
+        Assert.Equal(139.54, pad.AbsoluteYMillimeters!.Value, precision: 3);
+        Assert.True(unrouted.Success);
+        Assert.Empty(unrouted.Data!.Nets);
+    }
+
+    [Fact]
     public void BoardInspection_Reads_KiCad10_Named_Net_References()
     {
         using var fixture = new TempDirectory();
