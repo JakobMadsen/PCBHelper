@@ -360,11 +360,13 @@ public sealed class DesignPlanService
             "delete-schematic-symbol" => Box(context.Schematic.DeleteSymbol(context.ProjectPath, RequiredString(p, "reference"), false)),
             "replace-schematic-symbol" => Box(context.Schematic.ReplaceSymbol(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "symbol"), false)),
             "set-symbol-field" => Box(context.Schematic.SetSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), RequiredString(p, "value"), false)),
+            "hide-symbol-field" => Box(context.Schematic.HideSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), false)),
             "connect-schematic-pins" => Box(context.Schematic.ConnectPins(context.ProjectPath, RequiredString(p, "from"), RequiredString(p, "to"), OptionalString(p, "net"), false)),
             "delete-schematic-wire-by-uuid" => Box(context.Schematic.DeleteSchematicWireByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
             "delete-schematic-wire" => Box(context.Schematic.DeleteSchematicWire(context.ProjectPath, RequiredDouble(p, "x1Mm"), RequiredDouble(p, "y1Mm"), RequiredDouble(p, "x2Mm"), RequiredDouble(p, "y2Mm"), RequiredDouble(p, "toleranceMm"), false)),
             "delete-net-label-by-uuid" => Box(context.Schematic.DeleteNetLabelByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
             "add-net-label" => Box(context.Schematic.AddNetLabel(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
+            "add-schematic-block-box" => Box(context.Schematic.AddSchematicBlockBox(context.ProjectPath, RequiredString(p, "title"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "widthMm"), RequiredDouble(p, "heightMm"), false)),
             "replace-net-label" => Box(context.Schematic.ReplaceNetLabel(context.ProjectPath, RequiredString(p, "currentNet"), RequiredString(p, "newNet"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "toleranceMm"), false)),
             "update-pcb-from-schematic" => Box(context.Schematic.UpdatePcbFromSchematic(context.ProjectPath, false)),
             "regenerate-board-footprint" => Box(context.Schematic.RegenerateBoardFootprint(context.ProjectPath, RequiredString(p, "reference"), false)),
@@ -374,6 +376,7 @@ public sealed class DesignPlanService
             "add-via" => Box(context.Routing.AddVia(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "sizeMm"), RequiredDouble(p, "drillMm"), String(p, "layers", "F.Cu,B.Cu"), false)),
             "delete-via" => Box(context.Routing.DeleteVia(context.ProjectPath, RequiredString(p, "via"), false)),
             "add-copper-zone" => Box(context.Finishing.AddCopperZone(context.ProjectPath, RequiredString(p, "net"), RequiredString(p, "layer"), RequiredString(p, "points"), RequiredDouble(p, "clearanceMm"), RequiredDouble(p, "minThicknessMm"), false)),
+            "refill-zones" => Box(context.Finishing.RefillZones(context.ProjectPath)),
             "update-copper-zone" => Box(context.Finishing.UpdateCopperZone(context.ProjectPath, RequiredString(p, "zone"), OptionalString(p, "net"), OptionalString(p, "layer"), OptionalString(p, "points"), false)),
             "move-reference-text" => Box(context.Finishing.MoveReferenceText(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
             "hide-reference-text" => Box(context.Finishing.HideReferenceText(context.ProjectPath, RequiredString(p, "reference"), false)),
@@ -382,6 +385,8 @@ public sealed class DesignPlanService
             "set-board-pad-net" => Box(context.Finishing.SetBoardPadNet(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "pad"), RequiredString(p, "net"), false)),
             "add-mounting-hole" => Box(context.Finishing.AddMountingHole(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "drillMm"), RequiredDouble(p, "diameterMm"), false)),
             "add-mechanical-keepout" => Box(context.Finishing.AddMechanicalKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
+            "add-module-keepout" => Box(context.Finishing.AddModuleKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
+            "set-board-outline-rectangle" => Box(context.Finishing.SetBoardOutlineRectangle(context.ProjectPath, RequiredDouble(p, "leftMm"), RequiredDouble(p, "topMm"), RequiredDouble(p, "rightMm"), RequiredDouble(p, "bottomMm"), false)),
             _ => ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED")
         };
     }

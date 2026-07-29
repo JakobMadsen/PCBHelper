@@ -14,6 +14,15 @@ internal static partial class KiCadBoardParser
         while (searchIndex < text.Length)
         {
             var footprintStart = text.IndexOf("(footprint", searchIndex, StringComparison.Ordinal);
+            while (footprintStart >= 0
+                   && footprintStart + 10 < text.Length
+                   && !char.IsWhiteSpace(text[footprintStart + 10])
+                   && text[footprintStart + 10] != ')')
+            {
+                searchIndex = footprintStart + 10;
+                footprintStart = text.IndexOf("(footprint", searchIndex, StringComparison.Ordinal);
+            }
+
             if (footprintStart < 0)
             {
                 break;
@@ -294,6 +303,15 @@ internal static partial class KiCadBoardParser
         while (searchIndex < text.Length)
         {
             var start = text.IndexOf("(via", searchIndex, StringComparison.Ordinal);
+            while (start >= 0
+                   && start + 4 < text.Length
+                   && !char.IsWhiteSpace(text[start + 4])
+                   && text[start + 4] != ')')
+            {
+                searchIndex = start + 4;
+                start = text.IndexOf("(via", searchIndex, StringComparison.Ordinal);
+            }
+
             if (start < 0)
             {
                 break;

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "example-function",
+  "version": "1.0.0",
+  "name": "Example function",
+  "description": "Replace this with a precise description of the circuit and operating limits.",
+  "category": "signal-conditioning",
+  "lifecycleStage": "draft",
+  "maturity": "reference",
+  "source": {
+    "kind": "manufacturerReference",
+    "title": "Primary datasheet or application note title",
+    "uri": "https://example.com/primary-reference",
+    "license": "Record the actual license or usage terms",
+    "attribution": "Record author/manufacturer and document identifier",
+    "redistributionAllowed": false,
+    "retrievedAtUtc": "2026-07-29T00:00:00Z"
+  },
+  "ports": [
+    {
+      "name": "VIN",
+      "kind": "powerInput",
+      "net": "VIN",
+      "description": "Input supply; replace with its permitted voltage/current range.",
+      "electricalDomain": "replace-with-range",
+      "required": true
+    },
+    {
+      "name": "GND",
+      "kind": "ground",
+      "net": "GND",
+      "description": "Circuit return.",
+      "electricalDomain": "0V",
+      "required": true
+    }
+  ],
+  "layout": {
+    "policy": "schematicOnly",
+    "rationale": "State why layout reuse is or is not required.",
+    "constraints": []
+  },
+  "evidence": [],
+  "tags": [
+    "replace-me"
+  ]
+}

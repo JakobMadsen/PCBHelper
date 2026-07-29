@@ -6,7 +6,7 @@ namespace PCBHelper.Core;
 public sealed class AgentGuidanceService
 {
     public const int GuideVersion = 1;
-    public const int CapabilityVersion = 3;
+    public const int CapabilityVersion = 5;
     public const string GuideUri = "pcbhelper://agent-guide/v1";
     public const string DesignPlanSchemaUri = "pcbhelper://design-plan/v1/schema";
 
@@ -27,7 +27,7 @@ public sealed class AgentGuidanceService
             entry.DefaultFootprint,
             entry.Units,
             entry.Source)).ToArray(),
-        new[] { "Approved blank two-layer project bootstrap", "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "ERC, DRC, simulation, manufacturing review, policy-driven release audit, and PCBWay package generation" },
+        new[] { "Approved blank two-layer project bootstrap", "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "Native KiCad 10 design block catalog with provenance, interface contracts, immutable preview hashes, and evidence-gated maturity", "Evidence-bound qualitative best-practice review using a pure versioned LLM prompt and stale-design rejection", "ERC, DRC, simulation, manufacturing review, policy-driven release audit, and PCBWay package generation" },
         new[] { "No arbitrary KiCad text, shell commands, or file operations in Design Plans", "No general autorouting, safety-critical, mains, RF, high-current, or high-speed design", "No order placement, payment, or component substitution approval" });
 
     public string GetDesignPlanSchema() => DesignPlanOperationCatalog.CreateJsonSchema();
@@ -55,6 +55,12 @@ public static class AgentPolicyRules
         new AgentPolicyRule("SIMULATION_EVIDENCE_REQUIRED_FOR_FUNCTION", "Do not claim electrical function without suitable simulation or physical evidence."),
         new AgentPolicyRule("NO_ASSERTION_WEAKENING", "Do not weaken assertions merely to make a design pass."),
         new AgentPolicyRule("NO_STALE_EXPORTS", "Regenerate release outputs after the final design mutation."),
+        new AgentPolicyRule("BLOCKS_REQUIRE_PROVENANCE", "Import or create design blocks only with explicit source, license, attribution, redistribution status, and immutable payload hashes."),
+        new AgentPolicyRule("BLOCK_MATURITY_REQUIRES_EVIDENCE", "Do not increase design-block maturity or publish a block without the required review, simulation, bench, or production evidence."),
+        new AgentPolicyRule("NO_SILENT_BLOCK_UPGRADES", "Never overwrite or silently upgrade a design block; create a reviewed semantic version and preview its exact hash."),
+        new AgentPolicyRule("BEST_PRACTICE_REVIEW_REQUIRES_EVIDENCE", "For qualitative best-practice review, prepare the versioned prompt, inspect the cited evidence, and submit every rule against the exact evidence hash."),
+        new AgentPolicyRule("LLM_REVIEW_IS_NOT_PROOF", "Treat best-practice LLM findings as structured engineering judgment, not proof of electrical function, EMC, safety, or manufacturability."),
+        new AgentPolicyRule("VISUAL_CLAIMS_REQUIRE_VISUAL_INSPECTION", "Do not pass visual schematic or PCB criteria merely because render paths exist; inspect the artifacts or mark the criterion unable to assess."),
         new AgentPolicyRule("PCBWAY_REQUIRES_GERBER_BOM_CPL", "Assembly release requires current Gerber, BOM, and CPL outputs."),
         new AgentPolicyRule("NO_FALSE_GUI_REFRESH", "Do not report a GUI refresh when only project files changed."),
         new AgentPolicyRule("NO_ORDER_OR_PAYMENT", "Never place an order, pay, or approve substitutions without the user."),
@@ -93,11 +99,13 @@ public static class DesignPlanOperationCatalog
         Op("delete-schematic-symbol", "Delete every schematic unit with one reference while leaving surrounding wires unchanged.", S("reference")),
         Op("replace-schematic-symbol", "Replace an approved schematic symbol while preserving placement, fields, instances, and compatible pin wiring.", S("reference"), S("symbol")),
         Op("set-symbol-field", "Set one schematic symbol field.", S("reference"), S("field"), S("value")),
+        Op("hide-symbol-field", "Hide one schematic symbol field while preserving its value for sourcing and traceability.", S("reference"), S("field")),
         Op("connect-schematic-pins", "Connect two approved symbol pins.", S("from"), S("to"), S("net", false)),
         Op("delete-schematic-wire-by-uuid", "Delete one exact schematic wire by UUID.", S("uuid")),
         Op("delete-schematic-wire", "Delete one exact schematic wire by endpoint coordinates.", N("x1Mm"), N("y1Mm"), N("x2Mm"), N("y2Mm"), N("toleranceMm")),
         Op("delete-net-label-by-uuid", "Delete one exact schematic net label by UUID.", S("uuid")),
         Op("add-net-label", "Add a schematic net label.", S("net"), N("xMm"), N("yMm")),
+        Op("add-schematic-block-box", "Add a titled non-filled box that makes a functional schematic block explicit to human reviewers.", S("title"), N("xMm"), N("yMm"), N("widthMm"), N("heightMm")),
         Op("replace-net-label", "Replace one schematic net label at an exact location.", S("currentNet"), S("newNet"), N("xMm"), N("yMm"), N("toleranceMm")),
         Op("update-pcb-from-schematic", "Create missing template footprints and board nets."),
         Op("regenerate-board-footprint", "Regenerate one template footprint from schematic data.", S("reference")),
@@ -107,6 +115,7 @@ public static class DesignPlanOperationCatalog
         Op("add-via", "Add one through via.", S("net"), N("xMm"), N("yMm"), N("sizeMm"), N("drillMm"), S("layers", false, "F.Cu,B.Cu")),
         Op("delete-via", "Delete one via by identifier.", S("via"))
         ,Op("add-copper-zone", "Add an unfilled copper zone polygon.", S("net"), S("layer"), S("points"), N("clearanceMm"), N("minThicknessMm"))
+        ,Op("refill-zones", "Refill and save every copper zone with KiCad Python.")
         ,Op("update-copper-zone", "Update an existing copper zone by UUID.", S("zone"), S("net", false), S("layer", false), S("points", false))
         ,Op("move-reference-text", "Move footprint reference text.", S("reference"), N("xMm"), N("yMm"))
         ,Op("hide-reference-text", "Hide footprint reference text.", S("reference"))
@@ -115,6 +124,8 @@ public static class DesignPlanOperationCatalog
         ,Op("set-board-pad-net", "Restore or change one board pad net by footprint reference and pad name.", S("reference"), S("pad"), S("net"))
         ,Op("add-mounting-hole", "Add an NPTH mounting hole.", S("reference"), N("xMm"), N("yMm"), N("drillMm"), N("diameterMm"))
         ,Op("add-mechanical-keepout", "Add a copper/mechanical keep-out polygon.", S("layer"), S("points"))
+        ,Op("add-module-keepout", "Reserve a module underside from vias and copper pours while allowing its pads, masked tracks, and footprint.", S("layer"), S("points"))
+        ,Op("set-board-outline-rectangle", "Set the exact coordinates of a single rectangular Edge.Cuts outline.", N("leftMm"), N("topMm"), N("rightMm"), N("bottomMm"))
     };
 
     public static IReadOnlyDictionary<string, DesignPlanOperationDefinition> ByType { get; } = All.ToDictionary(static item => item.Type, StringComparer.Ordinal);

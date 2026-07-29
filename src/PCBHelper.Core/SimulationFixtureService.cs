@@ -122,16 +122,22 @@ public sealed class SimulationFixtureService
                         .AppendLine(PositiveNumber(element, "capacitanceFarads"));
                     break;
                 case "ideal-opamp":
+                case "ideal-comparator":
                     RequireOnly(element, "kind", "reference", "plusNet", "minusNet", "outputNet", "positiveSupplyNet", "negativeSupplyNet", "openLoopGain", "outputHeadroomV");
                     var gain = PositiveNumber(element, "openLoopGain");
                     var headroom = NonNegativeNumber(element, "outputHeadroomV");
+                    var plus = RequiredNet(element, "plusNet");
+                    var minus = RequiredNet(element, "minusNet");
+                    var outputNet = RequiredNet(element, "outputNet");
+                    var positiveSupply = RequiredNet(element, "positiveSupplyNet");
+                    var negativeSupply = RequiredNet(element, "negativeSupplyNet");
                     output.Append("B").Append(reference).Append(' ')
-                        .Append(RequiredNet(element, "outputNet")).Append(" 0 V=min(max(")
-                        .Append(gain).Append("*(V(").Append(RequiredNet(element, "plusNet")).Append(")-V(")
-                        .Append(RequiredNet(element, "minusNet")).Append(")),V(")
-                        .Append(RequiredNet(element, "negativeSupplyNet")).Append(")+").Append(headroom).Append("),V(")
-                        .Append(RequiredNet(element, "positiveSupplyNet")).Append(")-").Append(headroom)
-                        .AppendLine(")");
+                        .Append(outputNet).Append(" 0 V=(V(").Append(positiveSupply).Append(")+V(")
+                        .Append(negativeSupply).Append("))/2+((V(").Append(positiveSupply).Append(")-V(")
+                        .Append(negativeSupply).Append("))/2-").Append(headroom).Append(")*tanh(")
+                        .Append(gain).Append("*(V(").Append(plus).Append(")-V(").Append(minus)
+                        .Append("))/((V(").Append(positiveSupply).Append(")-V(").Append(negativeSupply)
+                        .Append("))/2-").Append(headroom).AppendLine("))");
                     break;
                 default:
                     throw new InvalidOperationException($"Unsupported simulation element kind: {kind}.");

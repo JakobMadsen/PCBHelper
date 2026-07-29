@@ -134,7 +134,11 @@ public sealed class SchematicAuthoringService
             }
             else
             {
-                var propertyText = FormatProperty(field, value, symbol.XMillimeters ?? 0, (symbol.YMillimeters ?? 0) + 5);
+                // Newly-created custom fields are metadata by default. Rendering them
+                // beside the symbol makes production data such as Manufacturer and MPN
+                // obscure the engineering drawing. Existing properties retain their
+                // visibility when their value is updated.
+                var propertyText = FormatProperty(field, value, symbol.XMillimeters ?? 0, (symbol.YMillimeters ?? 0) + 5, hidden: true);
                 after = after.Insert(GetSymbolClosingLineStart(after, symbol), propertyText);
             }
         }
@@ -145,6 +149,40 @@ public sealed class SchematicAuthoringService
         }
 
         return Mutation("set-symbol-field", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, before, after) }, $"{field}={value}");
+    }
+
+    public ToolResponse<SchematicMutationResult> HideSymbolField(string projectPath, string reference, string field, bool dryRun)
+    {
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+
+        var symbols = FindSymbols(schematic.Data, reference).ToArray();
+        if (symbols.Length == 0)
+            return ToolResponse<SchematicMutationResult>.Fail($"Schematic symbol not found: {reference}", "SCHEMATIC_SYMBOL_NOT_FOUND");
+        if (symbols.Any(symbol => !symbol.Properties.ContainsKey(field)))
+            return ToolResponse<SchematicMutationResult>.Fail($"Schematic field not found on {reference}: {field}", "SCHEMATIC_FIELD_NOT_FOUND");
+
+        var before = schematic.Data.Text;
+        var after = before;
+        foreach (var symbol in symbols.OrderByDescending(static item => item.SourceStart))
+        {
+            var property = symbol.Properties[field];
+            var propertyEnd = KiCadSchematicParser.FindMatchingParenthesis(after, property.SourceStart);
+            if (propertyEnd < property.SourceStart)
+                return ToolResponse<SchematicMutationResult>.Fail($"Could not parse schematic field on {reference}: {field}", "SCHEMATIC_FIELD_INVALID");
+            var propertyLength = propertyEnd - property.SourceStart + 1;
+            var block = after.Substring(property.SourceStart, propertyLength);
+            var hidden = Regex.IsMatch(block, @"\(hide\s+(?:yes|no)\)")
+                ? new Regex(@"\(hide\s+(?:yes|no)\)").Replace(block, "(hide yes)", 1)
+                : new Regex(@"(?m)^(\s*)\(effects\b").Replace(block, "$1(hide yes)" + Environment.NewLine + "$1(effects", 1);
+            after = after.Remove(property.SourceStart, propertyLength).Insert(property.SourceStart, hidden);
+        }
+
+        if (!dryRun)
+            File.WriteAllText(schematic.Data.SchematicFile, after);
+
+        return Mutation("hide-symbol-field", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, before, after) }, field);
     }
 
     public ToolResponse<SchematicMutationResult> DeleteSymbol(string projectPath, string reference, bool dryRun)
@@ -382,6 +420,35 @@ public sealed class SchematicAuthoringService
         }
 
         return Mutation("add-net-label", net, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) }, addition);
+    }
+
+    public ToolResponse<SchematicMutationResult> AddSchematicBlockBox(
+        string projectPath,
+        string title,
+        double x,
+        double y,
+        double width,
+        double height,
+        bool dryRun)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return ToolResponse<SchematicMutationResult>.Fail("Schematic block title is required.", "SCHEMATIC_BLOCK_TITLE_REQUIRED");
+        if (!double.IsFinite(x) || !double.IsFinite(y)
+            || !double.IsFinite(width) || !double.IsFinite(height)
+            || width <= 0 || height <= 0)
+            return ToolResponse<SchematicMutationResult>.Fail("Schematic block position and dimensions must be finite, with positive width and height.", "SCHEMATIC_BLOCK_DIMENSIONS_INVALID");
+
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+
+        var addition = FormatSchematicBlockBox(title, x, y, width, height);
+        var after = InsertBeforeSymbolInstances(schematic.Data.Text, addition);
+        if (!dryRun)
+            File.WriteAllText(schematic.Data.SchematicFile, after);
+
+        return Mutation("add-schematic-block-box", title, dryRun,
+            new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) }, addition);
     }
 
     public ToolResponse<SchematicMutationResult> ReplaceNetLabel(
@@ -1720,6 +1787,25 @@ public sealed class SchematicAuthoringService
         });
     }
 
+    private static string FormatSchematicBlockBox(string title, double x, double y, double width, double height)
+    {
+        var snappedX = SnapToSchematicGrid(x);
+        var snappedY = SnapToSchematicGrid(y);
+        var snappedWidth = SnapToSchematicGrid(width);
+        var snappedHeight = SnapToSchematicGrid(height);
+        return string.Join(Environment.NewLine, new[]
+        {
+            $"  (text_box \"{EscapeKiCadString(title)}\"",
+            $"    (exclude_from_sim no) (at {KiCadSchematicParser.FormatNumber(snappedX)} {KiCadSchematicParser.FormatNumber(snappedY)} 0) (size {KiCadSchematicParser.FormatNumber(snappedWidth)} {KiCadSchematicParser.FormatNumber(snappedHeight)})",
+            "    (stroke (width 0.3) (type default) (color 0 0 0 1))",
+            "    (fill (type none))",
+            "    (effects (font (size 1.27 1.27) (bold yes)) (justify left top))",
+            $"    (uuid \"{Guid.NewGuid()}\")",
+            "  )",
+            string.Empty
+        });
+    }
+
     private static string RebuildBoard(string boardText, IReadOnlyList<KiCadNet> nets, IReadOnlyList<string> footprints)
     {
         var newline = DetectNewline(boardText);
@@ -2227,6 +2313,12 @@ internal static class SchematicSymbolCatalog
     private static readonly SchematicSymbolCatalogEntry[] Entries =
     {
         new("Device:R", "R", "R_Axial_2Pad", 35, TwoPinVertical()),
+        new("Device:R_Potentiometer", "R_Potentiometer", "Potentiometer_SMD:Potentiometer_Bourns_3314G_Vertical", 42, new[]
+        {
+            new SchematicPinDefinition("1", 0, 3.81),
+            new SchematicPinDefinition("2", 3.81, 0),
+            new SchematicPinDefinition("3", 0, -3.81)
+        }),
         new("Device:C", "C", "C_Disc_2Pad", 42, TwoPinVertical()),
         new("Device:C_Polarized", "C_Polarized", "C_Disc_2Pad", 42, TwoPinVertical()),
         new("Device:L", "L", "Inductor_SMD:L_0805_2012Metric", 42, TwoPinVertical()),
@@ -2275,6 +2367,30 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("13", -12.7, 12.7), new SchematicPinDefinition("14", 12.7, 15.24),
             new SchematicPinDefinition("15", 12.7, 7.62), new SchematicPinDefinition("16", 0, 22.86)
         }),
+        new("Comparator:TLV7011", "TLV7011", "Package_TO_SOT_SMD:SOT-23-5", 50, new[]
+        {
+            new SchematicPinDefinition("1", 7.62, 0),
+            new SchematicPinDefinition("2", -2.54, -7.62),
+            new SchematicPinDefinition("3", -7.62, 2.54),
+            new SchematicPinDefinition("4", -7.62, -2.54),
+            new SchematicPinDefinition("5", -2.54, 7.62)
+        }, "Texas Instruments TLV7011 datasheet SLVSDM5F; SOT-23-5 pinout"),
+        new("Comparator:TLV7031DBV", "TLV7011", "Package_TO_SOT_SMD:SOT-23-5", 50, new[]
+        {
+            new SchematicPinDefinition("1", 7.62, 0),
+            new SchematicPinDefinition("2", -2.54, -7.62),
+            new SchematicPinDefinition("3", -7.62, 2.54),
+            new SchematicPinDefinition("4", -7.62, -2.54),
+            new SchematicPinDefinition("5", -2.54, 7.62)
+        }, "KiCad TLV7031DBV library symbol used as a pin-compatible graphical representation for TLV7011DBVR; pin map verified against TI SLVSDM5F"),
+        new("Comparator:MCP6561-OT", "TLV7011", "Package_TO_SOT_SMD:SOT-23-5", 50, new[]
+        {
+            new SchematicPinDefinition("1", 7.62, 0),
+            new SchematicPinDefinition("2", -2.54, -7.62),
+            new SchematicPinDefinition("3", -7.62, 2.54),
+            new SchematicPinDefinition("4", -7.62, -2.54),
+            new SchematicPinDefinition("5", -2.54, 7.62)
+        }, "KiCad MCP6561-OT base symbol used as a library-resolvable pin-compatible graphical representation for TLV7011DBVR; pin map verified against TI SLVSDM5F"),
         DualOpAmp("Amplifier_Operational:LM2904", "LM2904", "DIP8_300mil"),
         DualOpAmp("Amplifier_Operational:LM358", "LM358", "DIP8_300mil"),
         DualOpAmp("Amplifier_Operational:OPA2325", "OPA2325", "DIP8_300mil"),
@@ -2365,7 +2481,7 @@ internal static class SchematicFootprintTemplates
     public static bool IsSupported(string footprint)
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
-            or Dip16
+            or Dip16 or "PCBHelper:HB100_Module"
             || TryParseStandardVerticalPinHeader(footprint, out _, out _)
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
@@ -2390,6 +2506,7 @@ internal static class SchematicFootprintTemplates
             "DIP8_300mil" => FormatDip8(reference, value, x, y, rotationDegrees, padNets),
             "TO92_2N3904_EBC" => FormatTo92_2N3904(reference, value, x, y, rotationDegrees, padNets),
             Dip16 => FormatDip16(reference, value, x, y, rotationDegrees, padNets),
+            "PCBHelper:HB100_Module" => FormatKiCadFootprintText(Hb100ModuleFootprintDefinition, footprint, reference, value, x, y, rotationDegrees, padNets),
             _ => FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets)
         };
     }
@@ -2402,9 +2519,17 @@ internal static class SchematicFootprintTemplates
             return string.Empty;
         }
 
-        var text = File.ReadAllText(path);
-        var footprintName = footprint.Contains(':', StringComparison.Ordinal) ? footprint : Path.GetFileNameWithoutExtension(path);
+        return FormatKiCadFootprintText(File.ReadAllText(path), footprint, reference, value, x, y, rotationDegrees, padNets);
+    }
+
+    private static string FormatKiCadFootprintText(string text, string footprint, string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
+    {
+        var footprintName = footprint;
         text = Regex.Replace(text, "^\\(footprint\\s+\"[^\"]+\"", $"(footprint \"{footprintName}\"");
+        text = Regex.Replace(
+            text,
+            "(?m)^\\t\\((?:version|generator|generator_version)\\s+[^\\r\\n]+\\)\\r?\\n",
+            string.Empty);
         text = ReplaceFirstTopLevelLine(text, "uuid", $"\t(uuid \"{Guid.NewGuid()}\")", insertAfterHead: "layer");
         var atText = rotationDegrees is null
             ? $"\t(at {KiCadBoardParser.FormatNumber(x)} {KiCadBoardParser.FormatNumber(y)})"
@@ -2415,6 +2540,143 @@ internal static class SchematicFootprintTemplates
         text = AddPadNets(text, padNets);
         return NormalizeIndentForBoard(text).TrimEnd() + Environment.NewLine;
     }
+
+    internal static string Hb100ModuleFootprintDefinition => """
+(footprint "HB100_Module"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(property "Reference" "J2"
+		(at 0 -22 0)
+		(layer "F.SilkS")
+		(uuid "274ef168-f4d9-4eeb-91b5-c35cad0f1a6d")
+		(effects (font (size 1.27 1.27)))
+	)
+	(property "Value" "HB100"
+		(at 0 22 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "82efaf25-d459-477d-aa05-8f10118303ca")
+		(effects (font (size 1.27 1.27)))
+	)
+	(property "Datasheet" "https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/6360/HB100.pdf"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "132131da-2e0f-42e6-ab09-555f50aaf47d")
+		(effects (font (size 1.27 1.27)))
+	)
+	(property "Description" "HB100 10.525 GHz Doppler radar module carrier footprint, 46.5 x 40.0 mm"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "411cf90a-af08-4fd8-8800-23b8449905d9")
+		(effects (font (size 1.27 1.27)))
+	)
+	(attr through_hole exclude_from_pos_files)
+	(duplicate_pad_numbers_are_jumpers yes)
+	(fp_rect (start -23.25 -20) (end 23.25 20)
+		(stroke (width 0.3) (type default))
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "d48cad64-165b-48d9-82bf-29e2d25e5314")
+	)
+	(fp_rect (start -23.25 -20) (end 23.25 20)
+		(stroke (width 0.1) (type default))
+		(fill no)
+		(layer "F.Fab")
+		(uuid "9f581b5f-f560-4f47-a404-a25796d4d2dc")
+	)
+	(fp_rect (start -23.5 -20.25) (end 23.5 20.25)
+		(stroke (width 0.05) (type default))
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "48b17167-01a5-4f51-b364-47680f0774af")
+	)
+	(fp_text user "HB100 ANTENNA UP"
+		(at 0 0 0)
+		(layer "F.SilkS")
+		(uuid "5de982db-a317-41a6-b7db-4764487d4335")
+		(effects (font (size 1.5 1.5) (thickness 0.25)))
+	)
+	(fp_text user "GND"
+		(at -19.07 0 90)
+		(layer "F.SilkS")
+		(uuid "c7af419e-88de-4721-aa6b-17a47013730f")
+		(effects (font (size 1 1) (thickness 0.15)))
+	)
+	(fp_text user "+5V"
+		(at 19.05 -13.5 0)
+		(layer "F.SilkS")
+		(uuid "65c57b2d-1ccb-484f-ab30-2f666372c118")
+		(effects (font (size 1 1) (thickness 0.15)))
+	)
+	(fp_text user "IF"
+		(at 19.05 13.5 0)
+		(layer "F.SilkS")
+		(uuid "ae5ed7d8-7844-4ad6-b42d-818f94bf17fe")
+		(effects (font (size 1 1) (thickness 0.15)))
+	)
+	(pad "2" thru_hole circle
+		(at -20.34 -17.05)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "1f374327-d1ec-4f2e-9f25-9c2722a48283")
+	)
+	(pad "2" thru_hole circle
+		(at -17.8 -17.05)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "7d870cd3-7bde-4cbb-8838-56fa759b60b1")
+	)
+	(pad "2" thru_hole circle
+		(at -20.34 17.15)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "28cd4d3e-ad87-443d-8847-78d0f1bda87d")
+	)
+	(pad "2" thru_hole circle
+		(at -17.8 17.15)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "e2f6a93b-d44f-42c4-8897-7f310bd1c4fc")
+	)
+	(pad "1" thru_hole circle
+		(at 17.75 -17.05)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "8cfc6575-2e8d-4b66-8f0c-296017cbdf80")
+	)
+	(pad "1" thru_hole circle
+		(at 20.35 -17.05)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "2039de3b-b199-4e70-a67e-7ec5d505b8b0")
+	)
+	(pad "3" thru_hole circle
+		(at 17.75 17.15)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "0d72e68b-406f-41b1-81de-e5d83ed15813")
+	)
+	(pad "3" thru_hole circle
+		(at 20.35 17.15)
+		(size 2 2)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(uuid "be13b051-028b-474e-8164-0763e2e7e31a")
+	)
+	(embedded_fonts no)
+)
+""";
 
     private static string? ResolveKiCadFootprintPath(string footprint)
     {
@@ -2553,13 +2815,16 @@ internal static class SchematicFootprintTemplates
             }
 
             var withoutNet = Regex.Replace(match.Value, "(?ms)^\\t\\t\\(net\\s+\\d+\\s+\"[^\"]*\"\\)\\r?\\n?", string.Empty);
-            var insertAt = withoutNet.LastIndexOf("\n\t)", StringComparison.Ordinal);
+            var uuidAt = withoutNet.IndexOf("\n\t\t(uuid ", StringComparison.Ordinal);
+            var insertAt = uuidAt >= 0
+                ? uuidAt
+                : withoutNet.LastIndexOf("\n\t)", StringComparison.Ordinal);
             if (insertAt < 0)
             {
                 return withoutNet;
             }
 
-            return withoutNet.Insert(insertAt, $"\n\t\t(net {net.Code} \"{EscapeKiCadString(net.Name)}\")");
+            return withoutNet.Insert(insertAt, $"\n\t\t(net \"{EscapeKiCadString(net.Name)}\")");
         });
     }
 

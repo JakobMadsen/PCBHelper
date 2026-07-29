@@ -25,6 +25,54 @@ public sealed class DesignIntentServiceTests
     }
 
     [Fact]
+    public void Led_Check_Reports_The_Resistor_On_The_Non_Ground_Led_Net()
+    {
+        using var fixture = new TempDirectory();
+        var source = Path.Combine(RepoRoot.Path, "fixtures", "blank-authoring");
+        foreach (var file in Directory.GetFiles(source)) File.Copy(file, Path.Combine(fixture.Path, Path.GetFileName(file)));
+        var schematic = new SchematicAuthoringService(new ProjectDiscoveryService());
+        schematic.CreateSymbol(fixture.Path, "Device:Battery_Cell", "BT1", 30, 50, null, null, false);
+        schematic.CreateSymbol(fixture.Path, "Device:R", "R1", 40, 65, "10k", null, false);
+        schematic.CreateSymbol(fixture.Path, "Device:R", "R12", 50, 50, "1.5k", null, false);
+        schematic.CreateSymbol(fixture.Path, "Device:LED", "D1", 70, 50, null, null, false);
+        schematic.ConnectPins(fixture.Path, "R1.1", "BT1.-", "GND", false);
+        schematic.ConnectPins(fixture.Path, "BT1.+", "R12.1", "VCC", false);
+        schematic.ConnectPins(fixture.Path, "R12.2", "D1.A", "LED_A", false);
+        schematic.ConnectPins(fixture.Path, "D1.K", "BT1.-", "GND", false);
+        WriteIntent(fixture.Path, """{"version":1,"signals":[{"net":"LED_A","role":"led-drive"},{"net":"GND","role":"ground"}]}""");
+
+        var result = Service().Analyze(fixture.Path);
+
+        var finding = Assert.Single(result.Data!.Findings, item => item.RuleId == "INTENT-LED-001");
+        Assert.Equal(DesignIntentOutcome.Proven, finding.Outcome);
+        Assert.Contains("R12", finding.References);
+        Assert.DoesNotContain("R1", finding.References);
+    }
+
+    [Fact]
+    public void Comparator_Is_Checked_For_Supply_Decoupling()
+    {
+        using var fixture = new TempDirectory();
+        var source = Path.Combine(RepoRoot.Path, "fixtures", "blank-authoring");
+        foreach (var file in Directory.GetFiles(source)) File.Copy(file, Path.Combine(fixture.Path, Path.GetFileName(file)));
+        var schematic = new SchematicAuthoringService(new ProjectDiscoveryService());
+        schematic.CreateSymbol(fixture.Path, "Comparator:TLV7011", "U2", 50, 50, null, null, false);
+        schematic.CreateSymbol(fixture.Path, "Device:C", "C10", 70, 50, "100n", null, false);
+        schematic.ConnectPins(fixture.Path, "U2.5", "C10.1", "VCC", false);
+        schematic.ConnectPins(fixture.Path, "U2.2", "C10.2", "GND", false);
+        WriteIntent(fixture.Path, """{"version":1,"supplies":[{"net":"VCC","minVoltage":4.75,"nominalVoltage":5,"maxVoltage":5.25}],"signals":[{"net":"GND","role":"ground"}]}""");
+
+        var result = Service().Analyze(fixture.Path);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Contains(result.Data!.Findings, finding =>
+            finding.RuleId == "INTENT-DECOUPLING-001"
+            && finding.References.Contains("U2")
+            && finding.References.Contains("C10")
+            && finding.Outcome == DesignIntentOutcome.Proven);
+    }
+
+    [Fact]
     public void Adc_Range_And_Missing_Testpoint_Are_Blocking()
     {
         using var fixture = CopyCircuit();

@@ -5,6 +5,7 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 ## Workflow
 
 1. Call `get_capabilities`. If no project exists yet, use `create_project_from_template`; then call `get_project_context`.
+   For block-based design, call `list_design_blocks`, inspect candidate contracts, and validate the library before selecting a version.
 2. Resolve only material requirement ambiguity. Routine reversible work is autonomous.
 3. Build one coherent Design Plan using only operations advertised by `get_capabilities`.
    Select schematic symbols only from `approvedSymbols`; treat each entry's source, pin units, and default footprint as the authoritative catalog contract.
@@ -12,6 +13,7 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 4. Call `validate_design_plan`, then `preview_design_plan`.
 5. Apply the identical plan with the returned `planHash` as `expectedPlanHash`.
 6. Run required engineering gates, including Design Intent when the project declares it. Inspect and autonomously correct ordinary findings with another plan.
+   For qualitative architecture, readability, layout, DFT, signal-integrity, return-path, prototype, and EMC-practice review, call `prepare_best_practice_review`. Actually inspect its cited visual artifacts, answer every criterion using the returned pure prompt, and call `submit_best_practice_review` with the exact evidence hash. After the final design/render change, call `validate_best_practice_review`.
 7. When the project declares `.pcbhelper/release-policy.json`, run `run_release_audit` and resolve every blocking finding.
 8. Regenerate review and manufacturing outputs after the final mutation.
    Prefer `generate_pcbway_release` for an order-review bundle with a fabrication ZIP, BOM, CPL, settings, and review report.
@@ -25,6 +27,10 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 - `GATES_NOT_JUDGMENT`: Treat ERC, Design Intent, DRC, simulation, test access, ratings, and manufacturing checks as distinct evidence.
 - `SIMULATION_EVIDENCE_REQUIRED_FOR_FUNCTION`: Require suitable simulation or physical evidence before claiming electrical function.
 - `NO_STALE_EXPORTS`: Generate release files from the final design state.
+- `BLOCKS_REQUIRE_PROVENANCE`: Import or create blocks only with source, license, attribution, redistribution status, and immutable payload hashes.
+- `BLOCK_MATURITY_REQUIRES_EVIDENCE`: Do not increase block maturity or publish it without the required review, simulation, bench, or production evidence.
+- `BEST_PRACTICE_REVIEW_REQUIRES_EVIDENCE`: Complete every qualitative criterion against the exact prepared evidence hash.
+- `VISUAL_CLAIMS_REQUIRE_VISUAL_INSPECTION`: Inspect current visual artifacts before passing visual criteria; otherwise mark them unable to assess.
 - `PCBWAY_REQUIRES_GERBER_BOM_CPL`: For assembly, verify current and mutually consistent Gerber, BOM, and CPL files.
 - `ASK_ONLY_FOR_EXCEPTION_DECISIONS`: Ask about material ambiguity, unusual price or sourcing, unsupported risk, gate overrides, and irreversible external actions.
 
@@ -34,6 +40,8 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 - `NO_GUI_AS_MUTATION_FALLBACK`: Do not use Computer Use or GUI automation as the normal mutation path.
 - `NO_ASSERTION_WEAKENING`: Do not weaken a test merely to make the design pass.
 - `NO_FALSE_GUI_REFRESH`: A project-file change is not proof that the KiCad GUI refreshed.
+- `NO_SILENT_BLOCK_UPGRADES`: Never overwrite or silently upgrade a block; create a reviewed semantic version and preview its exact hash.
+- `LLM_REVIEW_IS_NOT_PROOF`: An LLM best-practice review is structured judgment, not proof of function, EMC, safety, or manufacturability.
 - `NO_ORDER_OR_PAYMENT`: Never place an order, pay, publish, or approve component substitutions without the user.
 
 ## Release Meaning

@@ -4,7 +4,7 @@ PCBHelper exposes board-finishing mutations through Design Plan V1 so they recei
 
 Supported operations are `add-copper-zone`, `update-copper-zone`, `move-reference-text`, `hide-reference-text`, `cleanup-silkscreen`, `add-testpoint`, `add-mounting-hole`, and `add-mechanical-keepout`. Polygon points use the constrained `x,y;x,y;...` form. V1 zones and keep-outs support `F.Cu` and `B.Cu` only.
 
-KiCad CLI does not expose zone refill. `refill_zones` therefore returns `KICAD_ZONE_REFILL_UNAVAILABLE`; it never reports a file mutation as a refill. The release requirements gate blocks boards that contain zones without saved filled polygons.
+KiCad CLI does not expose zone refill directly. `refill_zones` uses the `pcbnew` module from KiCad's bundled Python runtime, fills every board zone, and saves the board. It returns `KICAD_ZONE_REFILL_UNAVAILABLE` when that runtime is absent and never pretends that an unfilled zone was saved.
 
 `generate_pcbway_release` runs release gates and writes one release directory containing:
 

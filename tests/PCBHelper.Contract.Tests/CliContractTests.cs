@@ -6,6 +6,64 @@ namespace PCBHelper.Contract.Tests;
 public sealed class CliContractTests
 {
     [Fact]
+    public async Task BestPractice_Prepare_Returns_Evidence_Bound_Prompt_Contract()
+    {
+        using var fixture = TestFixture.CopyMinimalBoard();
+
+        var result = await RunCliAsync("best-practice", "prepare", fixture.Path, "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("promptVersion").GetInt32());
+        Assert.Equal(64, data.GetProperty("evidenceHash").GetString()!.Length);
+        Assert.True(data.GetProperty("rules").GetArrayLength() >= 10);
+        Assert.Contains("Return only one JSON object", data.GetProperty("prompt").GetString(), StringComparison.Ordinal);
+        Assert.True(data.TryGetProperty("assessmentJsonSchema", out _));
+    }
+
+    [Fact]
+    public async Task Blocks_Preview_Create_Apply_And_List_Return_Stable_Contracts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pcbhelper-contract-blocks", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var source = Path.Combine(root, "source.kicad_sch");
+            var manifest = Path.Combine(root, "manifest.json");
+            var library = Path.Combine(root, "company.kicad_blocks");
+            await File.WriteAllTextAsync(source, "(kicad_sch (version 20250101) (generator eeschema))");
+            await File.WriteAllTextAsync(manifest, """
+            {
+              "schemaVersion":1,"id":"contract-block","version":"1.0.0","name":"Contract block",
+              "description":"CLI contract block.","category":"test","lifecycleStage":"draft","maturity":"reference",
+              "source":{"kind":"internal","title":"Contract fixture","uri":"internal://contract/fixture","license":"Apache-2.0","attribution":"PCBHelper tests","redistributionAllowed":true,"retrievedAtUtc":"2026-07-29T00:00:00Z"},
+              "ports":[{"name":"IN","kind":"analogInput","net":"IN","description":"Test input.","required":true}],
+              "layout":{"policy":"schematicOnly","rationale":"Contract test.","constraints":[]},"evidence":[],"tags":["test"]
+            }
+            """);
+
+            var preview = await RunCliAsync("blocks", "preview-create", library, "--source", source, "--manifest", manifest, "--json");
+            Assert.Equal(0, preview.ExitCode);
+            using var previewJson = JsonDocument.Parse(preview.StandardOutput);
+            var hash = previewJson.RootElement.GetProperty("data").GetProperty("planHash").GetString();
+            Assert.Equal(64, hash!.Length);
+
+            var applied = await RunCliAsync("blocks", "apply-create", library, "--source", source, "--manifest", manifest, "--expected-hash", hash, "--json");
+            var listed = await RunCliAsync("blocks", "list", library, "--json");
+
+            Assert.Equal(0, applied.ExitCode);
+            Assert.Equal(0, listed.ExitCode);
+            using var listedJson = JsonDocument.Parse(listed.StandardOutput);
+            Assert.Equal("contract-block", listedJson.RootElement.GetProperty("data").GetProperty("blocks")[0].GetProperty("id").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Intent_Validate_And_Analyze_Return_Stable_Contracts()
     {
         using var fixture = TestFixture.CopyTutorialBoard();

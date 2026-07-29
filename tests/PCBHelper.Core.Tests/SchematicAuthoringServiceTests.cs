@@ -11,6 +11,10 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 2)]
     [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 3)]
     [InlineData("Regulator_Linear:LM1117-5.0", "U2", 1)]
+    [InlineData("Comparator:TLV7011", "U3", 1)]
+    [InlineData("Comparator:TLV7031DBV", "U4", 1)]
+    [InlineData("Comparator:MCP6561-OT", "U5", 1)]
+    [InlineData("Device:R_Potentiometer", "RV1", 1)]
     [InlineData("Connector_Generic:Conn_01x03", "J3", 1)]
     [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "J4", 1)]
     public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
@@ -141,6 +145,21 @@ public sealed class SchematicAuthoringServiceTests
         Assert.True(result.Data.WireCount >= 1);
         Assert.Equal(2, result.Data.LabelCount);
         Assert.Contains(result.Data.Symbols, symbol => symbol.Reference == "R1" && symbol.Value == "330R");
+    }
+
+    [Fact]
+    public void AddSchematicBlockBox_Creates_A_Titled_NonFilled_Human_Review_Boundary()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        var result = service.AddSchematicBlockBox(fixture.Path, "POWER / PROTECTION", 15, 12, 65, 45, dryRun: false);
+        var schematic = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_sch"));
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Contains("(text_box \"POWER / PROTECTION\"", schematic, StringComparison.Ordinal);
+        Assert.Contains("(fill (type none))", schematic, StringComparison.Ordinal);
+        Assert.Contains("(bold yes)", schematic, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -286,6 +305,30 @@ public sealed class SchematicAuthoringServiceTests
                 Assert.True(IsOnSchematicGrid(offsetY), $"{symbolId} pin {name} OffsetY is off grid: {offsetY}");
             }
         }
+    }
+
+    [Fact]
+    public void Catalog_Tlv7011_Pin_Map_Matches_Ti_Sot23_5_Datasheet()
+    {
+        var catalogType = typeof(SchematicAuthoringService).Assembly.GetType("PCBHelper.Core.SchematicSymbolCatalog")!;
+        var find = catalogType.GetMethod("Find", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
+        var entry = find.Invoke(null, new object[] { "Comparator:TLV7011" });
+
+        Assert.NotNull(entry);
+        var pins = ((System.Collections.IEnumerable)entry!.GetType().GetProperty("Pins")!.GetValue(entry)!)
+            .Cast<object>()
+            .ToDictionary(
+                pin => (string)pin.GetType().GetProperty("Name")!.GetValue(pin)!,
+                pin => (
+                    X: (double)pin.GetType().GetProperty("OffsetX")!.GetValue(pin)!,
+                    Y: (double)pin.GetType().GetProperty("OffsetY")!.GetValue(pin)!));
+
+        Assert.Equal(new[] { "1", "2", "3", "4", "5" }, pins.Keys.Order().ToArray());
+        Assert.Equal((7.62, 0), pins["1"]);
+        Assert.Equal((-2.54, -7.62), pins["2"]);
+        Assert.Equal((-7.62, 2.54), pins["3"]);
+        Assert.Equal((-7.62, -2.54), pins["4"]);
+        Assert.Equal((-2.54, 7.62), pins["5"]);
     }
 
     [Theory]
@@ -778,6 +821,51 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void UpdatePcbFromSchematic_Generates_Loadable_Hb100_Footprint_With_All_Duplicate_Pad_Nets()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        var pads = new BoardInspectionService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Connector_Generic:Conn_01x03", "J2", 70, 50, "HB100", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 100, 45, "1k", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R2", 100, 55, "1k", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R3", 100, 65, "1k", null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "J2.1", "R1.1", "SENSOR_5V", dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "J2.2", "R2.1", "GND", dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "J2.3", "R3.1", "RAW_SENSOR", dryRun: false).Success);
+        Assert.True(service.SetSymbolField(fixture.Path, "J2", "Footprint", "PCBHelper:HB100_Module", dryRun: false).Success);
+
+        var updated = service.UpdatePcbFromSchematic(fixture.Path, dryRun: false);
+        var result = pads.ListFootprintPads(fixture.Path, "J2");
+
+        Assert.True(updated.Success, updated.Error?.Message);
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(8, result.Data!.Pads.Count);
+        Assert.All(result.Data.Pads.Where(pad => pad.Name == "1"), pad => Assert.Equal("SENSOR_5V", pad.NetName));
+        Assert.All(result.Data.Pads.Where(pad => pad.Name == "2"), pad => Assert.Equal("GND", pad.NetName));
+        Assert.All(result.Data.Pads.Where(pad => pad.Name == "3"), pad => Assert.Equal("RAW_SENSOR", pad.NetName));
+
+        var boardText = File.ReadAllText(Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single());
+        var hb100Start = boardText.IndexOf("(footprint \"PCBHelper:HB100_Module\"", StringComparison.Ordinal);
+        var hb100End = boardText.IndexOf("(embedded_fonts no)", hb100Start, StringComparison.Ordinal);
+        var hb100Text = boardText[hb100Start..hb100End];
+        Assert.DoesNotContain("(version ", hb100Text);
+        Assert.DoesNotContain("(generator ", hb100Text);
+        Assert.DoesNotContain("(generator_version ", hb100Text);
+        Assert.DoesNotContain("(fill (type none))", hb100Text);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(hb100Text, "\\(fill no\\)").Count);
+        var padBlocks = System.Text.RegularExpressions.Regex.Matches(hb100Text, "(?ms)^\\s*\\(pad\\s+.*?^\\s*\\)");
+        Assert.Equal(8, padBlocks.Count);
+        Assert.All(
+            padBlocks.Cast<System.Text.RegularExpressions.Match>(),
+            pad => Assert.True(
+                pad.Value.IndexOf("(net ", StringComparison.Ordinal) < pad.Value.IndexOf("(uuid ", StringComparison.Ordinal),
+                "KiCad requires a board pad's net before its UUID."));
+        Assert.DoesNotMatch("\\(net\\s+\\d+", hb100Text);
+    }
+
+    [Fact]
     public void RegenerateBoardFootprint_Preserves_Existing_Pad_Nets_When_Schematic_Is_Cleaned()
     {
         using var fixture = CopyBlankFixture();
@@ -897,6 +985,10 @@ public sealed class SchematicAuthoringServiceTests
         var text = File.ReadAllText(schematicFile);
         Assert.Contains($"{Environment.NewLine}    (property \"MPN\" \"ABC-123\"{Environment.NewLine}", text);
         Assert.DoesNotContain("      (property \"MPN\"", text);
+        var propertyStart = text.IndexOf("(property \"MPN\" \"ABC-123\"", StringComparison.Ordinal);
+        Assert.True(propertyStart >= 0);
+        var propertyExcerpt = text.Substring(propertyStart, Math.Min(300, text.Length - propertyStart));
+        Assert.Contains("(hide yes)", propertyExcerpt);
         Assert.Contains(service.ListSymbols(fixture.Path).Data!.Symbols.Single().Fields, field => field.Name == "MPN" && field.Value == "ABC-123");
     }
 
@@ -915,6 +1007,27 @@ public sealed class SchematicAuthoringServiceTests
         Assert.True(result.Success);
         Assert.Equal(2, symbols.Length);
         Assert.All(symbols, symbol => Assert.Equal("OPA2325IDR", symbol.Value));
+    }
+
+    [Fact]
+    public void HideSymbolField_Preserves_Value_And_Adds_Hidden_Attribute()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        var schematicFile = Path.Combine(fixture.Path, "blank-authoring.kicad_sch");
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 50, 50, "330R", null, dryRun: false).Success);
+        Assert.True(service.SetSymbolField(fixture.Path, "R1", "MPN", "ABC-123", dryRun: false).Success);
+
+        var result = service.HideSymbolField(fixture.Path, "R1", "MPN", dryRun: false);
+        var text = File.ReadAllText(schematicFile);
+
+        Assert.True(result.Success, result.Error?.Message);
+        var propertyStart = text.IndexOf("(property \"MPN\" \"ABC-123\"", StringComparison.Ordinal);
+        Assert.True(propertyStart >= 0);
+        var propertyExcerpt = text.Substring(propertyStart, Math.Min(300, text.Length - propertyStart));
+        Assert.Contains("(hide yes)", propertyExcerpt);
+        Assert.Contains(service.ListSymbols(fixture.Path).Data!.Symbols.Single().Fields, field => field.Name == "MPN" && field.Value == "ABC-123");
     }
 
     [Fact]

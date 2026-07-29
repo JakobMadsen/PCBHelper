@@ -63,6 +63,40 @@ public sealed class AssemblyServiceTests
     }
 
     [Fact]
+    public void InspectAssembly_Excludes_PcbHelper_Testpoints_And_MountingHoles()
+    {
+        using var fixture = CreateAssemblyFixture();
+        var boardFile = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        var board = File.ReadAllText(boardFile);
+        var insertAt = board.LastIndexOf(')');
+        board = board.Insert(insertAt, """
+          (footprint "PCBHelper:TestPoint"
+            (layer "F.Cu")
+            (at 60 20)
+            (property "Reference" "TP1")
+            (property "Value" "TestPoint")
+            (pad "1" thru_hole circle (at 0 0) (size 2 2) (drill 1) (layers "*.Cu" "*.Mask") (net 1 "N1"))
+          )
+          (footprint "PCBHelper:MountingHole"
+            (layer "F.Cu")
+            (at 70 20)
+            (property "Reference" "H1")
+            (property "Value" "MountingHole")
+            (pad "" np_thru_hole circle (at 0 0) (size 6 6) (drill 3.2) (layers "*.Cu" "*.Mask"))
+          )
+        """);
+        File.WriteAllText(boardFile, board);
+
+        var inspection = CreateService().InspectAssembly(fixture.Path);
+        var validation = CreateService().ValidateAssemblyPackage(fixture.Path);
+
+        Assert.DoesNotContain(inspection.Data!.BomRows.SelectMany(row => row.Designators.Split(',', StringSplitOptions.TrimEntries)), reference => reference is "TP1" or "H1");
+        Assert.Contains(validation.Data!.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_COMPONENT_EXCLUDED" && diagnostic.Reference == "TP1");
+        Assert.Contains(validation.Data.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_COMPONENT_EXCLUDED" && diagnostic.Reference == "H1");
+        Assert.DoesNotContain(validation.Data.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_PART_NUMBER_MISSING" && diagnostic.Reference is "TP1" or "H1");
+    }
+
+    [Fact]
     public void ValidateAssemblyPackage_Fails_On_Duplicate_Reference()
     {
         using var fixture = CreateAssemblyFixture(duplicateReference: true);

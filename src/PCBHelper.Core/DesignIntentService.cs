@@ -200,12 +200,15 @@ public sealed class DesignIntentService
     {
         foreach (var led in graph.Components.Where(c => c.SymbolId is "Device:LED" or "Device:D"))
         {
-            var nets = led.Pins.Select(p => p.Net).Where(n => n is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var resistor = graph.Components.FirstOrDefault(c => c.SymbolId == "Device:R" && c.Pins.Any(p => p.Net is not null && nets.Contains(p.Net)));
+            var nets = led.Pins.Select(p => p.Net).Where(n => n is not null).Cast<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var currentPathNets = nets.Where(net => !IsGroundNetName(net)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var resistor = graph.Components.FirstOrDefault(c =>
+                c.SymbolId == "Device:R"
+                && c.Pins.Any(p => p.Net is not null && currentPathNets.Contains(p.Net)));
             findings.Add(Finding("INTENT-LED-001", resistor is null ? DesignIntentSeverity.Error : DesignIntentSeverity.Info,
                 resistor is null ? DesignIntentOutcome.NotProven : DesignIntentOutcome.Proven,
                 resistor is null ? $"{led.Reference} has no resistor in either connected net." : $"{led.Reference} is connected through resistor {resistor.Reference}.",
-                resistor is null ? new[] { led.Reference } : new[] { led.Reference, resistor.Reference }, nets.Cast<string>().ToArray(), "A current-limiting resistor in the LED current path.", resistor is null ? "No adjacent resistor was found." : "A resistor shares an LED net."));
+                resistor is null ? new[] { led.Reference } : new[] { led.Reference, resistor.Reference }, nets.Cast<string>().ToArray(), "A current-limiting resistor in the LED current path.", resistor is null ? "No resistor was found on a non-ground LED net." : "A resistor shares a non-ground LED net."));
         }
     }
 
@@ -316,7 +319,13 @@ public sealed class DesignIntentService
 
     private static HashSet<string> GroundNets(DesignIntentDocument intent) => intent.Signals.Where(s => s.Role == "ground").Select(s => s.Net).Append("GND").ToHashSet(StringComparer.OrdinalIgnoreCase);
     private static bool Touches(DesignGraphComponent component, string net) => component.Pins.Any(p => string.Equals(p.Net, net, StringComparison.OrdinalIgnoreCase));
-    private static bool IsIc(string symbol) => symbol.Contains("Amplifier", StringComparison.OrdinalIgnoreCase) || symbol.StartsWith("74", StringComparison.OrdinalIgnoreCase);
+    private static bool IsGroundNetName(string net) => net.Equals("GND", StringComparison.OrdinalIgnoreCase)
+        || net.Equals("AGND", StringComparison.OrdinalIgnoreCase)
+        || net.Equals("DGND", StringComparison.OrdinalIgnoreCase)
+        || net.Equals("VSS", StringComparison.OrdinalIgnoreCase);
+    private static bool IsIc(string symbol) => symbol.Contains("Amplifier", StringComparison.OrdinalIgnoreCase)
+        || symbol.Contains("Comparator", StringComparison.OrdinalIgnoreCase)
+        || symbol.StartsWith("74", StringComparison.OrdinalIgnoreCase);
     private static string PlainLanguageSummary(int errors, int notProven) => errors == 0 ? $"No blocking design-intent errors were found. {notProven} item(s) remain unproven and should be reviewed." : $"The design does not yet match all declared requirements: {errors} blocking error(s), {notProven} unproven item(s).";
     private static DesignIntentFinding Finding(string id, DesignIntentSeverity severity, DesignIntentOutcome outcome, string message, IReadOnlyList<string> refs, IReadOnlyList<string> nets, string expected, string observed) => new(id, severity, outcome, message, refs, nets, expected, observed, Array.Empty<string>(), null);
     private sealed record LoadedIntent(string ProjectRoot, string IntentPath, DesignIntentDocument Intent, KiCadSchematicDocument Schematic);

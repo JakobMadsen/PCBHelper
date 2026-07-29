@@ -19,12 +19,21 @@ public sealed class PCBHelperRuntime
         TestSpecs = new TestSpecService(Projects);
         Simulations = new SimulationService(Projects, TestSpecs, new NgspiceBackend(ngspice, runner));
         KiCadSimulationNetlists = new KiCadSimulationNetlistService(Projects, locator, runner);
+        DesignBlocks = new DesignBlockService();
         AgentGuidance = new AgentGuidanceService();
         Components = new ComponentService(Projects);
         BoardSummary = new BoardSummaryService(Projects);
         BoardInspection = new BoardInspectionService(Projects);
         Routing = new RoutingService(Projects);
         DesignIntent = new DesignIntentService(Projects, BoardInspection);
+        BestPractices = new BestPracticeReviewService(
+            Projects,
+            BoardSummary,
+            BoardInspection,
+            Components,
+            Routing,
+            new SchematicAuthoringService(Projects),
+            TestSpecs);
         BoardFinishing = new BoardFinishingService(Projects);
         Gui = new GuiReviewService(locator, new KiCadExecutableLocator(locator), runner);
         TransactionStore = new ProjectTransactionStore(Projects);
@@ -39,6 +48,7 @@ public sealed class PCBHelperRuntime
             BoardInspection,
             Routing,
             TestSpecs,
+            BestPractices,
             Simulations.GetCapabilities);
         Plans = new DesignPlanService(Projects, Transactions, Gates);
         Workflows = new ProjectWorkflowService(Projects, BoardSummary, BoardInspection, Components, Gui, TransactionStore, Gates, Assembly, Simulations, DesignIntent, locator, runner);
@@ -57,12 +67,14 @@ public sealed class PCBHelperRuntime
     public TestSpecService TestSpecs { get; }
     public SimulationService Simulations { get; }
     public KiCadSimulationNetlistService KiCadSimulationNetlists { get; }
+    public DesignBlockService DesignBlocks { get; }
     public AgentGuidanceService AgentGuidance { get; }
     public ComponentService Components { get; }
     public BoardSummaryService BoardSummary { get; }
     public BoardInspectionService BoardInspection { get; }
     public RoutingService Routing { get; }
     public DesignIntentService DesignIntent { get; }
+    public BestPracticeReviewService BestPractices { get; }
     public BoardFinishingService BoardFinishing { get; }
     public GuiReviewService Gui { get; }
     public ProjectTransactionStore TransactionStore { get; }

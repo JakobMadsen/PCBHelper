@@ -53,7 +53,9 @@ var app = new CliApp(
     planRuntime.Releases,
     planRuntime.KiCadSimulationNetlists,
     planRuntime.DesignIntent,
-    planRuntime.ReleaseAudits);
+    planRuntime.ReleaseAudits,
+    planRuntime.DesignBlocks,
+    planRuntime.BestPractices);
 
 return await app.RunAsync(args);
 
@@ -91,6 +93,8 @@ public sealed class CliApp
     private readonly KiCadSimulationNetlistService _kicadSimulationNetlists;
     private readonly DesignIntentService _designIntent;
     private readonly ReleaseAuditService _releaseAudits;
+    private readonly DesignBlockService _designBlocks;
+    private readonly BestPracticeReviewService _bestPractices;
 
     public CliApp(
         KiCadDoctorService doctor,
@@ -119,7 +123,9 @@ public sealed class CliApp
         PcbWayReleaseService releases,
         KiCadSimulationNetlistService kicadSimulationNetlists,
         DesignIntentService designIntent,
-        ReleaseAuditService releaseAudits)
+        ReleaseAuditService releaseAudits,
+        DesignBlockService designBlocks,
+        BestPracticeReviewService bestPractices)
     {
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
@@ -148,6 +154,8 @@ public sealed class CliApp
         _kicadSimulationNetlists = kicadSimulationNetlists;
         _designIntent = designIntent;
         _releaseAudits = releaseAudits;
+        _designBlocks = designBlocks;
+        _bestPractices = bestPractices;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -226,8 +234,144 @@ public sealed class CliApp
             "focus-component" => await RunFocusComponentAsync(positional, json, cancellationToken),
             "plan" => await RunPlanAsync(positional, json, cancellationToken),
             "transaction" => await RunTransactionAsync(positional, json, cancellationToken),
+            "blocks" => await RunBlocksAsync(positional, json, cancellationToken),
+            "best-practice" => await RunBestPracticeAsync(positional, json, cancellationToken),
             _ => UnknownCommand(positional[0])
         };
+    }
+
+    private async Task<int> RunBestPracticeAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 3 || args[1] is not ("prepare" or "submit" or "report" or "validate"))
+        {
+            Write(ToolResponse<object>.Fail(
+                "Usage: pcbhelper best-practice prepare|submit|report|validate <project-path>",
+                "BEST_PRACTICE_ARGS_REQUIRED"), json);
+            return 2;
+        }
+        if (args[1] == "prepare")
+        {
+            var prepared = _bestPractices.Prepare(args[2]);
+            Write(prepared, json);
+            return prepared.Success ? 0 : 1;
+        }
+        if (args[1] == "report")
+        {
+            var runId = GetOption(args, "--run");
+            if (runId is null)
+            {
+                Write(ToolResponse<object>.Fail(
+                    "best-practice report requires --run <run-id>.",
+                    "BEST_PRACTICE_RUN_REQUIRED"), json);
+                return 2;
+            }
+            var report = _bestPractices.GetReport(args[2], runId);
+            Write(report, json);
+            return report.Success ? 0 : 1;
+        }
+        if (args[1] == "validate")
+        {
+            var validation = _bestPractices.ValidateCurrent(args[2], GetOption(args, "--run"));
+            Write(validation, json);
+            return validation.Success && validation.Data?.Passed == true ? 0 : 1;
+        }
+
+        var file = GetOption(args, "--file");
+        var expectedHash = GetOption(args, "--expected-evidence-hash");
+        if (file is null || !File.Exists(file) || expectedHash is null)
+        {
+            Write(ToolResponse<object>.Fail(
+                "best-practice submit requires a readable --file <assessment.json> and --expected-evidence-hash <hash>.",
+                "BEST_PRACTICE_SUBMIT_INPUT_REQUIRED"), json);
+            return 2;
+        }
+        var assessment = await File.ReadAllTextAsync(file, cancellationToken);
+        var submitted = _bestPractices.Submit(args[2], assessment, expectedHash);
+        Write(submitted, json);
+        return submitted.Success && submitted.Data?.Disposition is BestPracticeDisposition.Pass or BestPracticeDisposition.PassWithConcerns ? 0 : 1;
+    }
+
+    private async Task<int> RunBlocksAsync(IReadOnlyList<string> args, bool json, CancellationToken cancellationToken)
+    {
+        if (args.Count < 3 || args[1] is not ("list" or "inspect" or "validate" or "preview-import" or "apply-import" or "preview-create" or "apply-create"))
+        {
+            Write(ToolResponse<object>.Fail(
+                "Usage: pcbhelper blocks list|inspect|validate|preview-import|apply-import|preview-create|apply-create <library.kicad_blocks>",
+                "DESIGN_BLOCK_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var library = args[2];
+        if (args[1] == "list")
+        {
+            DesignBlockMaturity? maturity = null;
+            var maturityValue = GetOption(args, "--maturity");
+            if (maturityValue is not null)
+            {
+                if (!Enum.TryParse<DesignBlockMaturity>(maturityValue, ignoreCase: true, out var parsed))
+                {
+                    Write(ToolResponse<object>.Fail($"Unknown block maturity: {maturityValue}", "DESIGN_BLOCK_MATURITY_INVALID"), json);
+                    return 2;
+                }
+                maturity = parsed;
+            }
+            var listed = _designBlocks.List(library, GetOption(args, "--category"), maturity);
+            Write(listed, json);
+            return listed.Success ? 0 : 1;
+        }
+        if (args[1] == "inspect")
+        {
+            var id = GetOption(args, "--id");
+            if (id is null)
+            {
+                Write(ToolResponse<object>.Fail("blocks inspect requires --id.", "DESIGN_BLOCK_ID_REQUIRED"), json);
+                return 2;
+            }
+            var inspected = _designBlocks.Inspect(library, id);
+            Write(inspected, json);
+            return inspected.Success ? 0 : 1;
+        }
+        if (args[1] == "validate")
+        {
+            var validated = _designBlocks.Validate(library, GetOption(args, "--id"));
+            Write(validated, json);
+            return validated.Success && validated.Data?.Passed == true ? 0 : 1;
+        }
+
+        var source = GetOption(args, "--source");
+        var manifestPath = GetOption(args, "--manifest");
+        if (source is null || manifestPath is null || !File.Exists(manifestPath))
+        {
+            Write(ToolResponse<object>.Fail(
+                "Block authoring requires --source <path> and a readable --manifest <pcbhelper-block.json>.",
+                "DESIGN_BLOCK_AUTHORING_INPUT_REQUIRED"), json);
+            return 2;
+        }
+        var manifestJson = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        var isImport = args[1].EndsWith("import", StringComparison.Ordinal);
+        var isApply = args[1].StartsWith("apply-", StringComparison.Ordinal);
+        if (!isApply)
+        {
+            var preview = isImport
+                ? _designBlocks.PreviewImport(library, source, manifestJson)
+                : _designBlocks.PreviewCreate(library, source, manifestJson, GetOption(args, "--board"));
+            Write(preview, json);
+            return preview.Success ? 0 : 1;
+        }
+
+        var expectedHash = GetOption(args, "--expected-hash");
+        if (expectedHash is null)
+        {
+            Write(ToolResponse<object>.Fail(
+                "Applying a block requires --expected-hash from the matching preview.",
+                "DESIGN_BLOCK_PLAN_HASH_REQUIRED"), json);
+            return 2;
+        }
+        var applied = isImport
+            ? _designBlocks.ApplyImport(library, source, manifestJson, expectedHash)
+            : _designBlocks.ApplyCreate(library, source, manifestJson, expectedHash, GetOption(args, "--board"));
+        Write(applied, json);
+        return applied.Success ? 0 : 1;
     }
 
     private async Task<int> RunPcbWayReleaseAsync(IReadOnlyList<string> args,bool json,CancellationToken cancellationToken)
@@ -1359,6 +1503,16 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper plan validate|preview <project-path> --file <plan.json> [--json]");
         Console.WriteLine("  pcbhelper plan apply <project-path> --file <plan.json> --expected-hash <hash> [--acknowledged-decisions <ids>] [--json]");
         Console.WriteLine("  pcbhelper transaction show|restore <project-path> --id <transaction-id> [--json]");
+        Console.WriteLine("  pcbhelper blocks list <library.kicad_blocks> [--category <category>] [--maturity <level>] [--json]");
+        Console.WriteLine("  pcbhelper blocks inspect|validate <library.kicad_blocks> [--id <block-id>] [--json]");
+        Console.WriteLine("  pcbhelper blocks preview-import <library.kicad_blocks> --source <native.kicad_block> --manifest <manifest.json> [--json]");
+        Console.WriteLine("  pcbhelper blocks apply-import <library.kicad_blocks> --source <native.kicad_block> --manifest <manifest.json> --expected-hash <hash> [--json]");
+        Console.WriteLine("  pcbhelper blocks preview-create <library.kicad_blocks> --source <schematic-or-directory> [--board <board.kicad_pcb>] --manifest <manifest.json> [--json]");
+        Console.WriteLine("  pcbhelper blocks apply-create <library.kicad_blocks> --source <schematic-or-directory> [--board <board.kicad_pcb>] --manifest <manifest.json> --expected-hash <hash> [--json]");
+        Console.WriteLine("  pcbhelper best-practice prepare <project-path> [--json]");
+        Console.WriteLine("  pcbhelper best-practice submit <project-path> --file <assessment.json> --expected-evidence-hash <hash> [--json]");
+        Console.WriteLine("  pcbhelper best-practice report <project-path> --run <run-id> [--json]");
+        Console.WriteLine("  pcbhelper best-practice validate <project-path> [--run <run-id>] [--json]");
         Console.WriteLine("  pcbhelper restore-change <project-path> --change <change-id-or-path> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper list-changes <project-path> [--json]");
         Console.WriteLine("  pcbhelper show-change <project-path> --change <change-id-or-path> [--json]");

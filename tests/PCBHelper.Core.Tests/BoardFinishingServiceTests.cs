@@ -23,6 +23,44 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
+    public void Generated_Testpoints_And_Holes_Use_Resolvable_Library_Links_And_BoardOnly_Attributes()
+    {
+        using var fixture=CopyTutorial();var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var testpoint=service.AddTestPoint(fixture.Path,"TP1","GND",50,45,2,false);
+        var hole=service.AddMountingHole(fixture.Path,"H1",42,32,3.2,6,false);
+        var board=File.ReadAllText(Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single());
+
+        Assert.True(testpoint.Success,testpoint.Error?.Message);
+        Assert.True(hole.Success,hole.Error?.Message);
+        Assert.Contains("""(footprint "PCBHelper:TestPoint_THTPad_D2mm_Drill1mm" """,board);
+        Assert.Contains("""(footprint "PCBHelper:MountingHole_NPTH_D6mm_Drill3.2mm" """,board);
+        Assert.Equal(2,System.Text.RegularExpressions.Regex.Matches(board,@"\(attr board_only exclude_from_pos_files exclude_from_bom\)").Count);
+    }
+
+    [Fact]
+    public void RefillZones_Uses_KiCadPython_And_Returns_A_Real_Mutation()
+    {
+        using var fixture=CopyTutorial();
+        using var tools=new TempDirectory();
+        var cli=Path.Combine(tools.Path,"kicad-cli.exe");
+        var python=Path.Combine(tools.Path,"python.exe");
+        File.WriteAllText(cli,string.Empty);
+        File.WriteAllText(python,string.Empty);
+        var service=new BoardFinishingService(
+            new ProjectDiscoveryService(),
+            new KiCadCliLocator(name=>name=="KICAD_CLI"?cli:null),
+            new SuccessfulCommandRunner());
+        Assert.True(service.AddCopperZone(fixture.Path,"GND","B.Cu","40,30;75,30;75,60;40,60",0.2,0.25,false).Success);
+
+        var result=service.RefillZones(fixture.Path);
+
+        Assert.True(result.Success,result.Error?.Message);
+        Assert.Equal("refill-zones",result.Data!.Operation);
+        Assert.False(result.Data.DryRun);
+    }
+
+    [Fact]
     public void Zone_Update_And_Reference_Hide_Preserve_KiCad_Structure()
     {
         using var fixture=CopyTutorial();var service=new BoardFinishingService(new ProjectDiscoveryService());
@@ -52,6 +90,48 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
+    public void ModuleKeepout_Allows_Masked_Tracks_And_Blocks_Pours_And_Vias()
+    {
+        using var fixture=CopyTutorial();var service=new BoardFinishingService(new ProjectDiscoveryService());
+        var routing=new RoutingService(new ProjectDiscoveryService());
+        var viasBefore=routing.ListVias(fixture.Path).Data!.Vias.Count;
+        var footprintsBefore=new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path).Data!.Footprints.Count;
+
+        var result=service.AddModuleKeepout(fixture.Path,"B.Cu","40,30;75,30;75,60;40,60",false);
+        var text=File.ReadAllText(Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single());
+
+        Assert.True(result.Success,result.Error?.Message);
+        Assert.Contains("(tracks allowed)",text);
+        Assert.Contains("(vias not_allowed)",text);
+        Assert.Contains("(pads allowed)",text);
+        Assert.Contains("(copperpour not_allowed)",text);
+        Assert.Contains("(connect_pads",text);
+        Assert.Contains("(min_thickness 0.25)",text);
+        Assert.Contains("(filled_areas_thickness no)",text);
+        Assert.Contains("(placement",text);
+        Assert.Contains("(fill",text);
+        Assert.Equal(viasBefore,routing.ListVias(fixture.Path).Data!.Vias.Count);
+        Assert.Equal(footprintsBefore,new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path).Data!.Footprints.Count);
+    }
+
+    [Fact]
+    public void SetBoardOutlineRectangle_Updates_The_Single_EdgeCuts_Rectangle()
+    {
+        using var fixture=CopyTutorial();
+        var boardFile=Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single();
+        var boardBefore=File.ReadAllText(boardFile);
+        File.WriteAllText(boardFile,boardBefore.Insert(boardBefore.LastIndexOf(')'),"\n(gr_rect (start 40 30) (end 75 60) (stroke (width 0.1) (type default)) (fill no) (layer \"Edge.Cuts\"))\n"));
+        var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var result=service.SetBoardOutlineRectangle(fixture.Path,10,20,100,80,false);
+        var text=File.ReadAllText(boardFile);
+
+        Assert.True(result.Success,result.Error?.Message);
+        Assert.Contains("(start 10 20)",text);
+        Assert.Contains("(end 100 80)",text);
+    }
+
+    [Fact]
     public void ReleaseRequirements_Block_Missing_Required_Testpoints()
     {
         using var fixture=CopyTutorial();File.WriteAllText(Path.Combine(fixture.Path,"requirements.md"),"Testpoints required.");
@@ -59,4 +139,28 @@ public sealed class BoardFinishingServiceTests
         Assert.True(result.Success);Assert.False(result.Data!.Passed);Assert.Contains(result.Data.Checks,c=>c.Id=="testpoints"&&c.Required&&!c.Implemented);
     }
     private static TempDirectory CopyTutorial(){var t=new TempDirectory();var s=Path.Combine(RepoRoot.Path,"fixtures","kicad-getting-started-led");foreach(var f in Directory.GetFiles(s))File.Copy(f,Path.Combine(t.Path,Path.GetFileName(f)));return t;}
+
+    [Fact]
+    public void RefillZones_Uses_Bounded_External_Process_Execution()
+    {
+        var repositoryRoot=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","..","..","..",".."));
+        var source=File.ReadAllText(Path.Combine(repositoryRoot,"src","PCBHelper.Core","BoardFinishingService.cs"));
+
+        Assert.Contains("TimeSpan.FromMinutes(2)",source);
+        Assert.Contains("process.Kill(entireProcessTree: true)",source);
+        Assert.Contains("throw new TimeoutException",source);
+    }
+
+    private sealed class SuccessfulCommandRunner : ICommandRunner
+    {
+        public Task<CommandExecutionResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken = default)
+        {
+            Assert.EndsWith("python.exe",fileName,StringComparison.OrdinalIgnoreCase);
+            var script=File.ReadAllText(arguments[0]);
+            Assert.Contains("ZONE_FILLER",script);
+            Assert.Contains("os._exit(0)",script);
+            Assert.EndsWith(".kicad_pcb",arguments[1],StringComparison.OrdinalIgnoreCase);
+            return Task.FromResult(new CommandExecutionResult(0,"zones filled",string.Empty));
+        }
+    }
 }

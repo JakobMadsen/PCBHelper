@@ -70,7 +70,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(32, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(37, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
@@ -100,6 +100,8 @@ public sealed class DesignPlanServiceTests
         Assert.Equal(DesignPlanOperationCatalog.All.Count, capabilities.Operations.Count);
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Amplifier_Operational:OPA1612AxD");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Regulator_Linear:LM1117-5.0");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Comparator:TLV7011");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Device:R_Potentiometer");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_01x03");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x10_Odd_Even");
         Assert.All(AgentPolicyRules.All, rule => Assert.Contains(rule.Id, guide.Markdown, StringComparison.Ordinal));

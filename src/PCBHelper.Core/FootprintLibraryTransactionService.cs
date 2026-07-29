@@ -61,7 +61,10 @@ public sealed class FootprintLibraryTransactionService
             var autorouter=new AutoroutingService(sandboxProjects,_kiCad,_freeRouting,_runner);
             var run=await autorouter.RunKiCadPythonAsync(python,scriptPath,sandbox,"KiCad project footprint library synchronization",cancellationToken);
             if(run.ExitCode!=0)return ToolResponse<FootprintLibraryPreviewResult>.Fail("KiCad could not create the project footprint library.","FOOTPRINT_LIBRARY_SYNC_FAILED",run.StandardError);
-            await File.WriteAllTextAsync(Path.Combine(sandbox,"fp-lib-table"),"(fp_lib_table\n  (lib (name \"PCBHelper\")(type \"KiCad\")(uri \"${KIPRJMOD}/PCBHelper.pretty\")(options \"\")(descr \"PCBHelper project footprints\"))\n)\n",cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(pretty,"HB100_Module.kicad_mod"),SchematicFootprintTemplates.Hb100ModuleFootprintDefinition,cancellationToken);
+            var tablePath=Path.Combine(sandbox,"fp-lib-table");
+            var table=File.Exists(tablePath)?await File.ReadAllTextAsync(tablePath,cancellationToken):"(fp_lib_table\n)\n";
+            await File.WriteAllTextAsync(tablePath,EnsurePcbHelperLibraryEntry(table),cancellationToken);
 
             var before=Capture(project.Data.ProjectRoot);var after=Capture(sandbox);
             var relative=before.Keys.Union(after.Keys,StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -103,14 +106,25 @@ public sealed class FootprintLibraryTransactionService
         return ToolResponse<FootprintLibraryApplyResult>.Ok(gate.Data.Status==EngineeringGateStatus.Passed?"Synchronized footprint library and passed engineering gates.":$"Synchronized footprint library; engineering gate status is {gate.Data.Status}.",new(previewId,recorded.Data??applied.Data,gate.Data));
     }
 
-    private static bool IsCustom(string name)=>!name.Contains(':')||name.StartsWith("PCBHelper:",StringComparison.OrdinalIgnoreCase);
+    private static bool IsCustom(string name)=>!name.Contains(':')
+        ||name.StartsWith("PCBHelper:",StringComparison.OrdinalIgnoreCase)
+        ||name.StartsWith("TestPoint:",StringComparison.OrdinalIgnoreCase)
+        ||name.StartsWith("MountingHole:",StringComparison.OrdinalIgnoreCase);
     private static string ItemName(string name)=>name.Contains(':')?name[(name.IndexOf(':')+1)..]:name;
+    public static string EnsurePcbHelperLibraryEntry(string table)
+    {
+        if(table.Contains("(name \"PCBHelper\")",StringComparison.OrdinalIgnoreCase))return table;
+        var close=table.LastIndexOf(')');
+        if(close<0)throw new InvalidOperationException("fp-lib-table is not a valid s-expression.");
+        const string entry="  (lib (name \"PCBHelper\")(type \"KiCad\")(uri \"${KIPRJMOD}/PCBHelper.pretty\")(options \"\")(descr \"PCBHelper project footprints\"))\n";
+        return table.Insert(close,entry);
+    }
     private static string PreviewRoot(string root,string id)=>Path.Combine(root,".pcbhelper","footprint-library-previews",id);
     private static string? ResolvePython(string cli){var d=Path.GetDirectoryName(cli);return new[]{"python.exe","pythonw.exe","python3","python"}.Select(n=>Path.Combine(d!,n)).FirstOrDefault(File.Exists);}
     private static Dictionary<string,string> Capture(string root)
     {var paths=Directory.GetFiles(root,"*",SearchOption.TopDirectoryOnly).Where(p=>Path.GetExtension(p) is ".kicad_pcb" or ".kicad_sch"||Path.GetFileName(p)=="fp-lib-table").Concat(Directory.Exists(Path.Combine(root,"PCBHelper.pretty"))?Directory.GetFiles(Path.Combine(root,"PCBHelper.pretty"),"*.kicad_mod",SearchOption.TopDirectoryOnly):Array.Empty<string>());return paths.ToDictionary(p=>Path.GetRelativePath(root,p),File.ReadAllText,StringComparer.OrdinalIgnoreCase);}
     private static string BuildPythonScript(string board,string pretty)
-    {static string Q(string s)=>"r\""+s.Replace("\"","\\\"")+"\"";return $"import pcbnew,os,sys\np={Q(board)}\nout={Q(pretty)}\nb=pcbnew.LoadBoard(p)\nio=pcbnew.PCB_IO_KICAD_SEXPR()\nsaved=set()\nfor fp in b.GetFootprints():\n old=str(fp.GetFPID().GetUniStringLibId())\n if ':' not in old or old.lower().startswith('pcbhelper:'):\n  item=str(fp.GetFPID().GetLibItemName())\n  fp.SetFPID(pcbnew.LIB_ID('PCBHelper',item))\n  if item not in saved:\n   io.FootprintSave(out,fp)\n   saved.add(item)\npcbnew.SaveBoard(p,b)\nsys.stdout.flush();sys.stderr.flush();os._exit(0)\n";}
+    {static string Q(string s)=>"r\""+s.Replace("\"","\\\"")+"\"";return $"import pcbnew,os,sys\np={Q(board)}\nout={Q(pretty)}\nb=pcbnew.LoadBoard(p)\nio=pcbnew.PCB_IO_KICAD_SEXPR()\nsaved=set()\nfor fp in b.GetFootprints():\n old=str(fp.GetFPID().GetUniStringLibId())\n low=old.lower()\n if ':' not in old or low.startswith(('pcbhelper:','testpoint:','mountinghole:')):\n  item=str(fp.GetFPID().GetLibItemName())\n  fp.SetFPID(pcbnew.LIB_ID('PCBHelper',item))\n  if item not in saved:\n   io.FootprintSave(out,fp)\n   saved.add(item)\npcbnew.SaveBoard(p,b)\nsys.stdout.flush();sys.stderr.flush();os._exit(0)\n";}
 }
 
 public sealed record FootprintLibraryFileManifest(string RelativePath,string BeforeHash,string AfterHash,bool HasAfterContent);
