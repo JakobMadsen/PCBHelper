@@ -183,6 +183,167 @@ public sealed class ReleaseAuditServiceTests
     }
 
     [Fact]
+    public void Audit_Preserves_Git_Stderr_When_Worktree_Inspection_Fails()
+    {
+        using var fixture = CopyFixture(Fixture);
+        var policy = WritePolicy(fixture.Path, """
+        { "version": 1, "git": { "required": true } }
+        """);
+
+        var result = CreateService().Audit(fixture.Path, policy, Path.Combine(fixture.Path, "audit"));
+
+        Assert.True(result.Success, result.Error?.Message);
+        var check = Assert.Single(result.Data!.Checks, item => item.Id == "git-worktree");
+        Assert.Equal(ReleaseAuditCheckStatus.Fail, check.Status);
+        var evidence = JsonSerializer.Serialize(check.Evidence);
+        Assert.Contains("standardError", evidence, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("exitCode", evidence, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Audit_Uses_Process_Local_Safe_Directory_Without_Global_Config_Mutation()
+    {
+        using var fixture = CopyFixture(Fixture);
+        RunGit(fixture.Path, "init", "-b", "main");
+        RunGit(fixture.Path, "config", "user.name", "PCBHelper Test");
+        RunGit(fixture.Path, "config", "user.email", "pcbhelper-test@local.invalid");
+        var policy = WritePolicy(fixture.Path, """
+            { "version": 1, "git": { "required": true, "requireClean": true } }
+            """);
+        RunGit(fixture.Path, "add", ".");
+        RunGit(fixture.Path, "commit", "-m", "fixture and policy");
+        var isolatedGlobalConfig = Path.Combine(fixture.Path, "isolated-global.gitconfig");
+        var previousGlobal = Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL");
+        var previousOwner = Environment.GetEnvironmentVariable("GIT_TEST_ASSUME_DIFFERENT_OWNER");
+        try
+        {
+            Environment.SetEnvironmentVariable("GIT_CONFIG_GLOBAL", isolatedGlobalConfig);
+            Environment.SetEnvironmentVariable("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1");
+
+            var result = CreateService().Audit(fixture.Path, policy, Path.Combine(fixture.Path, "audit"));
+
+            Assert.True(result.Success, result.Error?.Message);
+            Assert.Equal(ReleaseAuditCheckStatus.Pass, Assert.Single(result.Data!.Checks, item => item.Id == "git-head").Status);
+            Assert.Equal(ReleaseAuditCheckStatus.Pass, Assert.Single(result.Data.Checks, item => item.Id == "git-clean").Status);
+            Assert.False(File.Exists(isolatedGlobalConfig));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GIT_CONFIG_GLOBAL", previousGlobal);
+            Environment.SetEnvironmentVariable("GIT_TEST_ASSUME_DIFFERENT_OWNER", previousOwner);
+        }
+    }
+
+    [Fact]
+    public void Audit_Disposes_Assembly_Diagnostics_Without_Hiding_Orientation_Warnings()
+    {
+        using var fixture = CopyFixture(Fixture);
+        var releaseDirectory = Path.Combine(fixture.Path, ".pcbhelper", "releases", "current");
+        Directory.CreateDirectory(releaseDirectory);
+        File.WriteAllText(Path.Combine(releaseDirectory, "release-review.json"), """
+        {
+          "engineeringGate": {
+            "checks": [{
+              "kind": "manufacturing-validation",
+              "required": true,
+              "status": "Passed",
+              "findingCount": 3
+            }]
+          },
+          "assembly": {
+            "diagnostics": [
+              { "severity": "warning", "code": "ASSEMBLY_BOARD_ONLY_TESTPOINT", "reference": "TP1", "message": "Board-only testpoint." },
+              { "severity": "warning", "code": "ASSEMBLY_THT_CPL_EXCLUDED", "reference": "J1", "message": "Expected THT exclusion." },
+              { "severity": "warning", "code": "ASSEMBLY_ORIENTATION_REVIEW", "reference": "U1", "message": "Pin-1 review required." }
+            ]
+          }
+        }
+        """);
+        var policy = WritePolicy(fixture.Path, """
+        {
+          "version": 1,
+          "releaseEvidence": {
+            "required": true,
+            "requiredChecks": ["manufacturing-validation"],
+            "diagnosticDispositions": [
+              { "code": "ASSEMBLY_BOARD_ONLY_TESTPOINT", "subjects": ["TP1"], "disposition": "info" },
+              { "code": "ASSEMBLY_THT_CPL_EXCLUDED", "subjects": ["J1"], "disposition": "info" }
+            ],
+            "manualAcceptanceAllowedCodes": ["ASSEMBLY_ORIENTATION_REVIEW"]
+          }
+        }
+        """);
+
+        var result = CreateService().Audit(fixture.Path, policy, Path.Combine(fixture.Path, "audit"));
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(ReleaseAuditDispositions.PrototypeOnly, result.Data!.Disposition);
+        var check = Assert.Single(result.Data.Checks, item => item.Id == "assembly-diagnostic-dispositions");
+        Assert.Equal(ReleaseAuditCheckStatus.Warn, check.Status);
+        var evidence = JsonSerializer.Serialize(check.Evidence);
+        Assert.Contains("U1", evidence, StringComparison.Ordinal);
+        Assert.Contains("ASSEMBLY_ORIENTATION_REVIEW", evidence, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Audit_Accepts_Only_Hash_Current_Reference_Specific_Diagnostic_Signoff()
+    {
+        using var fixture = CopyFixture(Fixture);
+        var releaseDirectory = Path.Combine(fixture.Path, ".pcbhelper", "releases", "current");
+        Directory.CreateDirectory(releaseDirectory);
+        File.WriteAllText(Path.Combine(releaseDirectory, "release-review.json"), """
+        {
+          "engineeringGate": { "checks": [{ "kind": "manufacturing-validation", "required": true, "status": "Passed", "findingCount": 1 }] },
+          "assembly": { "diagnostics": [{ "severity": "warning", "code": "ASSEMBLY_ORIENTATION_REVIEW", "reference": "U1", "message": "Review U1." }] }
+        }
+        """);
+        var policy = WritePolicy(fixture.Path, """
+        {
+          "version": 1,
+          "releaseEvidence": {
+            "required": true,
+            "requiredChecks": ["manufacturing-validation"],
+            "manualAcceptanceAllowedCodes": ["ASSEMBLY_ORIENTATION_REVIEW"]
+          }
+        }
+        """);
+        var service = CreateService();
+        var first = service.Audit(fixture.Path, policy, Path.Combine(fixture.Path, "audit-first"));
+        var disposition = Assert.Single(first.Data!.Checks, item => item.Id == "assembly-diagnostic-dispositions");
+        using var evidence = JsonDocument.Parse(JsonSerializer.Serialize(disposition.Evidence));
+        var designHash = evidence.RootElement.GetProperty("currentDesignHash").GetString();
+        Directory.CreateDirectory(Path.Combine(fixture.Path, ".pcbhelper"));
+        File.WriteAllText(Path.Combine(fixture.Path, ".pcbhelper", "release-signoff.json"), $$"""
+        {
+          "acceptedDiagnostics": [{
+            "code": "ASSEMBLY_ORIENTATION_REVIEW",
+            "subject": "U1",
+            "designHash": "{{designHash}}",
+            "reviewer": "fixture-reviewer",
+            "reviewedAtUtc": "2026-07-30T10:00:00Z",
+            "rationale": "Pin 1 was checked against the assembly drawing."
+          }]
+        }
+        """);
+
+        var accepted = service.Audit(fixture.Path, policy, Path.Combine(fixture.Path, "audit-accepted"));
+
+        Assert.Equal(ReleaseAuditDispositions.Ready, accepted.Data!.Disposition);
+        Assert.Equal(
+            ReleaseAuditCheckStatus.Pass,
+            Assert.Single(accepted.Data.Checks, item => item.Id == "assembly-diagnostic-dispositions").Status);
+
+        var boardPath = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        File.AppendAllText(boardPath, Environment.NewLine);
+        var stale = service.Audit(fixture.Path, policy, Path.Combine(fixture.Path, "audit-stale"));
+
+        Assert.Equal(ReleaseAuditDispositions.PrototypeOnly, stale.Data!.Disposition);
+        Assert.Equal(
+            ReleaseAuditCheckStatus.Warn,
+            Assert.Single(stale.Data.Checks, item => item.Id == "assembly-diagnostic-dispositions").Status);
+    }
+
+    [Fact]
     public void Audit_Rejects_Unsupported_Policy_Version()
     {
         using var temp = new TempDirectory();
@@ -192,6 +353,45 @@ public sealed class ReleaseAuditServiceTests
 
         Assert.False(result.Success);
         Assert.Equal("RELEASE_AUDIT_POLICY_INVALID", result.Error?.Code);
+    }
+
+    [Fact]
+    public void Audit_Applies_Advisory_And_Blocking_Board_Readability_Policy()
+    {
+        using var fixture = CopyFixture(Path.Combine(RepoRoot.Path, "fixtures", "blank-authoring"));
+        var boardPath = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        var board = File.ReadAllText(boardPath);
+        File.WriteAllText(boardPath, board.Insert(board.LastIndexOf(')'), """
+
+          (footprint "PCBHelper:TestPoint" (layer "F.Cu") (at 20 20)
+            (property "Reference" "TP1" (at 0 -2 0) (layer "F.SilkS") (hide yes) (effects (font (size 1 1))))
+            (property "Value" "TestPoint" (at 0 2 0) (layer "F.Fab") (hide yes) (effects (font (size 1 1))))
+            (pad "1" thru_hole circle (at 0 0) (size 2 2) (drill 1) (layers "*.Cu" "*.Mask") (net 1 "GND")))
+        """));
+        var advisoryPolicy = WritePolicy(fixture.Path, """
+            { "version": 1, "boardReadability": { "required": true } }
+            """);
+
+        var advisory = CreateService().Audit(fixture.Path, advisoryPolicy, Path.Combine(fixture.Path, "audit-advisory"));
+
+        Assert.True(advisory.Success, advisory.Error?.Message);
+        Assert.Equal(ReleaseAuditDispositions.PrototypeOnly, advisory.Data!.Disposition);
+        Assert.Equal(ReleaseAuditCheckStatus.Warn, Assert.Single(advisory.Data.Checks, item => item.Id == "board-readability").Status);
+
+        var blockingPolicy = WritePolicy(fixture.Path, """
+            {
+              "version": 1,
+              "boardReadability": {
+                "required": true,
+                "blockingDiagnosticCodes": ["BOARD_TP_LABEL_MISSING"]
+              }
+            }
+            """);
+        var blocked = CreateService().Audit(fixture.Path, blockingPolicy, Path.Combine(fixture.Path, "audit-blocked"));
+
+        Assert.True(blocked.Success, blocked.Error?.Message);
+        Assert.Equal(ReleaseAuditDispositions.Blocked, blocked.Data!.Disposition);
+        Assert.Equal(ReleaseAuditCheckStatus.Fail, Assert.Single(blocked.Data.Checks, item => item.Id == "board-readability").Status);
     }
 
     [Fact]
@@ -262,6 +462,7 @@ public sealed class ReleaseAuditServiceTests
             new RoutingService(projects),
             new TestSpecService(projects),
             bestPractices,
+            new BoardReadabilityService(projects),
             () => new SimulationCapabilities(true, "fake", "fake", "test", null),
             () => new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero));
     }

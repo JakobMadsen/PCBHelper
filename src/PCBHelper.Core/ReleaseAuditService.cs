@@ -20,6 +20,7 @@ public sealed class ReleaseAuditService
     private readonly RoutingService _routing;
     private readonly TestSpecService _tests;
     private readonly BestPracticeReviewService _bestPractices;
+    private readonly BoardReadabilityService _boardReadability;
     private readonly Func<SimulationCapabilities> _simulationCapabilities;
     private readonly Func<DateTimeOffset> _clock;
 
@@ -32,6 +33,29 @@ public sealed class ReleaseAuditService
         BestPracticeReviewService bestPractices,
         Func<SimulationCapabilities> simulationCapabilities,
         Func<DateTimeOffset>? clock = null)
+        : this(
+            projects,
+            components,
+            inspection,
+            routing,
+            tests,
+            bestPractices,
+            new BoardReadabilityService(projects),
+            simulationCapabilities,
+            clock)
+    {
+    }
+
+    public ReleaseAuditService(
+        ProjectDiscoveryService projects,
+        ComponentService components,
+        BoardInspectionService inspection,
+        RoutingService routing,
+        TestSpecService tests,
+        BestPracticeReviewService bestPractices,
+        BoardReadabilityService boardReadability,
+        Func<SimulationCapabilities> simulationCapabilities,
+        Func<DateTimeOffset>? clock = null)
     {
         _projects = projects;
         _components = components;
@@ -39,6 +63,7 @@ public sealed class ReleaseAuditService
         _routing = routing;
         _tests = tests;
         _bestPractices = bestPractices;
+        _boardReadability = boardReadability;
         _simulationCapabilities = simulationCapabilities;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
@@ -98,6 +123,7 @@ public sealed class ReleaseAuditService
                 _routing,
                 _tests,
                 _bestPractices,
+                _boardReadability,
                 _simulationCapabilities);
 
             RunChecks(context);
@@ -218,6 +244,7 @@ public sealed class ReleaseAuditService
 
         if (policy.Git is null
             || policy.ReleaseEvidence is null
+            || policy.BoardReadability is null
             || policy.BestPracticeReview is null
             || policy.Simulation is null
             || policy.Intent is null
@@ -241,10 +268,23 @@ public sealed class ReleaseAuditService
 
         if (policy.ReleaseEvidence.RequiredChecks is null
             || policy.ReleaseEvidence.BlockingAssemblyDiagnosticCodes is null
+            || policy.ReleaseEvidence.DiagnosticDispositions is null
+            || policy.ReleaseEvidence.ManualAcceptanceAllowedCodes is null
+            || policy.BoardReadability.BlockingDiagnosticCodes is null
             || policy.Intent.RequiredVoltageLimits is null
             || policy.ManualEvidence.RequiredItems is null)
         {
             return "Release audit nested collections cannot be null.";
+        }
+
+        if (policy.ReleaseEvidence.DiagnosticDispositions.Any(static item =>
+                item is null
+                || string.IsNullOrWhiteSpace(item.Code)
+                || item.Subjects is null
+                || item.Subjects.Any(string.IsNullOrWhiteSpace)
+                || item.Disposition is not ("info" or "warn" or "block")))
+        {
+            return "releaseEvidence.diagnosticDispositions require code, subjects, and info, warn, or block disposition.";
         }
 
         var ids = policy.PinNetAssertions.Select(static item => item.Id)
@@ -317,6 +357,7 @@ public sealed class ReleaseAuditService
         CheckProjectFiles(context);
         CheckGit(context);
         CheckReleaseEvidence(context);
+        CheckBoardReadability(context);
         CheckBestPracticeReview(context);
         CheckSimulation(context);
         CheckUnrouted(context);
@@ -372,7 +413,8 @@ public sealed class ReleaseAuditService
                 "git-worktree",
                 "configuration-control",
                 ReleaseAuditCheckStatus.Fail,
-                "Project is not in a Git worktree; released source cannot be traced.");
+                "Git could not confirm the project worktree; released source cannot be traced.",
+                GitEvidence(inside));
             return;
         }
 
@@ -383,7 +425,8 @@ public sealed class ReleaseAuditService
             head.ExitCode == 0 ? ReleaseAuditCheckStatus.Pass : ReleaseAuditCheckStatus.Fail,
             head.ExitCode == 0
                 ? $"Release source resolves to commit {head.StandardOutput.Trim()}."
-                : "Git worktree has no committed HEAD.");
+                : "Git worktree has no committed HEAD.",
+            GitEvidence(head));
 
         if (context.Policy.Git.RequireClean)
         {
@@ -402,9 +445,60 @@ public sealed class ReleaseAuditService
                     : dirty.Length == 0
                         ? "Git worktree is clean."
                         : $"Git worktree has {dirty.Length} uncommitted path(s).",
-                dirty.Take(50).ToArray());
+                new { git = GitEvidence(status), dirtyPaths = dirty.Take(50).ToArray() });
         }
     }
+
+    private static void CheckBoardReadability(AuditContext context)
+    {
+        var policy = context.Policy.BoardReadability;
+        if (!policy.Required && policy.BlockingDiagnosticCodes.Count == 0)
+        {
+            return;
+        }
+
+        var analysis = context.BoardReadability.Analyze(context.Project.ProjectRoot);
+        if (!analysis.Success || analysis.Data is null)
+        {
+            context.Add(
+                "board-readability",
+                "board-readability",
+                policy.Required ? ReleaseAuditCheckStatus.Fail : ReleaseAuditCheckStatus.Warn,
+                analysis.Error?.Message ?? analysis.Summary,
+                new { analysis.Error?.Code, analysis.Error?.Message });
+            return;
+        }
+
+        var report = analysis.Data;
+        var blocking = report.Findings
+            .Where(finding => policy.BlockingDiagnosticCodes.Contains(finding.Code, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        var openWarnings = report.Findings
+            .Where(static finding => !finding.Severity.Equals("info", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var status = blocking.Length > 0
+            ? ReleaseAuditCheckStatus.Fail
+            : openWarnings.Length > 0
+                ? ReleaseAuditCheckStatus.Warn
+                : ReleaseAuditCheckStatus.Pass;
+        context.Add(
+            "board-readability",
+            "board-readability",
+            status,
+            blocking.Length > 0
+                ? $"Board readability has {blocking.Length} policy-blocking finding(s)."
+                : openWarnings.Length > 0
+                    ? $"Board readability has {openWarnings.Length} open advisory finding(s)."
+                    : "Board readability has no open warning or blocking findings.",
+            report);
+    }
+
+    private static object GitEvidence(GitResult result) => new
+    {
+        result.ExitCode,
+        result.StandardOutput,
+        result.StandardError
+    };
 
     private static GitResult RunGit(string workingDirectory, params string[] arguments)
     {
@@ -536,32 +630,106 @@ public sealed class ReleaseAuditService
                 });
         }
 
-        if (policy.BlockingAssemblyDiagnosticCodes.Count > 0)
+        var assemblyDiagnostics = TryGet(root, "assembly", out var assembly)
+            && TryGet(assembly, "diagnostics", out var diagnostics)
+            && diagnostics.ValueKind == JsonValueKind.Array
+                ? diagnostics.EnumerateArray().Select(static item => item.Clone()).ToArray()
+                : Array.Empty<JsonElement>();
+        if (assemblyDiagnostics.Length > 0
+            || policy.BlockingAssemblyDiagnosticCodes.Count > 0
+            || policy.DiagnosticDispositions.Count > 0)
         {
             var blockingCodes = policy.BlockingAssemblyDiagnosticCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var blocking = new List<object>();
-            if (TryGet(root, "assembly", out var assembly)
-                && TryGet(assembly, "diagnostics", out var diagnostics)
-                && diagnostics.ValueKind == JsonValueKind.Array)
+            var manuallyAllowed = policy.ManualAcceptanceAllowedCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var currentDesignHash = CurrentDesignHash(context);
+            var accepted = ReadAcceptedDiagnostics(context, currentDesignHash);
+            var disposed = new List<ReleaseAuditDisposedDiagnostic>();
+            foreach (var diagnostic in assemblyDiagnostics)
             {
-                foreach (var diagnostic in diagnostics.EnumerateArray())
-                {
-                    if (ReadString(diagnostic, "code") is { } code && blockingCodes.Contains(code))
-                    {
-                        blocking.Add(JsonSerializer.Deserialize<object>(diagnostic.GetRawText(), JsonOptions)!);
-                    }
-                }
+                var code = ReadString(diagnostic, "code") ?? "ASSEMBLY_DIAGNOSTIC_UNKNOWN";
+                var subject = ReadString(diagnostic, "reference") ?? ReadString(diagnostic, "subject") ?? string.Empty;
+                var sourceSeverity = ReadString(diagnostic, "severity") ?? "warning";
+                var rule = policy.DiagnosticDispositions.FirstOrDefault(item =>
+                    item.Code.Equals(code, StringComparison.OrdinalIgnoreCase)
+                    && (item.Subjects.Count == 0 || item.Subjects.Contains(subject, StringComparer.OrdinalIgnoreCase)));
+                var hasCurrentSignoff = manuallyAllowed.Contains(code)
+                    && accepted.Any(item => item.Code.Equals(code, StringComparison.OrdinalIgnoreCase)
+                        && item.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase));
+                var effective = sourceSeverity.Equals("error", StringComparison.OrdinalIgnoreCase)
+                    || blockingCodes.Contains(code)
+                        ? "block"
+                        : hasCurrentSignoff
+                            ? "info"
+                            : manuallyAllowed.Contains(code)
+                                ? "warn"
+                                : rule?.Disposition.ToLowerInvariant() ?? "warn";
+                disposed.Add(new ReleaseAuditDisposedDiagnostic(
+                    code,
+                    subject,
+                    sourceSeverity,
+                    effective,
+                    hasCurrentSignoff,
+                    ReadString(diagnostic, "message")));
             }
 
+            var blocks = disposed.Count(static item => item.EffectiveDisposition == "block");
+            var warnings = disposed.Count(static item => item.EffectiveDisposition == "warn");
+            var status = blocks > 0
+                ? ReleaseAuditCheckStatus.Fail
+                : warnings > 0
+                    ? ReleaseAuditCheckStatus.Warn
+                    : ReleaseAuditCheckStatus.Pass;
             context.Add(
-                "assembly-blocking-diagnostics",
+                "assembly-diagnostic-dispositions",
                 "manufacturing",
-                blocking.Count == 0 ? ReleaseAuditCheckStatus.Pass : ReleaseAuditCheckStatus.Fail,
-                blocking.Count == 0
-                    ? "No policy-blocking assembly diagnostics remain."
-                    : $"Found {blocking.Count} unresolved blocking assembly diagnostic(s).",
-                blocking);
+                status,
+                blocks > 0
+                    ? $"Found {blocks} policy-blocking assembly diagnostic(s)."
+                    : warnings > 0
+                        ? $"Found {warnings} unresolved assembly warning(s)."
+                        : "All assembly diagnostics are informational or covered by current sign-off.",
+                new { currentDesignHash, diagnostics = disposed });
         }
+    }
+
+    private static string CurrentDesignHash(AuditContext context)
+    {
+        var canonical = string.Join("\n", context.SourceFiles
+            .OrderBy(static item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(item => $"{Path.GetRelativePath(context.Project.ProjectRoot, item.Path).Replace('\\', '/')}|{item.Sha256}"));
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+
+    private static IReadOnlyList<ReleaseAuditAcceptedDiagnostic> ReadAcceptedDiagnostics(
+        AuditContext context,
+        string currentDesignHash)
+    {
+        var configured = context.Policy.ManualEvidence.Path;
+        var path = Path.IsPathRooted(configured)
+            ? Path.GetFullPath(configured)
+            : Path.GetFullPath(Path.Combine(context.Project.ProjectRoot, configured));
+        var authorized = context.Projects.AuthorizePath(path);
+        if (!authorized.Success || authorized.Data is null || !File.Exists(authorized.Data))
+            return Array.Empty<ReleaseAuditAcceptedDiagnostic>();
+        using var document = JsonDocument.Parse(File.ReadAllText(authorized.Data));
+        if (!TryGet(document.RootElement, "acceptedDiagnostics", out var array)
+            || array.ValueKind != JsonValueKind.Array)
+            return Array.Empty<ReleaseAuditAcceptedDiagnostic>();
+        return array.EnumerateArray()
+            .Select(static item => new ReleaseAuditAcceptedDiagnostic(
+                ReadString(item, "code") ?? string.Empty,
+                ReadString(item, "subject") ?? ReadString(item, "reference") ?? string.Empty,
+                ReadString(item, "designHash") ?? string.Empty,
+                ReadString(item, "reviewer") ?? string.Empty,
+                ReadString(item, "reviewedAtUtc") ?? string.Empty,
+                ReadString(item, "rationale") ?? string.Empty))
+            .Where(item => item.DesignHash.Equals(currentDesignHash, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(item.Code)
+                && !string.IsNullOrWhiteSpace(item.Subject)
+                && !string.IsNullOrWhiteSpace(item.Reviewer)
+                && DateTimeOffset.TryParse(item.ReviewedAtUtc, out _)
+                && !string.IsNullOrWhiteSpace(item.Rationale))
+            .ToArray();
     }
 
     private static bool PassedStatus(JsonElement item, string property)
@@ -1263,6 +1431,7 @@ public sealed class ReleaseAuditService
             RoutingService routing,
             TestSpecService tests,
             BestPracticeReviewService bestPractices,
+            BoardReadabilityService boardReadability,
             Func<SimulationCapabilities> simulationCapabilities)
         {
             Project = project;
@@ -1274,6 +1443,7 @@ public sealed class ReleaseAuditService
             Routing = routing;
             Tests = tests;
             BestPractices = bestPractices;
+            BoardReadability = boardReadability;
             SimulationCapabilities = simulationCapabilities;
         }
 
@@ -1284,6 +1454,7 @@ public sealed class ReleaseAuditService
         public RoutingService Routing { get; }
         public TestSpecService Tests { get; }
         public BestPracticeReviewService BestPractices { get; }
+        public BoardReadabilityService BoardReadability { get; }
         public Func<SimulationCapabilities> SimulationCapabilities { get; }
         public bool ZoneAwareDrcConnectivityPassed { get; set; }
         public int? LatestDrcFindingCount { get; set; }
@@ -1400,12 +1571,29 @@ public sealed record ReleaseAuditCheck(
     string Summary,
     object? Evidence);
 
+public sealed record ReleaseAuditDisposedDiagnostic(
+    string Code,
+    string Subject,
+    string SourceSeverity,
+    string EffectiveDisposition,
+    bool ManuallyAccepted,
+    string? Message);
+
+internal sealed record ReleaseAuditAcceptedDiagnostic(
+    string Code,
+    string Subject,
+    string DesignHash,
+    string Reviewer,
+    string ReviewedAtUtc,
+    string Rationale);
+
 public sealed class ReleaseAuditPolicy
 {
     public int Version { get; init; }
     public string? Name { get; init; }
     public ReleaseAuditGitPolicy Git { get; init; } = new();
     public ReleaseAuditEvidencePolicy ReleaseEvidence { get; init; } = new();
+    public ReleaseAuditBoardReadabilityPolicy BoardReadability { get; init; } = new();
     public ReleaseAuditBestPracticePolicy BestPracticeReview { get; init; } = new();
     public ReleaseAuditSimulationPolicy Simulation { get; init; } = new();
     public ReleaseAuditIntentPolicy Intent { get; init; } = new();
@@ -1429,6 +1617,21 @@ public sealed class ReleaseAuditEvidencePolicy
     public bool RequireFresh { get; init; }
     public IReadOnlyList<string> RequiredChecks { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> BlockingAssemblyDiagnosticCodes { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<ReleaseAuditDiagnosticDispositionPolicy> DiagnosticDispositions { get; init; } = Array.Empty<ReleaseAuditDiagnosticDispositionPolicy>();
+    public IReadOnlyList<string> ManualAcceptanceAllowedCodes { get; init; } = Array.Empty<string>();
+}
+
+public sealed class ReleaseAuditBoardReadabilityPolicy
+{
+    public bool Required { get; init; }
+    public IReadOnlyList<string> BlockingDiagnosticCodes { get; init; } = Array.Empty<string>();
+}
+
+public sealed class ReleaseAuditDiagnosticDispositionPolicy
+{
+    public string Code { get; init; } = string.Empty;
+    public IReadOnlyList<string> Subjects { get; init; } = Array.Empty<string>();
+    public string Disposition { get; init; } = "warn";
 }
 
 public sealed class ReleaseAuditBestPracticePolicy

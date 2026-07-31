@@ -91,8 +91,8 @@ public sealed class AssemblyServiceTests
         var validation = CreateService().ValidateAssemblyPackage(fixture.Path);
 
         Assert.DoesNotContain(inspection.Data!.BomRows.SelectMany(row => row.Designators.Split(',', StringSplitOptions.TrimEntries)), reference => reference is "TP1" or "H1");
-        Assert.Contains(validation.Data!.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_COMPONENT_EXCLUDED" && diagnostic.Reference == "TP1");
-        Assert.Contains(validation.Data.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_COMPONENT_EXCLUDED" && diagnostic.Reference == "H1");
+        Assert.Contains(validation.Data!.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_BOARD_ONLY_TESTPOINT" && diagnostic.Reference == "TP1");
+        Assert.Contains(validation.Data.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_BOARD_ONLY_MOUNTING_HOLE" && diagnostic.Reference == "H1");
         Assert.DoesNotContain(validation.Data.Diagnostics, diagnostic => diagnostic.Code == "ASSEMBLY_PART_NUMBER_MISSING" && diagnostic.Reference is "TP1" or "H1");
     }
 
