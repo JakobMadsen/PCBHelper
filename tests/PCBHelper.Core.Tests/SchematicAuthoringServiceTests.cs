@@ -914,7 +914,7 @@ public sealed class SchematicAuthoringServiceTests
         Assert.True(service.CreateSymbol(fixture.Path, "Device:LED", "D1", 70, 50, null, null, dryRun: false).Success);
         Assert.True(service.ConnectPins(fixture.Path, "R1.2", "D1.A", "SIG", dryRun: false).Success);
         Assert.True(service.UpdatePcbFromSchematic(fixture.Path, dryRun: false).Success);
-        Assert.True(service.SetSymbolField(fixture.Path, "R1", "Footprint", "Resistor_SMD:R_0805_2012Metric", dryRun: false).Success);
+        Assert.True(service.SetSymbolField(fixture.Path, "R1", "Footprint", "R_Axial_2Pad", dryRun: false).Success);
 
         var listed = service.ListSymbols(fixture.Path).Data!;
         foreach (var label in listed.Labels)
@@ -937,7 +937,7 @@ public sealed class SchematicAuthoringServiceTests
         var result = service.RegenerateBoardFootprint(fixture.Path, "R1", dryRun: false);
         var after = pads.ListFootprintPads(fixture.Path, "R1");
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, result.Error?.Message);
         Assert.Contains(after.Data!.Pads, pad => pad.Name == "2" && pad.NetName == "SIG");
     }
 
