@@ -86,9 +86,10 @@ public sealed class CheckSummaryService
 
         var message = TryString(element, "description") ?? TryString(element, "message") ?? TryString(element, "text");
         var severity = TryString(element, "severity") ?? TryString(element, "type");
+        var type = TryString(element, "type");
         if (message is not null)
         {
-            findings.Add(new CheckFinding(kind, severity, message));
+            findings.Add(new CheckFinding(kind, severity, message, type));
         }
     }
 
@@ -102,4 +103,4 @@ public sealed class CheckSummaryService
 
 public sealed record CheckSummaryResult(CheckRunResult RawChecks, IReadOnlyList<CheckFinding> Findings);
 
-public sealed record CheckFinding(string Kind, string? Severity, string Message);
+public sealed record CheckFinding(string Kind, string? Severity, string Message, string? Type = null);

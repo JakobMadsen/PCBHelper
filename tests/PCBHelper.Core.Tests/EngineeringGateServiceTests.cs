@@ -5,10 +5,12 @@ namespace PCBHelper.Core.Tests;
 public sealed class EngineeringGateServiceTests
 {
     [Theory]
-    [InlineData("warning", EngineeringGateStatus.Passed, EngineeringGateCheckStatus.Passed)]
-    [InlineData("error", EngineeringGateStatus.FindingsPresent, EngineeringGateCheckStatus.FindingsPresent)]
+    [InlineData("warning", "test", EngineeringGateStatus.Passed, EngineeringGateCheckStatus.Passed)]
+    [InlineData("warning", "lib_symbol_issues", EngineeringGateStatus.FindingsPresent, EngineeringGateCheckStatus.FindingsPresent)]
+    [InlineData("error", "test", EngineeringGateStatus.FindingsPresent, EngineeringGateCheckStatus.FindingsPresent)]
     public async Task KiCad_Gate_Blocks_Errors_But_Records_Warnings(
         string severity,
+        string type,
         EngineeringGateStatus expectedGateStatus,
         EngineeringGateCheckStatus expectedDrcStatus)
     {
@@ -18,7 +20,7 @@ public sealed class EngineeringGateServiceTests
         File.WriteAllText(fakeCli, string.Empty);
         var projects = new ProjectDiscoveryService();
         var locator = new KiCadCliLocator(name => name == "KICAD_CLI" ? fakeCli : null);
-        var runner = new FindingCommandRunner(severity);
+        var runner = new FindingCommandRunner(severity, type);
         var summaries = new CheckSummaryService(new CheckRunner(projects, locator, runner));
         var exports = new ExportService(projects, locator, runner);
         var assembly = new AssemblyService(projects, new KiCadDoctorService(locator, runner), exports);
@@ -44,7 +46,7 @@ public sealed class EngineeringGateServiceTests
         return temp;
     }
 
-    private sealed class FindingCommandRunner(string severity) : ICommandRunner
+    private sealed class FindingCommandRunner(string severity, string type) : ICommandRunner
     {
         public async Task<CommandExecutionResult> RunAsync(
             string fileName,
@@ -58,7 +60,7 @@ public sealed class EngineeringGateServiceTests
                     continue;
 
                 var report = arguments.Contains("drc")
-                    ? $$"""{"violations":[{"description":"reviewed diagnostic","severity":"{{severity}}","type":"test"}],"unconnected_items":[],"schematic_parity":[]}"""
+                    ? $$"""{"violations":[{"description":"reviewed diagnostic","severity":"{{severity}}","type":"{{type}}"}],"unconnected_items":[],"schematic_parity":[]}"""
                     : """{"violations":[]}""";
                 await File.WriteAllTextAsync(arguments[index + 1], report, cancellationToken);
             }

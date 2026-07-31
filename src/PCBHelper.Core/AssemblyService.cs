@@ -314,7 +314,7 @@ public sealed class AssemblyService
         var supplierPart = GetFirstProperty(properties, SupplierPartFields);
         var notes = GetProperty(properties, "Notes") ?? GetProperty(properties, "AssemblyNotes") ?? string.Empty;
         var mountType = DetermineMountType(footprint);
-        var isExcluded = IsExcluded(properties);
+        var isExcluded = IsExcluded(properties) || IsGeneratedBoardOnlyFootprint(footprint, reference);
         var isUnannotated = string.IsNullOrWhiteSpace(reference)
             || reference.Contains("REF**", StringComparison.OrdinalIgnoreCase)
             || reference.EndsWith("?", StringComparison.Ordinal);
@@ -523,6 +523,14 @@ public sealed class AssemblyService
             || IsTruthy(GetProperty(properties, "ExcludeFromPositionFiles"))
             || IsTruthy(GetProperty(properties, "Exclude from position files"))
             || IsTruthy(GetProperty(properties, "ExcludeFromPosFiles"));
+    }
+
+    private static bool IsGeneratedBoardOnlyFootprint(KiCadFootprint footprint, string reference)
+    {
+        return (reference.StartsWith("TP", StringComparison.OrdinalIgnoreCase)
+                && footprint.FootprintName.Contains("TestPoint", StringComparison.OrdinalIgnoreCase))
+            || (reference.StartsWith("H", StringComparison.OrdinalIgnoreCase)
+                && footprint.FootprintName.Contains("MountingHole", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsTruthy(string? value)

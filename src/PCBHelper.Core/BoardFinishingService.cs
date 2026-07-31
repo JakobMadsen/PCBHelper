@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -6,7 +7,14 @@ namespace PCBHelper.Core;
 public sealed class BoardFinishingService
 {
     private readonly ProjectDiscoveryService _projects;
-    public BoardFinishingService(ProjectDiscoveryService projects) => _projects = projects;
+    private readonly KiCadCliLocator _kiCadCli;
+    private readonly ICommandRunner _runner;
+    public BoardFinishingService(ProjectDiscoveryService projects, KiCadCliLocator? kiCadCli = null, ICommandRunner? runner = null)
+    {
+        _projects = projects;
+        _kiCadCli = kiCadCli ?? new KiCadCliLocator();
+        _runner = runner ?? new ProcessCommandRunner();
+    }
 
     public ToolResponse<BoardFinishingMutationResult> AddCopperZone(string projectPath, string net, string layer, string points, double clearance, double minThickness, bool dryRun)
     {
@@ -69,7 +77,8 @@ public sealed class BoardFinishingService
         if (diameter <= 0) return Error("Testpoint diameter must be positive.", "INVALID_MECHANICAL_GEOMETRY");
         var resolved = loaded.Data.Board.Nets.FirstOrDefault(item => item.Name.Equals(net, StringComparison.OrdinalIgnoreCase)); if (resolved is null) return Error($"Net not found: {net}", "NET_NOT_FOUND");
         var uuid = Guid.NewGuid().ToString();
-        var text = $"\n\t(footprint \"PCBHelper:TestPoint\" (layer \"F.Cu\") (at {F(x)} {F(y)}) (uuid \"{uuid}\")\n\t\t(property \"Reference\" \"{Escape(reference)}\" (at 0 -2 0) (layer \"F.SilkS\"))\n\t\t(property \"Value\" \"TestPoint\" (at 0 2 0) (layer \"F.Fab\") (hide yes))\n\t\t(pad \"1\" thru_hole circle (at 0 0) (size {F(diameter)} {F(diameter)}) (drill {F(diameter / 2)}) (layers \"*.Cu\" \"*.Mask\") (net {resolved.Code} \"{Escape(resolved.Name)}\"))\n\t)";
+        var item = $"TestPoint_THTPad_D{F(diameter)}mm_Drill{F(diameter / 2)}mm";
+        var text = $"\n\t(footprint \"PCBHelper:{item}\" (layer \"F.Cu\") (at {F(x)} {F(y)}) (uuid \"{uuid}\")\n\t\t(property \"Reference\" \"{Escape(reference)}\" (at 0 -2 0) (layer \"F.SilkS\"))\n\t\t(property \"Value\" \"TestPoint\" (at 0 2 0) (layer \"F.Fab\") (hide yes))\n\t\t(attr board_only exclude_from_pos_files exclude_from_bom)\n\t\t(pad \"1\" thru_hole circle (at 0 0) (size {F(diameter)} {F(diameter)}) (drill {F(diameter / 2)}) (layers \"*.Cu\" \"*.Mask\") (net {resolved.Code} \"{Escape(resolved.Name)}\"))\n\t)";
         return Insert(loaded.Data, "add-testpoint", reference, text, dryRun);
     }
 
@@ -88,7 +97,8 @@ public sealed class BoardFinishingService
     {
         var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
         if (drill <= 0 || diameter < drill) return Error("Mounting-hole diameter must be at least its positive drill size.", "INVALID_MECHANICAL_GEOMETRY");
-        var text = $"\n\t(footprint \"PCBHelper:MountingHole\" (layer \"F.Cu\") (at {F(x)} {F(y)}) (uuid \"{Guid.NewGuid()}\")\n\t\t(property \"Reference\" \"{Escape(reference)}\" (at 0 -3 0) (layer \"F.SilkS\"))\n\t\t(property \"Value\" \"MountingHole\" (at 0 3 0) (layer \"F.Fab\") (hide yes))\n\t\t(pad \"\" np_thru_hole circle (at 0 0) (size {F(diameter)} {F(diameter)}) (drill {F(drill)}) (layers \"*.Cu\" \"*.Mask\"))\n\t)";
+        var item = $"MountingHole_NPTH_D{F(diameter)}mm_Drill{F(drill)}mm";
+        var text = $"\n\t(footprint \"PCBHelper:{item}\" (layer \"F.Cu\") (at {F(x)} {F(y)}) (uuid \"{Guid.NewGuid()}\")\n\t\t(property \"Reference\" \"{Escape(reference)}\" (at 0 -3 0) (layer \"F.SilkS\"))\n\t\t(property \"Value\" \"MountingHole\" (at 0 3 0) (layer \"F.Fab\") (hide yes))\n\t\t(attr board_only exclude_from_pos_files exclude_from_bom)\n\t\t(pad \"\" np_thru_hole circle (at 0 0) (size {F(diameter)} {F(diameter)}) (drill {F(drill)}) (layers \"*.Cu\" \"*.Mask\"))\n\t)";
         return Insert(loaded.Data, "add-mounting-hole", reference, text, dryRun);
     }
 
@@ -98,11 +108,156 @@ public sealed class BoardFinishingService
         if (layer is not ("F.Cu" or "B.Cu")) return Error("Only F.Cu and B.Cu keep-outs are supported.", "UNSUPPORTED_LAYER");
         var polygon = ParsePoints(points); if (polygon is null || polygon.Count < 3) return Error("A keep-out requires at least three valid points.", "INVALID_MECHANICAL_GEOMETRY");
         var id = Guid.NewGuid().ToString();
-        var text = $"\n\t(zone (net 0) (net_name \"\") (layer \"{layer}\") (uuid \"{id}\") (hatch edge 0.5)\n\t\t(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed))\n\t\t(polygon (pts {string.Join(' ', polygon.Select(p => $"(xy {F(p.X)} {F(p.Y)})"))}))\n\t)";
+        var text = FormatKeepoutZone(
+            layer,
+            id,
+            polygon,
+            "(tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed)");
         return Insert(loaded.Data, "add-mechanical-keepout", id, text, dryRun);
     }
 
-    public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath) => Error("KiCad CLI does not expose zone refill. Refill in KiCad and save before release.", "KICAD_ZONE_REFILL_UNAVAILABLE");
+    public ToolResponse<BoardFinishingMutationResult> AddModuleKeepout(string projectPath, string layer, string points, bool dryRun)
+    {
+        var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
+        if (layer is not ("F.Cu" or "B.Cu")) return Error("Only F.Cu and B.Cu keep-outs are supported.", "UNSUPPORTED_LAYER");
+        var polygon = ParsePoints(points); if (polygon is null || polygon.Count < 3) return Error("A keep-out requires at least three valid points.", "INVALID_MECHANICAL_GEOMETRY");
+        var id = Guid.NewGuid().ToString();
+        var text = FormatKeepoutZone(
+            layer,
+            id,
+            polygon,
+            "(tracks allowed) (vias not_allowed) (pads allowed) (copperpour not_allowed) (footprints allowed)");
+        return Insert(loaded.Data, "add-module-keepout", id, text, dryRun);
+    }
+
+    private static string FormatKeepoutZone(
+        string layer,
+        string id,
+        IReadOnlyList<(double X, double Y)> polygon,
+        string keepoutRules)
+    {
+        return $"""
+
+	(zone
+		(net 0)
+		(net_name "")
+		(layer "{layer}")
+		(uuid "{id}")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0)
+		)
+		(min_thickness 0.25)
+		(filled_areas_thickness no)
+		(keepout
+			{keepoutRules}
+		)
+		(placement
+			(enabled no)
+			(sheetname "")
+		)
+		(fill
+			(thermal_gap 0.3)
+			(thermal_bridge_width 0.3)
+		)
+		(polygon
+			(pts {string.Join(' ', polygon.Select(p => $"(xy {F(p.X)} {F(p.Y)})"))})
+		)
+	)
+""";
+    }
+
+    public ToolResponse<BoardFinishingMutationResult> SetBoardOutlineRectangle(string projectPath, double left, double top, double right, double bottom, bool dryRun)
+    {
+        var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
+        if (right <= left || bottom <= top) return Error("Board rectangle requires right > left and bottom > top.", "INVALID_BOARD_OUTLINE");
+        var blocks = new List<(int Start, int Length, string Text)>();
+        var index = 0;
+        while ((index = loaded.Data.Text.IndexOf("(gr_rect", index, StringComparison.Ordinal)) >= 0)
+        {
+            var end = FindEnd(loaded.Data.Text, index);
+            if (end < 0) return Error("Board rectangle is invalid.", "BOARD_PARSE_FAILED");
+            var block = loaded.Data.Text.Substring(index, end - index + 1);
+            if (block.Contains("(layer \"Edge.Cuts\")", StringComparison.Ordinal)) blocks.Add((index, end - index + 1, block));
+            index = end + 1;
+        }
+        if (blocks.Count != 1) return Error($"Expected exactly one rectangular Edge.Cuts outline, found {blocks.Count}.", "BOARD_OUTLINE_UNSUPPORTED");
+        var selected = blocks[0];
+        var updated = new Regex(@"\(start\s+-?[\d.]+\s+-?[\d.]+\)").Replace(selected.Text, $"(start {F(left)} {F(top)})", 1);
+        updated = new Regex(@"\(end\s+-?[\d.]+\s+-?[\d.]+\)").Replace(updated, $"(end {F(right)} {F(bottom)})", 1);
+        return Replace(loaded.Data, "set-board-outline-rectangle", "Edge.Cuts", selected.Start, selected.Length, updated, dryRun);
+    }
+
+    public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath)
+    {
+        var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
+        if (!loaded.Data.Text.Contains("(zone", StringComparison.Ordinal)) return Error("The board has no copper zones to refill.", "ZONE_NOT_FOUND");
+        var kiCad = _kiCadCli.Locate();
+        if (!kiCad.Found || string.IsNullOrWhiteSpace(kiCad.ExecutablePath)) return Error("KiCad is required to refill zones.", "KICAD_ZONE_REFILL_UNAVAILABLE", kiCad.Message);
+        var python = Path.Combine(Path.GetDirectoryName(kiCad.ExecutablePath)!, "python.exe");
+        if (!File.Exists(python)) return Error("KiCad Python is required to refill zones.", "KICAD_ZONE_REFILL_UNAVAILABLE", python);
+        var script = Path.Combine(Path.GetTempPath(), $"pcbhelper-refill-zones-{Guid.NewGuid():N}.py");
+        try
+        {
+            File.WriteAllText(script, """
+import pcbnew
+import os
+import sys
+
+board_path = sys.argv[1]
+board = pcbnew.LoadBoard(board_path)
+filler = pcbnew.ZONE_FILLER(board)
+filler.Fill(board.Zones())
+pcbnew.SaveBoard(board_path, board)
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
+""");
+            var result = _runner is ProcessCommandRunner
+                ? RunProcessSynchronously(python, new[] { script, loaded.Data.File }, Path.GetDirectoryName(loaded.Data.File), TimeSpan.FromMinutes(2))
+                : _runner.RunAsync(python, new[] { script, loaded.Data.File }, Path.GetDirectoryName(loaded.Data.File)).GetAwaiter().GetResult();
+            if (result.ExitCode != 0) return Error("KiCad Python zone refill failed.", "KICAD_ZONE_REFILL_FAILED", result.StandardError);
+            return ToolResponse<BoardFinishingMutationResult>.Ok("Refilled and saved all copper zones with KiCad Python.", new("refill-zones", "all", loaded.Data.File, false, result.StandardOutput));
+        }
+        catch (Exception exception)
+        {
+            return Error("KiCad Python zone refill failed.", "KICAD_ZONE_REFILL_FAILED", exception.Message);
+        }
+        finally
+        {
+            if (File.Exists(script)) File.Delete(script);
+        }
+    }
+
+    private static CommandExecutionResult RunProcessSynchronously(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan timeout)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+        {
+            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            process.WaitForExit();
+            throw new TimeoutException($"Process did not finish within {timeout.TotalSeconds:0} seconds: {fileName}");
+        }
+        return new CommandExecutionResult(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+    }
 
     private ToolResponse<BoardFinishingMutationResult> EditReference(string projectPath, string reference, bool dryRun, Func<string,string> edit, string operation)
     {

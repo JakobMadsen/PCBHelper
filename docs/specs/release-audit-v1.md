@@ -52,6 +52,11 @@ execution.
       "ASSEMBLY_ORIENTATION_REVIEW"
     ]
   },
+  "bestPracticeReview": {
+    "required": true,
+    "requireFresh": true,
+    "allowPassWithConcerns": false
+  },
   "simulation": {
     "required": true,
     "minimumTests": 4
@@ -119,6 +124,7 @@ manual-evidence paths resolve from the audited project root.
 - KiCad schematic/board presence and SHA-256 fingerprints.
 - Git commit traceability and clean worktree when required.
 - Latest PCBHelper release-check presence and freshness.
+- Current PCBHelper best-practice review disposition when required by policy.
 - Selected blocking assembly diagnostic codes.
 - Simulation backend and minimum project test count.
 - Unrouted board connections and board/schematic value mismatches.
@@ -131,6 +137,9 @@ manual-evidence paths resolve from the audited project root.
 
 ERC and DRC remain separate evidence. They do not prove analogue behavior or
 replace policy assertions, simulation, datasheet review, or physical validation.
+When `bestPracticeReview.required` is true, missing, stale, `Revise`, or
+`UnableToAssess` reviews block release. `PassWithConcerns` also blocks unless
+`allowPassWithConcerns` is explicitly enabled.
 When a project contains simulation tests, `generate_pcbway_release` requires
 them and records the resulting `simulation` engineering check. The policy name
 `simulation-assertions` is accepted as an alias for that release-check kind.

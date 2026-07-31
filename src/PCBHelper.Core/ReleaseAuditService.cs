@@ -19,6 +19,7 @@ public sealed class ReleaseAuditService
     private readonly BoardInspectionService _inspection;
     private readonly RoutingService _routing;
     private readonly TestSpecService _tests;
+    private readonly BestPracticeReviewService _bestPractices;
     private readonly Func<SimulationCapabilities> _simulationCapabilities;
     private readonly Func<DateTimeOffset> _clock;
 
@@ -28,6 +29,7 @@ public sealed class ReleaseAuditService
         BoardInspectionService inspection,
         RoutingService routing,
         TestSpecService tests,
+        BestPracticeReviewService bestPractices,
         Func<SimulationCapabilities> simulationCapabilities,
         Func<DateTimeOffset>? clock = null)
     {
@@ -36,6 +38,7 @@ public sealed class ReleaseAuditService
         _inspection = inspection;
         _routing = routing;
         _tests = tests;
+        _bestPractices = bestPractices;
         _simulationCapabilities = simulationCapabilities;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
@@ -94,6 +97,7 @@ public sealed class ReleaseAuditService
                 _inspection,
                 _routing,
                 _tests,
+                _bestPractices,
                 _simulationCapabilities);
 
             RunChecks(context);
@@ -214,6 +218,7 @@ public sealed class ReleaseAuditService
 
         if (policy.Git is null
             || policy.ReleaseEvidence is null
+            || policy.BestPracticeReview is null
             || policy.Simulation is null
             || policy.Intent is null
             || policy.ManualEvidence is null
@@ -312,6 +317,7 @@ public sealed class ReleaseAuditService
         CheckProjectFiles(context);
         CheckGit(context);
         CheckReleaseEvidence(context);
+        CheckBestPracticeReview(context);
         CheckSimulation(context);
         CheckUnrouted(context);
         CheckComponentConsistency(context);
@@ -412,6 +418,14 @@ public sealed class ReleaseAuditService
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            // The project path has already passed PCBHelper's path authorization.
+            // Git 2.35+ can nevertheless reject a repository owned by the desktop
+            // user when PCBHelper runs in an isolated worker account. Scope the
+            // exception to this child process and exact project path; never mutate
+            // the user's global Git configuration.
+            start.ArgumentList.Add("-c");
+            start.ArgumentList.Add(
+                $"safe.directory={Path.GetFullPath(workingDirectory).Replace('\\', '/')}");
             foreach (var argument in arguments)
             {
                 start.ArgumentList.Add(argument);
@@ -480,6 +494,18 @@ public sealed class ReleaseAuditService
             var present = match.ValueKind != JsonValueKind.Undefined;
             var required = present && ReadBoolean(match, "required");
             var passed = present && PassedStatus(match, "status");
+            if (expectedKind.Equals("drc", StringComparison.OrdinalIgnoreCase))
+            {
+                var findingCount = present
+                    && TryGet(match, "findingCount", out var findingCountElement)
+                    && findingCountElement.ValueKind == JsonValueKind.Number
+                    && findingCountElement.TryGetInt32(out var parsedFindingCount)
+                        ? parsedFindingCount
+                        : (int?)null;
+                context.ZoneAwareDrcConnectivityPassed = required && passed && findingCount == 0;
+                context.LatestDrcFindingCount = findingCount;
+            }
+
             context.Add(
                 $"release-check-{kind}",
                 "release-evidence",
@@ -555,6 +581,49 @@ public sealed class ReleaseAuditService
         };
     }
 
+    private static void CheckBestPracticeReview(AuditContext context)
+    {
+        var policy = context.Policy.BestPracticeReview;
+        if (!policy.Required)
+        {
+            return;
+        }
+
+        var validation = context.BestPractices.ValidateCurrent(context.Project.ProjectRoot);
+        if (!validation.Success || validation.Data is null)
+        {
+            context.Add(
+                "best-practice-review",
+                "best-practice",
+                ReleaseAuditCheckStatus.Fail,
+                "A required best-practice review is missing or invalid.",
+                new
+                {
+                    validation.Summary,
+                    errorCode = validation.Error?.Code,
+                    errorMessage = validation.Error?.Message
+                });
+            return;
+        }
+
+        var dispositionAccepted =
+            validation.Data.Disposition == BestPracticeDisposition.Pass
+            || policy.AllowPassWithConcerns
+                && validation.Data.Disposition == BestPracticeDisposition.PassWithConcerns;
+        var freshnessAccepted = !policy.RequireFresh || validation.Data.EvidenceCurrent;
+        var passed = dispositionAccepted && freshnessAccepted;
+        context.Add(
+            "best-practice-review",
+            "best-practice",
+            passed ? ReleaseAuditCheckStatus.Pass : ReleaseAuditCheckStatus.Fail,
+            passed
+                ? $"Best-practice review {validation.Data.RunId} is accepted with disposition {validation.Data.Disposition}."
+                : !freshnessAccepted
+                    ? $"Best-practice review {validation.Data.RunId} is stale."
+                    : $"Best-practice review {validation.Data.RunId} has blocking disposition {validation.Data.Disposition}.",
+            validation.Data);
+    }
+
     private static void CheckSimulation(AuditContext context)
     {
         if (!context.Policy.Simulation.Required)
@@ -589,14 +658,24 @@ public sealed class ReleaseAuditService
     {
         var unrouted = context.Routing.ListUnroutedConnections(context.Project.ProjectRoot);
         var count = unrouted.Data?.Nets.Count ?? 0;
+        var passed = unrouted.Success && (count == 0 || context.ZoneAwareDrcConnectivityPassed);
         context.Add(
             "unrouted-connections",
             "layout",
-            unrouted.Success && count == 0 ? ReleaseAuditCheckStatus.Pass : ReleaseAuditCheckStatus.Fail,
-            unrouted.Success && count == 0
+            passed ? ReleaseAuditCheckStatus.Pass : ReleaseAuditCheckStatus.Fail,
+            !unrouted.Success
+                ? "Unrouted connectivity could not be inspected."
+                : count == 0
                 ? "No unrouted connections were reported."
-                : $"Found {count} unrouted net record(s).",
-            unrouted.Data?.Nets);
+                : context.ZoneAwareDrcConnectivityPassed
+                    ? $"KiCad DRC reports 0 findings, including unconnected items; {count} track-only net record(s) are satisfied by zone-aware connectivity evidence."
+                    : $"Found {count} unrouted net record(s).",
+            new
+            {
+                trackOnlyNetRecords = unrouted.Data?.Nets,
+                zoneAwareDrcPassed = context.ZoneAwareDrcConnectivityPassed,
+                drcFindingCount = context.LatestDrcFindingCount
+            });
     }
 
     private static void CheckComponentConsistency(AuditContext context)
@@ -1183,6 +1262,7 @@ public sealed class ReleaseAuditService
             BoardInspectionService inspection,
             RoutingService routing,
             TestSpecService tests,
+            BestPracticeReviewService bestPractices,
             Func<SimulationCapabilities> simulationCapabilities)
         {
             Project = project;
@@ -1193,6 +1273,7 @@ public sealed class ReleaseAuditService
             _inspection = inspection;
             Routing = routing;
             Tests = tests;
+            BestPractices = bestPractices;
             SimulationCapabilities = simulationCapabilities;
         }
 
@@ -1202,7 +1283,10 @@ public sealed class ReleaseAuditService
         public ProjectDiscoveryService Projects { get; }
         public RoutingService Routing { get; }
         public TestSpecService Tests { get; }
+        public BestPracticeReviewService BestPractices { get; }
         public Func<SimulationCapabilities> SimulationCapabilities { get; }
+        public bool ZoneAwareDrcConnectivityPassed { get; set; }
+        public int? LatestDrcFindingCount { get; set; }
         public List<ReleaseAuditCheck> Checks { get; } = new();
         public List<ReleaseAuditSourceFile> SourceFiles { get; } = new();
 
@@ -1322,6 +1406,7 @@ public sealed class ReleaseAuditPolicy
     public string? Name { get; init; }
     public ReleaseAuditGitPolicy Git { get; init; } = new();
     public ReleaseAuditEvidencePolicy ReleaseEvidence { get; init; } = new();
+    public ReleaseAuditBestPracticePolicy BestPracticeReview { get; init; } = new();
     public ReleaseAuditSimulationPolicy Simulation { get; init; } = new();
     public ReleaseAuditIntentPolicy Intent { get; init; } = new();
     public IReadOnlyList<ReleaseAuditPinNetAssertion> PinNetAssertions { get; init; } = Array.Empty<ReleaseAuditPinNetAssertion>();
@@ -1344,6 +1429,13 @@ public sealed class ReleaseAuditEvidencePolicy
     public bool RequireFresh { get; init; }
     public IReadOnlyList<string> RequiredChecks { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> BlockingAssemblyDiagnosticCodes { get; init; } = Array.Empty<string>();
+}
+
+public sealed class ReleaseAuditBestPracticePolicy
+{
+    public bool Required { get; init; }
+    public bool RequireFresh { get; init; } = true;
+    public bool AllowPassWithConcerns { get; init; }
 }
 
 public sealed class ReleaseAuditSimulationPolicy

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\agent-guide-v1.md" Link="AgentGuidance\agent-guide-v1.md" />
+    <EmbeddedResource Include="..\..\docs\best-practice-review-prompt-v1.md" Link="AgentGuidance\best-practice-review-prompt-v1.md" />
   </ItemGroup>
 
 </Project>

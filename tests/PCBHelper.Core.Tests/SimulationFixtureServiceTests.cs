@@ -42,6 +42,41 @@ public sealed class SimulationFixtureServiceTests
     }
 
     [Fact]
+    public void SetFixture_Compiles_Supply_Limited_Ideal_Comparator()
+    {
+        using var project = TestProject.Create();
+        using var document = JsonDocument.Parse("""
+        {
+          "id":"comparator",
+          "elements":[
+            {"kind":"ideal-comparator","reference":"U1","plusNet":"IN","minusNet":"THRESH","outputNet":"OUT",
+             "positiveSupplyNet":"VCC","negativeSupplyNet":"0","openLoopGain":1000000,"outputHeadroomV":0.05}
+          ],
+          "tests":[
+            {
+              "id":"switches",
+              "type":"simulation.op",
+              "stimuli":[
+                {"name":"VCC","kind":"dc-voltage","positiveNet":"VCC","negativeNet":"0","dcV":5},
+                {"name":"IN","kind":"dc-voltage","positiveNet":"IN","negativeNet":"0","dcV":3},
+                {"name":"THRESH","kind":"dc-voltage","positiveNet":"THRESH","negativeNet":"0","dcV":2.5}
+              ],
+              "measurements":[{"name":"out","kind":"nodeVoltage","net":"OUT","unit":"V"}],
+              "asserts":[{"measurement":"out","greaterThan":4.9}]
+            }
+          ]
+        }
+        """);
+
+        var result = new SimulationFixtureService(new ProjectDiscoveryService())
+            .SetFixture(project.Path, document.RootElement, dryRun: false);
+
+        Assert.True(result.Success, result.Error?.Message);
+        var circuit = File.ReadAllText(Path.Combine(project.Path, "simulation", "comparator.cir"));
+        Assert.Contains("BU1 OUT 0 V=(V(VCC)+V(0))/2+((V(VCC)-V(0))/2-0.050000000000000003)*tanh(1000000*(V(IN)-V(THRESH))/((V(VCC)-V(0))/2-0.050000000000000003))", circuit, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DesignPlan_Previews_Simulation_Fixture_As_Two_Transactional_Files()
     {
         using var project = TestProject.Create();
