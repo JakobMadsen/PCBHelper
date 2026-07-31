@@ -1,5 +1,6 @@
-using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace PCBHelper.Core;
@@ -7,13 +8,23 @@ namespace PCBHelper.Core;
 public sealed class BoardFinishingService
 {
     private readonly ProjectDiscoveryService _projects;
-    private readonly KiCadCliLocator _kiCadCli;
-    private readonly ICommandRunner _runner;
+    private readonly IKiCadZoneRefillBackend _zoneRefill;
+    private readonly IProjectFileWriter _writer;
     public BoardFinishingService(ProjectDiscoveryService projects, KiCadCliLocator? kiCadCli = null, ICommandRunner? runner = null)
+        : this(
+            projects,
+            new KiCadPythonZoneRefillBackend(kiCadCli ?? new KiCadCliLocator(), runner ?? new ProcessCommandRunner()),
+            new AtomicProjectFileWriter())
+    {
+    }
+    public BoardFinishingService(
+        ProjectDiscoveryService projects,
+        IKiCadZoneRefillBackend zoneRefill,
+        IProjectFileWriter writer)
     {
         _projects = projects;
-        _kiCadCli = kiCadCli ?? new KiCadCliLocator();
-        _runner = runner ?? new ProcessCommandRunner();
+        _zoneRefill = zoneRefill;
+        _writer = writer;
     }
 
     public ToolResponse<BoardFinishingMutationResult> AddCopperZone(string projectPath, string net, string layer, string points, double clearance, double minThickness, bool dryRun)
@@ -188,75 +199,77 @@ public sealed class BoardFinishingService
         return Replace(loaded.Data, "set-board-outline-rectangle", "Edge.Cuts", selected.Start, selected.Length, updated, dryRun);
     }
 
-    public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath)
+    public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath) =>
+        RefillZonesAsync(projectPath).GetAwaiter().GetResult();
+
+    public async Task<ToolResponse<BoardFinishingMutationResult>> RefillZonesAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default)
     {
-        var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
-        if (!loaded.Data.Text.Contains("(zone", StringComparison.Ordinal)) return Error("The board has no copper zones to refill.", "ZONE_NOT_FOUND");
-        var kiCad = _kiCadCli.Locate();
-        if (!kiCad.Found || string.IsNullOrWhiteSpace(kiCad.ExecutablePath)) return Error("KiCad is required to refill zones.", "KICAD_ZONE_REFILL_UNAVAILABLE", kiCad.Message);
-        var python = Path.Combine(Path.GetDirectoryName(kiCad.ExecutablePath)!, "python.exe");
-        if (!File.Exists(python)) return Error("KiCad Python is required to refill zones.", "KICAD_ZONE_REFILL_UNAVAILABLE", python);
-        var script = Path.Combine(Path.GetTempPath(), $"pcbhelper-refill-zones-{Guid.NewGuid():N}.py");
-        try
+        var loaded = Load(projectPath);
+        if (!loaded.Success || loaded.Data is null) return Fail(loaded);
+        var before = loaded.Data.Text;
+        var beforeHash = Hash(before);
+        var zoneCount = CountFillableZones(before);
+        if (zoneCount == 0)
         {
-            File.WriteAllText(script, """
-import pcbnew
-import os
-import sys
+            return ToolResponse<BoardFinishingMutationResult>.Ok(
+                "Board has no fillable copper zones.",
+                new("refill-zones", "none", loaded.Data.File, false, string.Empty, null, 0, beforeHash, beforeHash));
+        }
 
-board_path = sys.argv[1]
-board = pcbnew.LoadBoard(board_path)
-filler = pcbnew.ZONE_FILLER(board)
-filler.Fill(board.Zones())
-pcbnew.SaveBoard(board_path, board)
-sys.stdout.flush()
-sys.stderr.flush()
-os._exit(0)
-""");
-            var result = _runner is ProcessCommandRunner
-                ? RunProcessSynchronously(python, new[] { script, loaded.Data.File }, Path.GetDirectoryName(loaded.Data.File), TimeSpan.FromMinutes(2))
-                : _runner.RunAsync(python, new[] { script, loaded.Data.File }, Path.GetDirectoryName(loaded.Data.File)).GetAwaiter().GetResult();
-            if (result.ExitCode != 0) return Error("KiCad Python zone refill failed.", "KICAD_ZONE_REFILL_FAILED", result.StandardError);
-            return ToolResponse<BoardFinishingMutationResult>.Ok("Refilled and saved all copper zones with KiCad Python.", new("refill-zones", "all", loaded.Data.File, false, result.StandardOutput));
-        }
-        catch (Exception exception)
-        {
-            return Error("KiCad Python zone refill failed.", "KICAD_ZONE_REFILL_FAILED", exception.Message);
-        }
-        finally
-        {
-            if (File.Exists(script)) File.Delete(script);
-        }
-    }
+        var project = _projects.GetSummary(projectPath);
+        if (!project.Success || project.Data is null)
+            return Error(project.Summary, project.Error?.Code ?? "PROJECT_NOT_FOUND", project.Error?.Message);
+        var evidenceDirectory = Path.Combine(
+            project.Data.ProjectRoot,
+            ".pcbhelper",
+            "zone-refill",
+            $"{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(evidenceDirectory);
+        var beforePath = Path.Combine(evidenceDirectory, "before.kicad_pcb");
+        var candidatePath = Path.Combine(evidenceDirectory, "after.kicad_pcb");
+        await File.WriteAllTextAsync(beforePath, before, new UTF8Encoding(false), cancellationToken);
+        await File.WriteAllTextAsync(candidatePath, before, new UTF8Encoding(false), cancellationToken);
 
-    private static CommandExecutionResult RunProcessSynchronously(
-        string fileName,
-        IReadOnlyList<string> arguments,
-        string? workingDirectory,
-        TimeSpan timeout)
-    {
-        var startInfo = new ProcessStartInfo
+        var backend = await _zoneRefill.RefillAsync(candidatePath, evidenceDirectory, cancellationToken);
+        if (!backend.Success)
         {
-            FileName = fileName,
-            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        if (!process.WaitForExit((int)timeout.TotalMilliseconds))
-        {
-            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            process.WaitForExit();
-            throw new TimeoutException($"Process did not finish within {timeout.TotalSeconds:0} seconds: {fileName}");
+            return ToolResponse<BoardFinishingMutationResult>.Fail(
+                "KiCad could not refill the copper zones.",
+                backend.PythonPath is null ? "KICAD_PYTHON_UNAVAILABLE" : "KICAD_ZONE_REFILL_FAILED",
+                string.IsNullOrWhiteSpace(backend.StandardError) ? $"KiCad Python exited with {backend.ExitCode}." : backend.StandardError,
+                new("refill-zones", zoneCount.ToString(CultureInfo.InvariantCulture), loaded.Data.File, false, string.Empty,
+                    evidenceDirectory, zoneCount, beforeHash, beforeHash));
         }
-        return new CommandExecutionResult(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+
+        var after = await File.ReadAllTextAsync(candidatePath, cancellationToken);
+        if (!after.Contains("(filled_polygon", StringComparison.Ordinal))
+        {
+            return ToolResponse<BoardFinishingMutationResult>.Fail(
+                "KiCad reported success but did not save filled copper polygons.",
+                "KICAD_ZONE_REFILL_INVALID_OUTPUT",
+                evidenceDirectory,
+                new("refill-zones", zoneCount.ToString(CultureInfo.InvariantCulture), loaded.Data.File, false, string.Empty,
+                    evidenceDirectory, zoneCount, beforeHash, beforeHash));
+        }
+
+        var afterHash = Hash(after);
+        if (afterHash == beforeHash)
+        {
+            return ToolResponse<BoardFinishingMutationResult>.Fail(
+                "KiCad reported success but the board file did not change.",
+                "KICAD_ZONE_REFILL_INVALID_OUTPUT",
+                evidenceDirectory,
+                new("refill-zones", zoneCount.ToString(CultureInfo.InvariantCulture), loaded.Data.File, false, string.Empty,
+                    evidenceDirectory, zoneCount, beforeHash, beforeHash));
+        }
+
+        await _writer.WriteAtomicAsync(loaded.Data.File, after, cancellationToken);
+        return ToolResponse<BoardFinishingMutationResult>.Ok(
+            $"Refilled {zoneCount} copper zone(s) with KiCad.",
+            new("refill-zones", zoneCount.ToString(CultureInfo.InvariantCulture), loaded.Data.File, false, string.Empty,
+                evidenceDirectory, zoneCount, beforeHash, afterHash));
     }
 
     private ToolResponse<BoardFinishingMutationResult> EditReference(string projectPath, string reference, bool dryRun, Func<string,string> edit, string operation)
@@ -277,6 +290,24 @@ os._exit(0)
     private static (int Start,int Length,string Text)? FindBlock(string text,string kind,string id) { var i=0; while((i=text.IndexOf("("+kind,i,StringComparison.Ordinal))>=0){var e=FindEnd(text,i);if(e<0)return null;var b=text.Substring(i,e-i+1);if(b.Contains(id,StringComparison.OrdinalIgnoreCase))return(i,e-i+1,b);i=e+1;}return null; }
     private static int FindEnd(string text,int start){var d=0;var q=false;for(var i=start;i<text.Length;i++){if(text[i]=='\"'&&(i==0||text[i-1]!='\\'))q=!q;if(q)continue;if(text[i]=='(')d++;else if(text[i]==')'&&--d==0)return i;}return-1;}
     private static string ReplaceFirst(string input, string pattern, string replacement) => new Regex(pattern).Replace(input, replacement, 1);
+    private static int CountFillableZones(string text)
+    {
+        var count = 0;
+        var index = 0;
+        while (true)
+        {
+            var match = Regex.Match(text[index..], @"\(zone(?=\s|\))", RegexOptions.None, TimeSpan.FromSeconds(1));
+            if (!match.Success) break;
+            index += match.Index;
+            var end = FindEnd(text, index);
+            if (end < 0) break;
+            var block = text[index..(end + 1)];
+            if (!block.Contains("(keepout", StringComparison.Ordinal)) count++;
+            index = end + 1;
+        }
+        return count;
+    }
+    private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static string SetReferenceHidden(string footprintBlock)
     {
         var start = Regex.Match(footprintBlock, "\\(property\\s+\"Reference\"");
@@ -293,4 +324,13 @@ os._exit(0)
     private static string F(double v)=>v.ToString("0.####",CultureInfo.InvariantCulture); private static string Escape(string v)=>v.Replace("\\","\\\\").Replace("\"","\\\"");
     private sealed record LoadedBoard(string File,string Text,KiCadBoardDocument Board);
 }
-public sealed record BoardFinishingMutationResult(string Operation,string ItemId,string ChangedFile,bool DryRun,string ProposedText);
+public sealed record BoardFinishingMutationResult(
+    string Operation,
+    string ItemId,
+    string ChangedFile,
+    bool DryRun,
+    string ProposedText,
+    string? EvidenceDirectory = null,
+    int? ZoneCount = null,
+    string? BeforeHash = null,
+    string? AfterHash = null);

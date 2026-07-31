@@ -39,25 +39,40 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
-    public void RefillZones_Uses_KiCadPython_And_Returns_A_Real_Mutation()
+    public async Task RefillZones_Uses_KiCad_Backend_And_Atomically_Writes_Result()
     {
         using var fixture=CopyTutorial();
-        using var tools=new TempDirectory();
-        var cli=Path.Combine(tools.Path,"kicad-cli.exe");
-        var python=Path.Combine(tools.Path,"python.exe");
-        File.WriteAllText(cli,string.Empty);
-        File.WriteAllText(python,string.Empty);
         var service=new BoardFinishingService(
             new ProjectDiscoveryService(),
-            new KiCadCliLocator(name=>name=="KICAD_CLI"?cli:null),
-            new SuccessfulCommandRunner());
+            new FakeZoneRefillBackend(succeed:true),
+            new AtomicProjectFileWriter());
         Assert.True(service.AddCopperZone(fixture.Path,"GND","B.Cu","40,30;75,30;75,60;40,60",0.2,0.25,false).Success);
 
-        var result=service.RefillZones(fixture.Path);
+        var result=await service.RefillZonesAsync(fixture.Path);
 
         Assert.True(result.Success,result.Error?.Message);
-        Assert.Equal("refill-zones",result.Data!.Operation);
-        Assert.False(result.Data.DryRun);
+        Assert.Equal(1,result.Data!.ZoneCount);
+        Assert.NotEqual(result.Data.BeforeHash,result.Data.AfterHash);
+        Assert.Contains("(filled_polygon",File.ReadAllText(Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single()));
+    }
+
+    [Fact]
+    public async Task RefillZones_Backend_Failure_Leaves_Project_Board_Unchanged()
+    {
+        using var fixture=CopyTutorial();
+        var service=new BoardFinishingService(
+            new ProjectDiscoveryService(),
+            new FakeZoneRefillBackend(succeed:false),
+            new AtomicProjectFileWriter());
+        Assert.True(service.AddCopperZone(fixture.Path,"GND","B.Cu","40,30;75,30;75,60;40,60",0.2,0.25,false).Success);
+        var board=Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single();
+        var before=File.ReadAllText(board);
+
+        var result=await service.RefillZonesAsync(fixture.Path);
+
+        Assert.False(result.Success);
+        Assert.Equal("KICAD_ZONE_REFILL_FAILED",result.Error!.Code);
+        Assert.Equal(before,File.ReadAllText(board));
     }
 
     [Fact]
@@ -141,26 +156,27 @@ public sealed class BoardFinishingServiceTests
     private static TempDirectory CopyTutorial(){var t=new TempDirectory();var s=Path.Combine(RepoRoot.Path,"fixtures","kicad-getting-started-led");foreach(var f in Directory.GetFiles(s))File.Copy(f,Path.Combine(t.Path,Path.GetFileName(f)));return t;}
 
     [Fact]
-    public void RefillZones_Uses_Bounded_External_Process_Execution()
+    public void RefillZones_Backend_Uses_Bounded_External_Process_Execution()
     {
         var repositoryRoot=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","..","..","..",".."));
-        var source=File.ReadAllText(Path.Combine(repositoryRoot,"src","PCBHelper.Core","BoardFinishingService.cs"));
+        var source=File.ReadAllText(Path.Combine(repositoryRoot,"src","PCBHelper.Core","KiCadZoneRefillBackend.cs"));
 
-        Assert.Contains("TimeSpan.FromMinutes(2)",source);
+        Assert.Contains("TimeSpan.FromSeconds(30)",source);
         Assert.Contains("process.Kill(entireProcessTree: true)",source);
-        Assert.Contains("throw new TimeoutException",source);
+        Assert.Contains("TimedOut()",source);
     }
 
-    private sealed class SuccessfulCommandRunner : ICommandRunner
+    private sealed class FakeZoneRefillBackend(bool succeed) : IKiCadZoneRefillBackend
     {
-        public Task<CommandExecutionResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken = default)
+        public Task<ZoneRefillBackendResult> RefillAsync(string boardPath,string evidenceDirectory,CancellationToken cancellationToken)
         {
-            Assert.EndsWith("python.exe",fileName,StringComparison.OrdinalIgnoreCase);
-            var script=File.ReadAllText(arguments[0]);
-            Assert.Contains("ZONE_FILLER",script);
-            Assert.Contains("os._exit(0)",script);
-            Assert.EndsWith(".kicad_pcb",arguments[1],StringComparison.OrdinalIgnoreCase);
-            return Task.FromResult(new CommandExecutionResult(0,"zones filled",string.Empty));
+            File.AppendAllText(boardPath,Environment.NewLine+"\t(filled_polygon (layer \"B.Cu\") (island) (pts))");
+            return Task.FromResult(new ZoneRefillBackendResult(
+                succeed,
+                succeed?0:1,
+                "fake stdout",
+                succeed?string.Empty:"fake failure",
+                "fake-python"));
         }
     }
 }

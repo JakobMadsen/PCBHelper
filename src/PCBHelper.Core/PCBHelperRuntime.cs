@@ -36,7 +36,7 @@ public sealed class PCBHelperRuntime
             Routing,
             new SchematicAuthoringService(Projects),
             TestSpecs);
-        BoardFinishing = new BoardFinishingService(Projects);
+        BoardFinishing = new BoardFinishingService(Projects, locator, runner);
         Gui = new GuiReviewService(locator, new KiCadExecutableLocator(locator), runner);
         TransactionStore = new ProjectTransactionStore(Projects);
         Transactions = new ProjectTransactionService(Projects, TransactionStore, new AtomicProjectFileWriter(), () => DateTimeOffset.UtcNow);

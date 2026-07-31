@@ -195,8 +195,11 @@ public sealed class WorkflowMcpTools
         string? outputDirectory = null) =>
         _runtime.ReleaseAudits.Audit(projectPath, policyPath, outputDirectory);
 
-    [McpServerTool(Name = "refill_zones"), Description("Refill and save all copper zones using KiCad's bundled Python API.")]
-    public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath) => _runtime.BoardFinishing.RefillZones(projectPath);
+    [McpServerTool(Name = "refill_zones"), Description("Refill and save copper zones using KiCad's bundled Python/pcbnew engine, with isolated output validation and an atomic board-file write.")]
+    public Task<ToolResponse<BoardFinishingMutationResult>> RefillZones(
+        string projectPath,
+        CancellationToken cancellationToken = default) =>
+        _runtime.BoardFinishing.RefillZonesAsync(projectPath, cancellationToken);
 
     [McpServerTool(Name = "get_simulation_capabilities"), Description("Report whether the deterministic ngspice simulation backend is available.")]
     public ToolResponse<SimulationCapabilities> GetSimulationCapabilities() =>

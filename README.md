@@ -175,7 +175,7 @@ It is not intended for:
 - replacing datasheets, engineering review, simulation models, or physical testing
 - unattended ordering, payment, publication, or substitution approval
 
-KiCad GUI refresh and zone refill are capability-gated. File changes may require reopening or reloading the project in KiCad. Linux is tested through clean-room CI but is not an official alpha user platform.
+KiCad GUI refresh and zone refill are capability-gated. Zone refill runs against an isolated candidate and replaces the project board atomically only after KiCad output validation. File changes may require reopening or reloading the project in KiCad. Linux is tested through clean-room CI but is not an official alpha user platform.
 
 ## Documentation
 

@@ -4,6 +4,7 @@ All notable changes will be documented here. PCBHelper uses semantic versioning 
 
 ## Unreleased
 
+- Consolidated the remaining branch-only KiCad fixes: KiCad 10 named routing and pad-net preservation, rotated rectangular-pad clearance, mounting-hole routing rejection, and validated atomic zone refill with retained evidence.
 - Added a project-policy-driven release audit with CLI and workflow MCP surfaces, blocking evidence checks, and JSON/Markdown reports.
 
 ### Added
