@@ -37,6 +37,11 @@ The default `workflow` profile deliberately exposes only:
 - `get_capabilities`
 - `get_agent_guide`
 - `get_project_context`
+- `validate_layout_constraints`
+- `run_layout_constraint_proofs`
+- `get_workflow_status`
+- `list_artifacts`
+- `get_artifact`
 - `validate_design_plan`
 - `preview_design_plan`
 - `apply_design_plan`

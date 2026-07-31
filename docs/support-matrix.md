@@ -14,5 +14,7 @@
 | KiCad GUI refresh | Capability-gated | File mutation does not imply live GUI refresh. |
 | KiCad schematic `text_box` analysis | Supported | `readability-v2` is read-only; automatic relayout fails closed. |
 | Board readability analysis | Supported | Deterministic advisory analysis of labels, orientation and silkscreen geometry. |
+| Layout constraint proofs | Supported | Project-scoped V1 constraints; unresolved nets, tracks, or zone fills are unavailable, never passing. |
+| Workflow artifact inspection | Supported | Content-addressed `.pcbhelper` artifacts with bounded text reads and reparse-point exclusion. |
 
 PCBHelper does not support mains, medical, safety-critical, RF, high-speed, or high-current design in v0.1.

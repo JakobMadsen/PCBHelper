@@ -113,6 +113,29 @@ public sealed class WorkflowMcpTools
     public ToolResponse<BoardReadabilityReport> AnalyzeBoardReadability(string projectPath) =>
         _runtime.BoardReadability.Analyze(projectPath);
 
+    [McpServerTool(Name = "validate_layout_constraints"), Description("Validate the project-contained layout constraint document without claiming that any constraint passed.")]
+    public ToolResponse<ConstraintValidationResult> ValidateLayoutConstraints(string projectPath, string? constraintsPath = null) =>
+        _runtime.Constraints.Validate(projectPath, constraintsPath);
+
+    [McpServerTool(Name = "run_layout_constraint_proofs"), Description("Measure declared layout constraints against the current board and write a hash-bound proof report. Unresolved evidence is unavailable, never passing.")]
+    public Task<ToolResponse<ConstraintProofReport>> RunLayoutConstraintProofs(
+        string projectPath,
+        string? constraintsPath = null,
+        CancellationToken cancellationToken = default) =>
+        _runtime.Constraints.EvaluateAsync(projectPath, constraintsPath, cancellationToken);
+
+    [McpServerTool(Name = "get_workflow_status"), Description("Read compact transaction state and the latest existing release-audit disposition without running a new audit.")]
+    public ToolResponse<WorkflowStatus> GetWorkflowStatus(string projectPath) =>
+        _runtime.WorkflowArtifacts.GetStatus(projectPath);
+
+    [McpServerTool(Name = "list_artifacts"), Description("List project-scoped PCBHelper artifacts by content-addressed identifier without returning their contents.")]
+    public ToolResponse<ArtifactListResult> ListArtifacts(string projectPath) =>
+        _runtime.WorkflowArtifacts.ListArtifacts(projectPath);
+
+    [McpServerTool(Name = "get_artifact"), Description("Read one project-scoped artifact by content-addressed identifier; large text is truncated and binary content is not inlined.")]
+    public ToolResponse<ArtifactContent> GetArtifact(string projectPath, string artifactId) =>
+        _runtime.WorkflowArtifacts.GetArtifact(projectPath, artifactId);
+
     [McpServerTool(Name = "get_net_routing_context"), Description("Read one board net's pads, track segments, vias, layers, coordinates, and UUIDs for precise Design Plan authoring.")]
     public ToolResponse<NetRoutingResult> GetNetRoutingContext(string projectPath, string net) =>
         new RoutingService(_runtime.Projects).GetNetRouting(projectPath, net);

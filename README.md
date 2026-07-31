@@ -12,6 +12,7 @@ Describe what a low-voltage board should do. The agent builds a constrained Desi
 - Creates and edits supported schematic symbols, values, connections, footprints, placement, routing primitives, zones, and testpoints.
 - Groups changes into hash-bound Design Plans with preview, atomic apply, and conflict-safe restore.
 - Runs KiCad ERC/DRC, policy-driven release audits, and creates Gerber, drill, BOM, CPL, review, and PCBWay release packages.
+- Proves project-declared layout constraints against hash-bound board evidence and exposes bounded, content-addressed workflow artifacts.
 - Runs deterministic ngspice assertions for operating-point, AC, transient, tolerance, battery, and noise scenarios.
 - Checks declared design intent: common circuit mistakes, ADC ranges, test access, connector requirements, and sourced component ratings.
 - Reports what was proved, what failed, and what remains unknown instead of asking an LLM to grade its own work.

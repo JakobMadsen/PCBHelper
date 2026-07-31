@@ -6,7 +6,7 @@ namespace PCBHelper.Core;
 public sealed class AgentGuidanceService
 {
     public const int GuideVersion = 1;
-    public const int CapabilityVersion = 5;
+    public const int CapabilityVersion = 6;
     public const string GuideUri = "pcbhelper://agent-guide/v1";
     public const string DesignPlanSchemaUri = "pcbhelper://design-plan/v1/schema";
 
@@ -27,7 +27,7 @@ public sealed class AgentGuidanceService
             entry.DefaultFootprint,
             entry.Units,
             entry.Source)).ToArray(),
-        new[] { "Approved blank two-layer project bootstrap", "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "Native KiCad 10 design block catalog with provenance, interface contracts, immutable preview hashes, and evidence-gated maturity", "Evidence-bound qualitative best-practice review using a pure versioned LLM prompt and stale-design rejection", "ERC, DRC, simulation, manufacturing review, policy-driven release audit, and PCBWay package generation" },
+        new[] { "Approved blank two-layer project bootstrap", "Small, simple, reversible two-layer PCB workflows", "Transactional Design Plan mutation", "Native KiCad 10 design block catalog with provenance, interface contracts, immutable preview hashes, and evidence-gated maturity", "Evidence-bound qualitative best-practice review using a pure versioned LLM prompt and stale-design rejection", "Hash-bound layout constraint proofs with unavailable evidence kept distinct from passing", "Content-addressed workflow artifact inspection without recomputing release disposition", "ERC, DRC, simulation, manufacturing review, policy-driven release audit, and PCBWay package generation" },
         new[] { "No arbitrary KiCad text, shell commands, or file operations in Design Plans", "No general autorouting, safety-critical, mains, RF, high-current, or high-speed design", "No order placement, payment, or component substitution approval" });
 
     public string GetDesignPlanSchema() => DesignPlanOperationCatalog.CreateJsonSchema();
@@ -61,6 +61,7 @@ public static class AgentPolicyRules
         new AgentPolicyRule("BEST_PRACTICE_REVIEW_REQUIRES_EVIDENCE", "For qualitative best-practice review, prepare the versioned prompt, inspect the cited evidence, and submit every rule against the exact evidence hash."),
         new AgentPolicyRule("LLM_REVIEW_IS_NOT_PROOF", "Treat best-practice LLM findings as structured engineering judgment, not proof of electrical function, EMC, safety, or manufacturability."),
         new AgentPolicyRule("VISUAL_CLAIMS_REQUIRE_VISUAL_INSPECTION", "Do not pass visual schematic or PCB criteria merely because render paths exist; inspect the artifacts or mark the criterion unable to assess."),
+        new AgentPolicyRule("UNAVAILABLE_CONSTRAINTS_NOT_PASS", "Treat unresolved nets, missing routed segments, and unfilled zones as unavailable layout evidence, never as passing constraints."),
         new AgentPolicyRule("PCBWAY_REQUIRES_GERBER_BOM_CPL", "Assembly release requires current Gerber, BOM, and CPL outputs."),
         new AgentPolicyRule("NO_FALSE_GUI_REFRESH", "Do not report a GUI refresh when only project files changed."),
         new AgentPolicyRule("NO_ORDER_OR_PAYMENT", "Never place an order, pay, or approve substitutions without the user."),
