@@ -101,6 +101,7 @@ public static class DesignPlanOperationCatalog
         Op("set-symbol-field", "Set one schematic symbol field.", S("reference"), S("field"), S("value")),
         Op("hide-symbol-field", "Hide one schematic symbol field while preserving its value for sourcing and traceability.", S("reference"), S("field")),
         Op("connect-schematic-pins", "Connect two approved symbol pins.", S("from"), S("to"), S("net", false)),
+        Op("arrange-schematic", "Deterministically arrange and route a complete supported schematic while preserving its canonical pin/net partition."),
         Op("delete-schematic-wire-by-uuid", "Delete one exact schematic wire by UUID.", S("uuid")),
         Op("delete-schematic-wire", "Delete one exact schematic wire by endpoint coordinates.", N("x1Mm"), N("y1Mm"), N("x2Mm"), N("y2Mm"), N("toleranceMm")),
         Op("delete-net-label-by-uuid", "Delete one exact schematic net label by UUID.", S("uuid")),
