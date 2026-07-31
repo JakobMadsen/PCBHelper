@@ -55,7 +55,9 @@ var app = new CliApp(
     planRuntime.DesignIntent,
     planRuntime.ReleaseAudits,
     planRuntime.DesignBlocks,
-    planRuntime.BestPractices);
+    planRuntime.BestPractices,
+    planRuntime.BoardReadability,
+    planRuntime.SchematicPresentation);
 
 return await app.RunAsync(args);
 
@@ -95,6 +97,8 @@ public sealed class CliApp
     private readonly ReleaseAuditService _releaseAudits;
     private readonly DesignBlockService _designBlocks;
     private readonly BestPracticeReviewService _bestPractices;
+    private readonly BoardReadabilityService _boardReadability;
+    private readonly SchematicPresentationService _schematicPresentation;
 
     public CliApp(
         KiCadDoctorService doctor,
@@ -125,7 +129,9 @@ public sealed class CliApp
         DesignIntentService designIntent,
         ReleaseAuditService releaseAudits,
         DesignBlockService designBlocks,
-        BestPracticeReviewService bestPractices)
+        BestPracticeReviewService bestPractices,
+        BoardReadabilityService boardReadability,
+        SchematicPresentationService schematicPresentation)
     {
         _doctor = doctor;
         _projectDiscovery = projectDiscovery;
@@ -156,6 +162,8 @@ public sealed class CliApp
         _releaseAudits = releaseAudits;
         _designBlocks = designBlocks;
         _bestPractices = bestPractices;
+        _boardReadability = boardReadability;
+        _schematicPresentation = schematicPresentation;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -174,6 +182,8 @@ public sealed class CliApp
             "doctor" => await RunDoctorAsync(json, cancellationToken),
             "summary" => RunSummary(positional, json),
             "board-summary" => RunBoardSummary(positional, json),
+            "board-readability" => RunBoardReadability(positional, json),
+            "schematic-readability" => RunSchematicReadability(positional, json),
             "measure" => RunMeasure(positional, json),
             "move" => await RunMoveAsync(positional, json, cancellationToken),
             "set-spacing" => await RunSetSpacingAsync(positional, json, cancellationToken),
@@ -399,6 +409,34 @@ public sealed class CliApp
         }
 
         return result.Data.Disposition == ReleaseAuditDispositions.Blocked ? 1 : 0;
+    }
+    private int RunBoardReadability(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 3 || args[1] != "analyze")
+        {
+            Write(ToolResponse<object>.Fail(
+                "Usage: pcbhelper board-readability analyze <project-path> [--output-dir <directory>] [--json]",
+                "BOARD_READABILITY_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _boardReadability.Analyze(args[2], GetOption(args, "--output-dir"));
+        Write(result, json);
+        return result.Success ? 0 : 1;
+    }
+    private int RunSchematicReadability(IReadOnlyList<string> args, bool json)
+    {
+        if (args.Count < 3 || args[1] != "analyze")
+        {
+            Write(ToolResponse<object>.Fail(
+                "Usage: pcbhelper schematic-readability analyze <project-path> [--json]",
+                "SCHEMATIC_READABILITY_ARGS_REQUIRED"), json);
+            return 2;
+        }
+
+        var result = _schematicPresentation.Analyze(args[2]);
+        Write(result, json);
+        return result.Success ? 0 : 1;
     }
     private int RunIntent(IReadOnlyList<string> args, bool json)
     {
@@ -1497,6 +1535,8 @@ public sealed class CliApp
         Console.WriteLine("  pcbhelper doctor [--json]");
         Console.WriteLine("  pcbhelper summary <project-path> [--json]");
         Console.WriteLine("  pcbhelper board-summary <project-path> [--json]");
+        Console.WriteLine("  pcbhelper board-readability analyze <project-path> [--output-dir <directory>] [--json]");
+        Console.WriteLine("  pcbhelper schematic-readability analyze <project-path> [--json]");
         Console.WriteLine("  pcbhelper measure <project-path> --from <ref> --to <ref> [--json]");
         Console.WriteLine("  pcbhelper move <project-path> --ref <ref> --x <mm> --y <mm> [--dry-run] [--json]");
         Console.WriteLine("  pcbhelper set-spacing <project-path> --fixed <ref> --moving <ref> --distance <mm> [--axis x|y] [--dry-run] [--json]");

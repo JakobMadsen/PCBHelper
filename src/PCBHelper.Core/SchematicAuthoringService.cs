@@ -851,11 +851,17 @@ public sealed class SchematicAuthoringService
             return ToolResponse<ResolvedSchematicPin>.Fail($"Schematic symbol not found: {parts[0]}", "SCHEMATIC_PIN_NOT_FOUND");
         }
 
-        var x = SnapToSchematicGrid(SnapToSchematicGrid(symbol.XMillimeters.Value) + pin.OffsetX);
-        // KiCad library-symbol Y coordinates use the opposite sign from placed
-        // schematic sheet coordinates. X is translated directly; Y is mirrored.
-        var y = SnapToSchematicGrid(SnapToSchematicGrid(symbol.YMillimeters.Value) - pin.OffsetY);
-        return ToolResponse<ResolvedSchematicPin>.Ok("Resolved pin.", new ResolvedSchematicPin(parts[0], parts[1], pin.Unit, x, y, pin.OffsetX, pin.OffsetY));
+        var point = SchematicGeometry.TransformPin(symbol, pin);
+        return ToolResponse<ResolvedSchematicPin>.Ok(
+            "Resolved pin.",
+            new ResolvedSchematicPin(
+                parts[0],
+                parts[1],
+                pin.Unit,
+                point.X,
+                point.Y,
+                point.DirectionX,
+                point.DirectionY));
     }
 
     private static IReadOnlyDictionary<string, KiCadNet> AssignPadNets(string reference, SchematicSymbolCatalogEntry catalog, KiCadSchematicDocument schematic, IReadOnlyList<KiCadNet> nets)
@@ -2102,11 +2108,13 @@ internal sealed class SchematicConnectivity
                     return Array.Empty<SchematicPoint>();
                 }
 
-                var originX = Snap(symbol.XMillimeters!.Value);
-                var originY = Snap(symbol.YMillimeters!.Value);
                 return catalog.Pins
                     .Where(pin => pin.Unit == symbol.Unit)
-                    .Select(pin => new SchematicPoint(Snap(originX + pin.OffsetX), Snap(originY - pin.OffsetY)))
+                    .Select(pin =>
+                    {
+                        var point = SchematicGeometry.TransformPin(symbol, pin);
+                        return new SchematicPoint(point.X, point.Y);
+                    })
                     .ToArray();
             })
             .ToArray();

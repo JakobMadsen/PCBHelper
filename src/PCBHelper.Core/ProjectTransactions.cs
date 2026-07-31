@@ -542,7 +542,13 @@ public sealed record PreparedFileChange(
     }
 }
 
-public sealed record PreparedOperation(string Id, string Type, string Summary);
+public sealed record PreparedOperation(
+    string Id,
+    string Type,
+    string Summary,
+    IReadOnlyList<PreparedEvidence>? Evidence = null);
+
+public sealed record PreparedEvidence(string Kind, object Data);
 
 public enum ProjectTransactionStatus
 {

@@ -105,6 +105,14 @@ public sealed class WorkflowMcpTools
     public ToolResponse<SchematicSymbolListResult> GetSchematicContext(string projectPath) =>
         new SchematicAuthoringService(_runtime.Projects).ListSymbols(projectPath);
 
+    [McpServerTool(Name = "analyze_schematic_readability"), Description("Analyze whole-sheet schematic readability without modifying the project.")]
+    public ToolResponse<SchematicReadabilityReport> AnalyzeSchematicReadability(string projectPath) =>
+        _runtime.SchematicPresentation.Analyze(projectPath);
+
+    [McpServerTool(Name = "analyze_board_readability"), Description("Analyze deterministic PCB labeling, orientation, and silkscreen readability without modifying the project.")]
+    public ToolResponse<BoardReadabilityReport> AnalyzeBoardReadability(string projectPath) =>
+        _runtime.BoardReadability.Analyze(projectPath);
+
     [McpServerTool(Name = "get_net_routing_context"), Description("Read one board net's pads, track segments, vias, layers, coordinates, and UUIDs for precise Design Plan authoring.")]
     public ToolResponse<NetRoutingResult> GetNetRoutingContext(string projectPath, string net) =>
         new RoutingService(_runtime.Projects).GetNetRouting(projectPath, net);

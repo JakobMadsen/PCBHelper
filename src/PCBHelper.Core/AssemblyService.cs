@@ -384,7 +384,14 @@ public sealed class AssemblyService
 
             if (component.IsExcludedFromAssembly)
             {
-                diagnostics.Add(Warning("ASSEMBLY_COMPONENT_EXCLUDED", component.Reference, $"{component.Reference} is marked DNP/excluded and will not be exported for assembly."));
+                var code = component.Reference.StartsWith("TP", StringComparison.OrdinalIgnoreCase)
+                    && component.Package.Contains("TestPoint", StringComparison.OrdinalIgnoreCase)
+                        ? "ASSEMBLY_BOARD_ONLY_TESTPOINT"
+                        : component.Reference.StartsWith("H", StringComparison.OrdinalIgnoreCase)
+                            && component.Package.Contains("MountingHole", StringComparison.OrdinalIgnoreCase)
+                                ? "ASSEMBLY_BOARD_ONLY_MOUNTING_HOLE"
+                                : "ASSEMBLY_COMPONENT_EXCLUDED";
+                diagnostics.Add(Warning(code, component.Reference, $"{component.Reference} is marked DNP/excluded and will not be exported for assembly."));
                 continue;
             }
 

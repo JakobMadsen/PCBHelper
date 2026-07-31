@@ -6,6 +6,42 @@ namespace PCBHelper.Contract.Tests;
 public sealed class CliContractTests
 {
     [Fact]
+    public async Task BoardReadability_Analyze_Returns_Versioned_ReadOnly_Contract()
+    {
+        using var fixture = TestFixture.CopyMinimalBoard();
+        var board = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        var before = await File.ReadAllBytesAsync(board);
+
+        var result = await RunCliAsync("board-readability", "analyze", fixture.Path, "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("board-readability-v1", data.GetProperty("version").GetString());
+        Assert.Equal(64, data.GetProperty("boardSha256").GetString()!.Length);
+        Assert.True(data.TryGetProperty("findings", out _));
+        Assert.Null(data.GetProperty("jsonReportPath").GetString());
+        Assert.Equal(before, await File.ReadAllBytesAsync(board));
+    }
+
+    [Fact]
+    public async Task SchematicReadability_Analyze_Returns_Versioned_ReadOnly_Contract()
+    {
+        using var fixture = TestFixture.CopyMinimalBoard();
+        var schematic = Directory.GetFiles(fixture.Path, "*.kicad_sch").Single();
+        var before = await File.ReadAllBytesAsync(schematic);
+
+        var result = await RunCliAsync("schematic-readability", "analyze", fixture.Path, "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("readability-v2", data.GetProperty("scoreVersion").GetString());
+        Assert.True(data.TryGetProperty("textBoxCount", out _));
+        Assert.Equal(before, await File.ReadAllBytesAsync(schematic));
+    }
+
+    [Fact]
     public async Task BestPractice_Prepare_Returns_Evidence_Bound_Prompt_Contract()
     {
         using var fixture = TestFixture.CopyMinimalBoard();

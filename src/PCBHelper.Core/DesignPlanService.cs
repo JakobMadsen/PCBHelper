@@ -62,7 +62,7 @@ public sealed class DesignPlanService
         var prepared = PrepareInSandbox(project.Data, parsed.Data);
         if (!prepared.Success || prepared.Data is null)
         {
-            return ToolResponse<DesignPlanPreviewResult>.Fail(prepared.Summary, "PLAN_PREPARATION_FAILED", prepared.Error?.Message ?? prepared.Summary);
+            return ToolResponse<DesignPlanPreviewResult>.Fail(prepared.Summary, prepared.Error?.Code ?? "PLAN_PREPARATION_FAILED", prepared.Error?.Message ?? prepared.Summary);
         }
 
         var risk = PlanRiskEvaluator.Evaluate(planHash, parsed.Data);
@@ -123,7 +123,7 @@ public sealed class DesignPlanService
         var prepared = PrepareInSandbox(project.Data, parsed.Data);
         if (!prepared.Success || prepared.Data is null)
         {
-            return ToolResponse<DesignPlanApplyResult>.Fail(prepared.Summary, "PLAN_PREPARATION_FAILED", prepared.Error?.Message ?? prepared.Summary);
+            return ToolResponse<DesignPlanApplyResult>.Fail(prepared.Summary, prepared.Error?.Code ?? "PLAN_PREPARATION_FAILED", prepared.Error?.Message ?? prepared.Summary);
         }
 
         var applied = await _transactions.ApplyAsync(project.Data.ProjectRoot, parsed.Data.Goal, planHash,
@@ -285,6 +285,7 @@ public sealed class DesignPlanService
             var component = new ComponentService(sandboxProjects);
             var geometry = new GeometryService(sandboxProjects);
             var schematic = new SchematicAuthoringService(sandboxProjects);
+            var schematicPresentation = new SchematicPresentationService(sandboxProjects);
             var routing = new RoutingService(sandboxProjects);
             var finishing = new BoardFinishingService(sandboxProjects);
             var designIntent = new DesignIntentService(sandboxProjects, new BoardInspectionService(sandboxProjects));
@@ -293,16 +294,19 @@ public sealed class DesignPlanService
             var warnings = new List<string>();
             foreach (var operation in plan.Operations)
             {
-                var result = Execute(operation, sandbox, component, geometry, schematic, routing, finishing, designIntent, simulationFixtures);
+                var result = Execute(operation, sandbox, component, geometry, schematic, schematicPresentation, routing, finishing, designIntent, simulationFixtures);
                 if (!result.Success)
                 {
                     return ToolResponse<PlanPreparation>.Fail(
                         $"Operation {operation.Id} ({operation.Type}) could not be prepared: {result.Summary}",
-                        "PLAN_PREPARATION_FAILED",
+                        result.Error?.Code ?? "PLAN_PREPARATION_FAILED",
                         result.Error?.Message ?? result.Summary);
                 }
 
-                preparedOperations.Add(new PreparedOperation(operation.Id, operation.Type, result.Summary));
+                var evidence = result.Data is PreparedOperation preparedOperation
+                    ? preparedOperation.Evidence
+                    : null;
+                preparedOperations.Add(new PreparedOperation(operation.Id, operation.Type, result.Summary, evidence));
                 warnings.AddRange(result.Warnings);
             }
 
@@ -334,12 +338,13 @@ public sealed class DesignPlanService
 
     private static ToolResponse<object> Execute(
         PlanOperation operation, string projectPath, ComponentService component, GeometryService geometry,
-        SchematicAuthoringService schematic, RoutingService routing, BoardFinishingService finishing, DesignIntentService designIntent,
+        SchematicAuthoringService schematic, SchematicPresentationService schematicPresentation,
+        RoutingService routing, BoardFinishingService finishing, DesignIntentService designIntent,
         SimulationFixtureService simulationFixtures)
     {
         if (!OperationHandlers.TryGetValue(operation.Type, out var handler))
             return ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED");
-        var prepared = handler.Prepare(operation, new PlanPreparationContext(projectPath, component, geometry, schematic, routing, finishing, designIntent, simulationFixtures));
+        var prepared = handler.Prepare(operation, new PlanPreparationContext(projectPath, component, geometry, schematic, schematicPresentation, routing, finishing, designIntent, simulationFixtures));
         return prepared.Success
             ? ToolResponse<object>.Ok(prepared.Summary, prepared.Data!, prepared.Warnings)
             : ToolResponse<object>.Fail(prepared.Summary, prepared.Error?.Code ?? "PLAN_PREPARATION_FAILED", prepared.Error?.Message);
@@ -362,6 +367,7 @@ public sealed class DesignPlanService
             "set-symbol-field" => Box(context.Schematic.SetSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), RequiredString(p, "value"), false)),
             "hide-symbol-field" => Box(context.Schematic.HideSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), false)),
             "connect-schematic-pins" => Box(context.Schematic.ConnectPins(context.ProjectPath, RequiredString(p, "from"), RequiredString(p, "to"), OptionalString(p, "net"), false)),
+            "arrange-schematic" => Box(context.SchematicPresentation.Arrange(context.ProjectPath, false)),
             "delete-schematic-wire-by-uuid" => Box(context.Schematic.DeleteSchematicWireByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
             "delete-schematic-wire" => Box(context.Schematic.DeleteSchematicWire(context.ProjectPath, RequiredDouble(p, "x1Mm"), RequiredDouble(p, "y1Mm"), RequiredDouble(p, "x2Mm"), RequiredDouble(p, "y2Mm"), RequiredDouble(p, "toleranceMm"), false)),
             "delete-net-label-by-uuid" => Box(context.Schematic.DeleteNetLabelByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
@@ -398,8 +404,16 @@ public sealed class DesignPlanService
         public ToolResponse<PreparedOperation> Prepare(PlanOperation operation, PlanPreparationContext context)
         {
             var response = ExecutePrimitive(operation, context);
+            var evidence = response.Data is SchematicPresentationMutationResult presentation
+                ? new[]
+                {
+                    new PreparedEvidence("schematic-readability-before", presentation.Before),
+                    new PreparedEvidence("schematic-readability-after", presentation.After),
+                    new PreparedEvidence("schematic-connectivity-certificate", presentation.Connectivity)
+                }
+                : null;
             return response.Success
-                ? ToolResponse<PreparedOperation>.Ok(response.Summary, new PreparedOperation(operation.Id, operation.Type, response.Summary), response.Warnings)
+                ? ToolResponse<PreparedOperation>.Ok(response.Summary, new PreparedOperation(operation.Id, operation.Type, response.Summary, evidence), response.Warnings)
                 : ToolResponse<PreparedOperation>.Fail(response.Summary, response.Error?.Code ?? "PLAN_PREPARATION_FAILED", response.Error?.Message);
         }
     }
@@ -533,6 +547,7 @@ public sealed record PlanPreparationContext(
     ComponentService Components,
     GeometryService Geometry,
     SchematicAuthoringService Schematic,
+    SchematicPresentationService SchematicPresentation,
     RoutingService Routing,
     BoardFinishingService Finishing,
     DesignIntentService DesignIntent,

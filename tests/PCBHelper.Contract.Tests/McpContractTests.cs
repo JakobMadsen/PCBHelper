@@ -23,7 +23,7 @@ public sealed class McpContractTests
             "preview_design_block_import", "apply_design_block_import",
             "preview_design_block_create", "apply_design_block_create",
             "prepare_best_practice_review", "submit_best_practice_review", "get_best_practice_review", "validate_best_practice_review",
-            "get_project_context", "get_schematic_context", "get_net_routing_context", "validate_design_plan", "preview_design_plan", "apply_design_plan",
+            "get_project_context", "get_schematic_context", "analyze_schematic_readability", "analyze_board_readability", "get_net_routing_context", "validate_design_plan", "preview_design_plan", "apply_design_plan",
             "preview_autoroute_board", "apply_autoroute_board",
             "preview_project_footprint_library", "apply_project_footprint_library",
             "get_transaction", "restore_transaction", "run_engineering_gate",

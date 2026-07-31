@@ -148,33 +148,43 @@ public sealed class DesignIntentService
             foreach (var rating in component.Ratings)
                 if (rating.Maximum <= 0 || string.IsNullOrWhiteSpace(rating.Kind) || string.IsNullOrWhiteSpace(rating.Unit)) yield return $"Component {component.Reference} has an invalid rating.";
         }
+        var blockIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var blockReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var textBoxUuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var block in intent.Presentation.Blocks)
+        {
+            if (string.IsNullOrWhiteSpace(block.Id) || !blockIds.Add(block.Id))
+                yield return "Every presentation block requires a unique non-empty id.";
+            if (string.IsNullOrWhiteSpace(block.Label))
+                yield return $"Presentation block {block.Id} requires a label.";
+            if (block.Order < 0)
+                yield return $"Presentation block {block.Id} order must be zero or greater.";
+            if (block.TextBoxUuid is not null
+                && (!Guid.TryParse(block.TextBoxUuid, out _)
+                    || !textBoxUuids.Add(block.TextBoxUuid)))
+                yield return $"Presentation block {block.Id} requires a unique KiCad UUID when textBoxUuid is set.";
+            foreach (var reference in block.References)
+                if (string.IsNullOrWhiteSpace(reference) || !blockReferences.Add(reference))
+                    yield return $"Presentation block {block.Id} contains an empty or duplicate symbol reference.";
+        }
     }
 
     private static DesignNetGraph BuildGraph(KiCadSchematicDocument schematic)
     {
-        var connectivity = SchematicConnectivity.Build(schematic);
+        var logical = SchematicLogicalModel.Build(schematic);
         var components = new List<DesignGraphComponent>();
-        var unknown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in schematic.Symbols.Where(s => !string.IsNullOrWhiteSpace(s.Reference)).GroupBy(s => s.Reference!, StringComparer.OrdinalIgnoreCase))
         {
             var first = group.First();
-            var catalog = first.LibId is null ? null : SchematicSymbolCatalog.Find(first.LibId);
-            if (catalog is null) { unknown.Add(first.Reference!); components.Add(new(first.Reference!, first.LibId ?? "", Value(first), Array.Empty<DesignGraphPin>())); continue; }
-            var pins = new List<DesignGraphPin>();
-            foreach (var definition in catalog.Pins)
-            {
-                var symbol = group.FirstOrDefault(item => item.Unit == definition.Unit);
-                if (symbol?.XMillimeters is null || symbol.YMillimeters is null) continue;
-                var x = Snap(symbol.XMillimeters.Value + definition.OffsetX);
-                var y = Snap(symbol.YMillimeters.Value - definition.OffsetY);
-                pins.Add(new(definition.Name, connectivity.NetNamesAtPoint(x, y).FirstOrDefault(), x, y));
-            }
+            var pins = logical.Pins
+                .Where(pin => string.Equals(pin.Reference, first.Reference, StringComparison.OrdinalIgnoreCase))
+                .Select(static pin => new DesignGraphPin(pin.Pin, pin.Net, pin.X, pin.Y))
+                .ToArray();
             components.Add(new(first.Reference!, first.LibId!, Value(first), pins));
         }
         var nets = components.SelectMany(c => c.Pins.Where(p => !string.IsNullOrWhiteSpace(p.Net)).Select(p => p.Net!)).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
-        return new DesignNetGraph(components, nets, unknown.ToArray());
+        return new DesignNetGraph(components, nets, logical.UnknownSymbolReferences);
         static string? Value(KiCadSchematicSymbol symbol) => symbol.Properties.TryGetValue("Value", out var value) ? value.Value : null;
-        static double Snap(double value) => Math.Round(value / 1.27, MidpointRounding.AwayFromZero) * 1.27;
     }
 
     private static void CheckKnownSymbols(DesignNetGraph graph, ICollection<DesignIntentFinding> findings)
@@ -339,6 +349,7 @@ public sealed class DesignIntentDocument
     public IReadOnlyList<DesignIntentConnector> Connectors { get; init; } = Array.Empty<DesignIntentConnector>();
     public IReadOnlyList<DesignIntentComponentEvidence> Components { get; init; } = Array.Empty<DesignIntentComponentEvidence>();
     public DesignIntentTestAccess TestAccess { get; init; } = new();
+    public DesignIntentPresentation Presentation { get; init; } = new();
 }
 public sealed record DesignIntentSupply(string Net, double MinVoltage, double NominalVoltage, double MaxVoltage);
 public sealed record DesignIntentSignal(string Net, string Role, double? MinVoltage = null, double? MaxVoltage = null, double? AdcMinVoltage = null, double? AdcMaxVoltage = null, bool RequiredTestpoint = false, string? TestpointSide = null, double? MaxGroundDistanceMm = null);

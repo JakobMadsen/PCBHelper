@@ -8,13 +8,19 @@ internal static partial class KiCadSchematicParser
     public static KiCadSchematicDocument Parse(string schematicFile)
     {
         var text = File.ReadAllText(schematicFile);
+        return ParseText(schematicFile, text);
+    }
+
+    internal static KiCadSchematicDocument ParseText(string schematicFile, string text)
+    {
         return new KiCadSchematicDocument(
             schematicFile,
             text,
             ParseSymbols(text),
             ParseWires(text),
             ParseLabels(text),
-            ParseJunctions(text));
+            ParseJunctions(text),
+            ParseTextBoxes(text));
     }
 
     public static string FormatNumber(double value)
@@ -128,13 +134,53 @@ internal static partial class KiCadSchematicParser
 
     private static IReadOnlyList<KiCadSchematicJunction> ParseJunctions(string text)
     {
-        return JunctionRegex().Matches(text)
-            .Select(static match => new KiCadSchematicJunction(
-                double.Parse(match.Groups["x"].Value, CultureInfo.InvariantCulture),
-                double.Parse(match.Groups["y"].Value, CultureInfo.InvariantCulture),
-                match.Index,
-                match.Length))
+        return ParseBlocks(text, "junction")
+            .Select(item => (Item: item, Match: JunctionAtRegex().Match(item.BlockText)))
+            .Where(static item => item.Match.Success)
+            .Select(static item => new KiCadSchematicJunction(
+                double.Parse(item.Match.Groups["x"].Value, CultureInfo.InvariantCulture),
+                double.Parse(item.Match.Groups["y"].Value, CultureInfo.InvariantCulture),
+                item.Item.SourceStart,
+                item.Item.SourceLength))
             .ToArray();
+    }
+
+    private static IReadOnlyList<KiCadSchematicTextBox> ParseTextBoxes(string text)
+    {
+        return ParseBlocks(text, "text_box")
+            .Select(static item =>
+            {
+                var header = TextBoxHeaderRegex().Match(item.BlockText);
+                var at = TextBoxAtRegex().Match(item.BlockText);
+                var size = TextBoxSizeRegex().Match(item.BlockText);
+                var uuid = UuidRegex().Match(item.BlockText);
+                return new KiCadSchematicTextBox(
+                    header.Success ? header.Groups["text"].Value : string.Empty,
+                    at.Success ? double.Parse(at.Groups["x"].Value, CultureInfo.InvariantCulture) : 0,
+                    at.Success ? double.Parse(at.Groups["y"].Value, CultureInfo.InvariantCulture) : 0,
+                    at.Success && at.Groups["rotation"].Success
+                        ? double.Parse(at.Groups["rotation"].Value, CultureInfo.InvariantCulture)
+                        : 0,
+                    size.Success ? double.Parse(size.Groups["width"].Value, CultureInfo.InvariantCulture) : 0,
+                    size.Success ? double.Parse(size.Groups["height"].Value, CultureInfo.InvariantCulture) : 0,
+                    uuid.Success ? uuid.Groups["uuid"].Value : null,
+                    ExtractChildBlock(item.BlockText, "stroke"),
+                    ExtractChildBlock(item.BlockText, "fill"),
+                    ExtractChildBlock(item.BlockText, "effects"),
+                    item.SourceStart,
+                    item.SourceLength,
+                    item.BlockText);
+            })
+            .ToArray();
+    }
+
+    private static string ExtractChildBlock(string text, string keyword)
+    {
+        var start = text.IndexOf($"({keyword}", StringComparison.Ordinal);
+        if (start < 0)
+            return string.Empty;
+        var end = FindMatchingParenthesis(text, start);
+        return end < 0 ? string.Empty : text.Substring(start, end - start + 1);
     }
 
     private static IReadOnlyDictionary<string, KiCadProperty> ParseProperties(string blockText, int absoluteOffset)
@@ -270,11 +316,20 @@ internal static partial class KiCadSchematicParser
     [GeneratedRegex(@"\(label\s+""(?<text>[^""]+)""[\s\S]*?\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+-?\d+(?:\.\d+)?)?\)")]
     private static partial Regex LabelDataRegex();
 
-    [GeneratedRegex(@"\(junction\s+\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)\)[\s\S]*?\)")]
-    private static partial Regex JunctionRegex();
+    [GeneratedRegex(@"\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)\)")]
+    private static partial Regex JunctionAtRegex();
 
     [GeneratedRegex(@"\(uuid\s+""(?<uuid>[^""]+)""\)")]
     private static partial Regex UuidRegex();
+
+    [GeneratedRegex("^\\(text_box\\s+\"(?<text>(?:\\\\.|[^\"])*)\"")]
+    private static partial Regex TextBoxHeaderRegex();
+
+    [GeneratedRegex(@"\(at\s+(?<x>-?\d+(?:\.\d+)?)\s+(?<y>-?\d+(?:\.\d+)?)(?:\s+(?<rotation>-?\d+(?:\.\d+)?))?\)")]
+    private static partial Regex TextBoxAtRegex();
+
+    [GeneratedRegex(@"\(size\s+(?<width>\d+(?:\.\d+)?)\s+(?<height>\d+(?:\.\d+)?)\)")]
+    private static partial Regex TextBoxSizeRegex();
 }
 
 internal sealed record KiCadSchematicBlock(string BlockText, int SourceStart, int SourceLength);
@@ -285,7 +340,23 @@ internal sealed record KiCadSchematicDocument(
     IReadOnlyList<KiCadSchematicSymbol> Symbols,
     IReadOnlyList<KiCadSchematicWire> Wires,
     IReadOnlyList<KiCadSchematicLabel> Labels,
-    IReadOnlyList<KiCadSchematicJunction> Junctions);
+    IReadOnlyList<KiCadSchematicJunction> Junctions,
+    IReadOnlyList<KiCadSchematicTextBox> TextBoxes);
+
+internal sealed record KiCadSchematicTextBox(
+    string Text,
+    double XMillimeters,
+    double YMillimeters,
+    double RotationDegrees,
+    double WidthMillimeters,
+    double HeightMillimeters,
+    string? Uuid,
+    string StrokeSource,
+    string FillSource,
+    string EffectsSource,
+    int SourceStart,
+    int SourceLength,
+    string SourceText);
 
 internal sealed record KiCadSchematicSymbol(
     string? Reference,

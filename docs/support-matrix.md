@@ -12,5 +12,7 @@
 | Java 21+ | Optional | Required only for FreeRouting. |
 | Linux container | CI/test only | Not an official v0.1 user platform. |
 | KiCad GUI refresh | Capability-gated | File mutation does not imply live GUI refresh. |
+| KiCad schematic `text_box` analysis | Supported | `readability-v2` is read-only; automatic relayout fails closed. |
+| Board readability analysis | Supported | Deterministic advisory analysis of labels, orientation and silkscreen geometry. |
 
 PCBHelper does not support mains, medical, safety-critical, RF, high-speed, or high-current design in v0.1.
