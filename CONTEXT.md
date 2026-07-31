@@ -46,6 +46,9 @@ The project sits between four domains:
 - Engineering gate: deterministic ERC, DRC, simulation, manufacturing, and policy outcomes required before release.
 - Board summary: a machine-readable snapshot of project, board, components, nets, constraints, and checks.
 - Manufacturing zip: a package of production files suitable for PCBWay, JLCPCB, or similar services.
+- Schematic readability: deterministic presentation metrics that never infer electrical meaning from geometric grouping.
+- Board readability: deterministic evidence about functional labels, orientation marks, silkscreen collisions, and incomplete geometry.
+- Diagnostic disposition: a project policy decision that classifies an exact diagnostic code and optional exact subjects as informational, warning, or blocking.
 
 ## V1 Boundary
 

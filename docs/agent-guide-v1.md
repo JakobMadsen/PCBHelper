@@ -13,6 +13,7 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 4. Call `validate_design_plan`, then `preview_design_plan`.
 5. Apply the identical plan with the returned `planHash` as `expectedPlanHash`.
 6. Run required engineering gates, including Design Intent when the project declares it. Inspect and autonomously correct ordinary findings with another plan.
+   Call `analyze_schematic_readability` and `analyze_board_readability` before release when presentation quality matters. Both are read-only. A schematic containing top-level `text_box` objects may be analyzed, but `arrange-schematic` must fail with `SCHEMATIC_TEXT_BOX_RELAYOUT_UNSUPPORTED` until box-aware relayout is supported.
    For qualitative architecture, readability, layout, DFT, signal-integrity, return-path, prototype, and EMC-practice review, call `prepare_best_practice_review`. Actually inspect its cited visual artifacts, answer every criterion using the returned pure prompt, and call `submit_best_practice_review` with the exact evidence hash. After the final design/render change, call `validate_best_practice_review`.
 7. When the project declares `.pcbhelper/release-policy.json`, run `run_release_audit` and resolve every blocking finding.
 8. Regenerate review and manufacturing outputs after the final mutation.
@@ -31,6 +32,7 @@ PCBHelper turns small, simple electronics requirements into reviewable KiCad pro
 - `BLOCK_MATURITY_REQUIRES_EVIDENCE`: Do not increase block maturity or publish it without the required review, simulation, bench, or production evidence.
 - `BEST_PRACTICE_REVIEW_REQUIRES_EVIDENCE`: Complete every qualitative criterion against the exact prepared evidence hash.
 - `VISUAL_CLAIMS_REQUIRE_VISUAL_INSPECTION`: Inspect current visual artifacts before passing visual criteria; otherwise mark them unable to assess.
+- `GRAPHICS_DO_NOT_IMPLY_INTENT`: A schematic text box has semantic meaning only when Design Intent explicitly maps its UUID with `textBoxUuid`.
 - `PCBWAY_REQUIRES_GERBER_BOM_CPL`: For assembly, verify current and mutually consistent Gerber, BOM, and CPL files.
 - `ASK_ONLY_FOR_EXCEPTION_DECISIONS`: Ask about material ambiguity, unusual price or sourcing, unsupported risk, gate overrides, and irreversible external actions.
 

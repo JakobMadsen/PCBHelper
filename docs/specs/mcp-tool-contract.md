@@ -13,6 +13,8 @@ The default public surface is the Design Plan workflow described in [Design Plan
 
 Design Intent adds two read-only workflow tools: `analyze_design_intent` runs deterministic circuit-purpose, test-access, and sourced-rating checks; `get_design_intent_report` reads a prior project-scoped run. Intent changes use the structured `set-design-intent` Design Plan operation rather than arbitrary file writes.
 
+The workflow profile also exposes two deterministic read-only presentation tools. `analyze_schematic_readability(projectPath)` returns `readability-v2`, including text-box count, box overlap, wire/box boundary crossings and visual dispersion. `analyze_board_readability(projectPath)` returns `board-readability-v1`, the exact board SHA-256, severity totals and evidence-backed findings. Neither tool changes the project.
+
 `run_release_audit` evaluates the project-scoped release policy, writes JSON and
 Markdown evidence reports, and returns `READY`, `PROTOTYPE-ONLY`, or `BLOCKED`.
 The audit is read-only with respect to KiCad sources.

@@ -24,8 +24,10 @@ public sealed class PCBHelperRuntime
         Components = new ComponentService(Projects);
         BoardSummary = new BoardSummaryService(Projects);
         BoardInspection = new BoardInspectionService(Projects);
+        BoardReadability = new BoardReadabilityService(Projects);
         Routing = new RoutingService(Projects);
         DesignIntent = new DesignIntentService(Projects, BoardInspection);
+        SchematicPresentation = new SchematicPresentationService(Projects);
         BestPractices = new BestPracticeReviewService(
             Projects,
             BoardSummary,
@@ -49,6 +51,7 @@ public sealed class PCBHelperRuntime
             Routing,
             TestSpecs,
             BestPractices,
+            BoardReadability,
             Simulations.GetCapabilities);
         Plans = new DesignPlanService(Projects, Transactions, Gates);
         Workflows = new ProjectWorkflowService(Projects, BoardSummary, BoardInspection, Components, Gui, TransactionStore, Gates, Assembly, Simulations, DesignIntent, locator, runner);
@@ -72,8 +75,10 @@ public sealed class PCBHelperRuntime
     public ComponentService Components { get; }
     public BoardSummaryService BoardSummary { get; }
     public BoardInspectionService BoardInspection { get; }
+    public BoardReadabilityService BoardReadability { get; }
     public RoutingService Routing { get; }
     public DesignIntentService DesignIntent { get; }
+    public SchematicPresentationService SchematicPresentation { get; }
     public BestPracticeReviewService BestPractices { get; }
     public BoardFinishingService BoardFinishing { get; }
     public GuiReviewService Gui { get; }

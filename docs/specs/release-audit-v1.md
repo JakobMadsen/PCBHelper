@@ -50,7 +50,18 @@ execution.
     ],
     "blockingAssemblyDiagnosticCodes": [
       "ASSEMBLY_ORIENTATION_REVIEW"
+    ],
+    "diagnosticDispositions": [
+      { "code": "ASSEMBLY_BOARD_ONLY_TESTPOINT", "disposition": "info" },
+      { "code": "ASSEMBLY_THT_CPL_EXCLUDED", "subjects": ["J1"], "disposition": "warn" }
+    ],
+    "manualAcceptanceAllowedCodes": [
+      "ASSEMBLY_ORIENTATION_REVIEW"
     ]
+  },
+  "boardReadability": {
+    "required": false,
+    "blockingDiagnosticCodes": []
   },
   "bestPracticeReview": {
     "required": true,
@@ -126,6 +137,9 @@ manual-evidence paths resolve from the audited project root.
 - Latest PCBHelper release-check presence and freshness.
 - Current PCBHelper best-practice review disposition when required by policy.
 - Selected blocking assembly diagnostic codes.
+- Policy dispositions for exact assembly codes and optional exact subjects.
+- Hash-current, reference-specific accepted diagnostics where policy allows manual acceptance.
+- Optional board-readability evidence and policy-blocking board diagnostic codes.
 - Simulation backend and minimum project test count.
 - Unrouted board connections and board/schematic value mismatches.
 - Required analogue min/max voltage limits in Design Intent.
@@ -163,3 +177,24 @@ Each required item must appear in the configured sign-off file:
 ```
 
 An absent item or missing approval metadata blocks release.
+
+The same file may contain diagnostic acceptances. An acceptance is valid only for the exact code and subject/reference, the current design hash, and complete reviewer, timestamp, and rationale metadata:
+
+```json
+{
+  "acceptedDiagnostics": [
+    {
+      "code": "ASSEMBLY_ORIENTATION_REVIEW",
+      "reference": "U1",
+      "designHash": "<current SHA-256>",
+      "reviewer": "name",
+      "reviewedAtUtc": "2026-07-31T12:00:00Z",
+      "rationale": "Pin-1 mark confirmed against the assembly drawing."
+    }
+  ]
+}
+```
+
+`blockingAssemblyDiagnosticCodes` always wins. A manual acceptance can apply only to a code listed in `manualAcceptanceAllowedCodes`; policy allowance alone never suppresses a warning. Open warnings yield `PROTOTYPE-ONLY`, while blocking diagnostics or missing required evidence yield `BLOCKED`.
+
+Every Git probe uses process-local `git -c safe.directory=<canonical-project-root> ...`. Exit code, stdout, and stderr are retained as audit evidence; PCBHelper neither reads a global safe-directory workaround nor modifies global Git configuration.
