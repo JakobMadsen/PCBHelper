@@ -19,8 +19,16 @@ public sealed class McpWorkflowProcessTests
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        var configuration = Path.GetFileName(Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))!);
-        start.ArgumentList.Add("run"); start.ArgumentList.Add("--no-build"); start.ArgumentList.Add("--configuration"); start.ArgumentList.Add(configuration); start.ArgumentList.Add("--project"); start.ArgumentList.Add(project);
+        var serverAssembly = Environment.GetEnvironmentVariable("PCBHELPER_MCP_TEST_DLL");
+        if (!string.IsNullOrWhiteSpace(serverAssembly))
+        {
+            start.ArgumentList.Add(serverAssembly);
+        }
+        else
+        {
+            var configuration = Path.GetFileName(Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))!);
+            start.ArgumentList.Add("run"); start.ArgumentList.Add("--no-build"); start.ArgumentList.Add("--configuration"); start.ArgumentList.Add(configuration); start.ArgumentList.Add("--project"); start.ArgumentList.Add(project);
+        }
         start.Environment["PCBHELPER_MCP_PROFILE"] = "workflow";
         start.Environment["PCBHELPER_ALLOWED_ROOTS"] = RepoRoot.Path;
         using var process = Process.Start(start)!;
@@ -35,7 +43,8 @@ public sealed class McpWorkflowProcessTests
             await Send(process, new { jsonrpc = "2.0", id = 2, method = "tools/list", @params = new { } });
             var response = await ReadResponse(process, 2);
             Assert.True(response.TryGetProperty("result", out var result), response.GetRawText());
-            var names = result.GetProperty("tools").EnumerateArray()
+            var tools = result.GetProperty("tools").EnumerateArray().ToArray();
+            var names = tools
                 .Select(static tool => tool.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
             Assert.Equal(new HashSet<string>(StringComparer.Ordinal)
             {
@@ -54,6 +63,24 @@ public sealed class McpWorkflowProcessTests
                 "generate_review_package", "generate_pcbway_package", "generate_pcbway_release", "validate_release_requirements", "run_release_audit", "refill_zones", "get_simulation_capabilities",
                 "validate_simulation_tests", "run_simulation_tests", "get_simulation_report", "validate_kicad_simulation_models", "export_kicad_spice_netlist", "run_simulation_sweep"
             }, names);
+
+            var structuredObjectParameters = new Dictionary<string, string>
+            {
+                ["validate_design_plan"] = "plan",
+                ["preview_design_plan"] = "plan",
+                ["apply_design_plan"] = "plan",
+                ["preview_design_block_import"] = "manifest",
+                ["apply_design_block_import"] = "manifest",
+                ["preview_design_block_create"] = "manifest",
+                ["apply_design_block_create"] = "manifest",
+                ["submit_best_practice_review"] = "assessment"
+            };
+            foreach (var (toolName, parameterName) in structuredObjectParameters)
+            {
+                var tool = tools.Single(candidate => candidate.GetProperty("name").GetString() == toolName);
+                var parameterSchema = tool.GetProperty("inputSchema").GetProperty("properties").GetProperty(parameterName);
+                Assert.Equal("object", parameterSchema.GetProperty("type").GetString());
+            }
 
             await Send(process, new { jsonrpc = "2.0", id = 3, method = "resources/list", @params = new { } });
             var resources = (await ReadResponse(process, 3)).GetProperty("result").GetProperty("resources").EnumerateArray().ToArray();

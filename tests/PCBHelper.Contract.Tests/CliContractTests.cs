@@ -643,6 +643,17 @@ public sealed class CliContractTests
 
     private static string GetBuiltCliPath()
     {
+        var configuredCli = Environment.GetEnvironmentVariable("PCBHELPER_CLI_TEST_DLL");
+        if (!string.IsNullOrWhiteSpace(configuredCli))
+        {
+            if (!File.Exists(configuredCli))
+            {
+                throw new FileNotFoundException("PCBHELPER_CLI_TEST_DLL does not exist.", configuredCli);
+            }
+
+            return configuredCli;
+        }
+
         var baseDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var framework = Path.GetFileName(baseDirectory);
         var configuration = Path.GetFileName(Path.GetDirectoryName(baseDirectory)!);

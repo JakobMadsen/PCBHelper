@@ -103,7 +103,10 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Comparator:TLV7011");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Device:R_Potentiometer");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_01x03");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x07_Odd_Even");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x10_Odd_Even");
+        var moveReference = Assert.Single(capabilities.Operations, item => item.Type == "move-reference-text");
+        Assert.Contains("footprint-local", moveReference.Description, StringComparison.Ordinal);
         Assert.All(AgentPolicyRules.All, rule => Assert.Contains(rule.Id, guide.Markdown, StringComparison.Ordinal));
     }
 

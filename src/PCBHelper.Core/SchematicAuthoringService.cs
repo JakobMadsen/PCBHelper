@@ -2360,6 +2360,7 @@ internal static class SchematicSymbolCatalog
         new("Connector_Generic:Conn_01x06", "Conn_01x06", "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", 50, OneRowConnector(6)),
         new("Connector_Generic:Conn_01x08", "Conn_01x08", "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical", 50, OneRowConnector(8)),
         new("Connector_Generic:Conn_01x10", "Conn_01x10", "Connector_PinHeader_2.54mm:PinHeader_1x10_P2.54mm_Vertical", 50, OneRowConnector(10)),
+        new("Connector_Generic:Conn_02x07_Odd_Even", "Conn_02x07_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x07_P2.54mm_Vertical", 50, TwoRowConnectorOddEven(7)),
         new("Connector_Generic:Conn_02x10_Odd_Even", "Conn_02x10_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x10_P2.54mm_Vertical", 50, TwoRowConnectorOddEven(10)),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {

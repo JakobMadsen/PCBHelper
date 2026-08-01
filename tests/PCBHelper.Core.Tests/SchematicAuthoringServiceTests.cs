@@ -16,6 +16,7 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Comparator:MCP6561-OT", "U5", 1)]
     [InlineData("Device:R_Potentiometer", "RV1", 1)]
     [InlineData("Connector_Generic:Conn_01x03", "J3", 1)]
+    [InlineData("Connector_Generic:Conn_02x07_Odd_Even", "J4", 1)]
     [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "J4", 1)]
     public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
     {
@@ -338,6 +339,8 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Connector_Generic:Conn_01x03", "3", -2.54)]
     [InlineData("Connector_Generic:Conn_01x05", "1", 5.08)]
     [InlineData("Connector_Generic:Conn_01x05", "5", -5.08)]
+    [InlineData("Connector_Generic:Conn_02x07_Odd_Even", "1", 7.62)]
+    [InlineData("Connector_Generic:Conn_02x07_Odd_Even", "14", -7.62)]
     [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "1", 10.16)]
     [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "20", -12.7)]
     public void Catalog_Connector_Pin_Offsets_Match_KiCad_Standard_Library(string symbolId, string pinName, double expectedY)
