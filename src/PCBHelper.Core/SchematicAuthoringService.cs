@@ -2386,6 +2386,29 @@ internal static class SchematicSymbolCatalog
         new("Connector_Generic:Conn_01x10", "Conn_01x10", "Connector_PinHeader_2.54mm:PinHeader_1x10_P2.54mm_Vertical", 50, OneRowConnector(10)),
         new("Connector_Generic:Conn_02x07_Odd_Even", "Conn_02x07_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x07_P2.54mm_Vertical", 50, TwoRowConnectorOddEven(7)),
         new("Connector_Generic:Conn_02x10_Odd_Even", "Conn_02x10_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x10_P2.54mm_Vertical", 50, TwoRowConnectorOddEven(10)),
+        new("Switch:SW_SPDT", "SW_SPDT", "", 50, new[]
+        {
+            new SchematicPinDefinition("1", 5.08, 2.54),
+            new SchematicPinDefinition("2", -5.08, 0),
+            new SchematicPinDefinition("3", 5.08, -2.54)
+        }),
+        new("74xx:74LS08", "SN74HCS08", "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", 50, new[]
+        {
+            new SchematicPinDefinition("1", -7.62, 2.54, 1), new SchematicPinDefinition("2", -7.62, -2.54, 1), new SchematicPinDefinition("3", 7.62, 0, 1),
+            new SchematicPinDefinition("4", -7.62, 2.54, 2), new SchematicPinDefinition("5", -7.62, -2.54, 2), new SchematicPinDefinition("6", 7.62, 0, 2),
+            new SchematicPinDefinition("8", 7.62, 0, 3), new SchematicPinDefinition("9", -7.62, 2.54, 3), new SchematicPinDefinition("10", -7.62, -2.54, 3),
+            new SchematicPinDefinition("11", 7.62, 0, 4), new SchematicPinDefinition("12", -7.62, 2.54, 4), new SchematicPinDefinition("13", -7.62, -2.54, 4),
+            new SchematicPinDefinition("7", 0, -12.7, 5), new SchematicPinDefinition("14", 0, 12.7, 5)
+        }, "KiCad 10 74LS08 pin-compatible graphical representation for TI SN74HCS08; pin map verified against TI SN74HCS08 Rev. C"),
+        new("Power_Management:TPS2553-1", "TPS2553-1", "Package_TO_SOT_SMD:SOT-23-6", 50, new[]
+        {
+            new SchematicPinDefinition("1", -7.62, 2.54),
+            new SchematicPinDefinition("2", 0, -7.62),
+            new SchematicPinDefinition("3", -7.62, -2.54),
+            new SchematicPinDefinition("4", 7.62, -2.54),
+            new SchematicPinDefinition("5", 0, 7.62),
+            new SchematicPinDefinition("6", 7.62, 2.54)
+        }, "Texas Instruments TPS255x datasheet SLVS841F; TPS2553-1 DBV pin map and latch-off behavior"),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)
