@@ -27,17 +27,39 @@ public sealed class SchematicAuthoringService
             return ToolResponse<SchematicSymbolListResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
         }
 
+        var connectivity = SchematicConnectivity.Build(schematic.Data);
         var symbols = schematic.Data.Symbols
             .Where(static symbol => symbol.Reference is not null)
-            .Select(static symbol => new SchematicSymbolSummary(
-                symbol.Reference!,
-                symbol.LibId,
-                symbol.Unit,
-                symbol.Properties.TryGetValue("Value", out var value) ? value.Value : null,
-                symbol.Properties.TryGetValue("Footprint", out var footprint) ? footprint.Value : null,
-                symbol.XMillimeters,
-                symbol.YMillimeters,
-                symbol.Properties.Select(static item => new SchematicFieldSummary(item.Key, item.Value.Value)).ToArray()))
+            .Select(symbol =>
+            {
+                var catalog = symbol.LibId is null || symbol.XMillimeters is null || symbol.YMillimeters is null
+                    ? null
+                    : SchematicSymbolCatalog.Find(symbol.LibId);
+                var pins = catalog?.Pins
+                    .Where(pin => pin.Unit == symbol.Unit)
+                    .Select(pin =>
+                    {
+                        var point = SchematicGeometry.TransformPin(symbol, pin);
+                        return new SchematicPinSummary(
+                            pin.Name,
+                            point.X,
+                            point.Y,
+                            point.DirectionX,
+                            point.DirectionY,
+                            connectivity.NetNamesAtPoint(point.X, point.Y).Order(StringComparer.OrdinalIgnoreCase).ToArray());
+                    })
+                    .ToArray() ?? Array.Empty<SchematicPinSummary>();
+                return new SchematicSymbolSummary(
+                    symbol.Reference!,
+                    symbol.LibId,
+                    symbol.Unit,
+                    symbol.Properties.TryGetValue("Value", out var value) ? value.Value : null,
+                    symbol.Properties.TryGetValue("Footprint", out var footprint) ? footprint.Value : null,
+                    symbol.XMillimeters,
+                    symbol.YMillimeters,
+                    symbol.Properties.Select(static item => new SchematicFieldSummary(item.Key, item.Value.Value)).ToArray(),
+                    pins);
+            })
             .ToArray();
         var wires = schematic.Data.Wires
             .Select(static wire => new SchematicWireSummary(
@@ -2034,7 +2056,9 @@ public sealed record SchematicSymbolListResult(
     IReadOnlyList<SchematicWireSummary> Wires,
     IReadOnlyList<SchematicLabelSummary> Labels);
 
-public sealed record SchematicSymbolSummary(string Reference, string? SymbolId, int Unit, string? Value, string? Footprint, double? XMillimeters, double? YMillimeters, IReadOnlyList<SchematicFieldSummary> Fields);
+public sealed record SchematicSymbolSummary(string Reference, string? SymbolId, int Unit, string? Value, string? Footprint, double? XMillimeters, double? YMillimeters, IReadOnlyList<SchematicFieldSummary> Fields, IReadOnlyList<SchematicPinSummary> Pins);
+
+public sealed record SchematicPinSummary(string Pin, double XMillimeters, double YMillimeters, int DirectionX, int DirectionY, IReadOnlyList<string> Nets);
 
 public sealed record SchematicFieldSummary(string Name, string Value);
 

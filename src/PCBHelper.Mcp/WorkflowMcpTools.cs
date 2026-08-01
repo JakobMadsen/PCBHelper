@@ -101,7 +101,7 @@ public sealed class WorkflowMcpTools
     public Task<ToolResponse<ProjectContextResult>> GetProjectContext(string projectPath, CancellationToken cancellationToken) =>
         _runtime.Workflows.GetProjectContextAsync(projectPath, cancellationToken);
 
-    [McpServerTool(Name = "get_schematic_context"), Description("Read schematic symbols, fields, wires, labels, coordinates, and UUIDs for precise Design Plan authoring.")]
+    [McpServerTool(Name = "get_schematic_context"), Description("Read schematic symbols, numbered pin coordinates and nets, fields, wires, labels, and UUIDs for precise Design Plan authoring.")]
     public ToolResponse<SchematicSymbolListResult> GetSchematicContext(string projectPath) =>
         new SchematicAuthoringService(_runtime.Projects).ListSymbols(projectPath);
 

@@ -427,6 +427,16 @@ public sealed class CliContractTests
         using var listDocument = JsonDocument.Parse(list.StandardOutput);
         var symbols = listDocument.RootElement.GetProperty("data").GetProperty("symbols");
         Assert.Contains(symbols.EnumerateArray(), symbol => symbol.GetProperty("reference").GetString() == "U1" && symbol.GetProperty("unit").GetInt32() == 2);
+        var resistor = symbols.EnumerateArray().Single(symbol => symbol.GetProperty("reference").GetString() == "R1");
+        var pins = resistor.GetProperty("pins").EnumerateArray().ToArray();
+        Assert.Equal(2, pins.Length);
+        Assert.All(pins, pin =>
+        {
+            Assert.True(pin.TryGetProperty("pin", out _));
+            Assert.True(pin.TryGetProperty("xMillimeters", out _));
+            Assert.True(pin.TryGetProperty("yMillimeters", out _));
+            Assert.True(pin.TryGetProperty("nets", out _));
+        });
     }
 
     [Fact]

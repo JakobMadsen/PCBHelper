@@ -31,6 +31,26 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ListSymbols_Returns_Connector_Pin_Numbers_Coordinates_And_Nets()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Connector_Generic:Conn_02x10_Odd_Even", "J1", 110, 70, null, null, dryRun: false).Success);
+        Assert.True(service.AddNetLabel(fixture.Path, "PIN_1", 105.41, 59.69, dryRun: false).Success);
+
+        var symbol = Assert.Single(service.ListSymbols(fixture.Path).Data!.Symbols);
+
+        Assert.Equal(20, symbol.Pins.Count);
+        var pin1 = Assert.Single(symbol.Pins, pin => pin.Pin == "1");
+        Assert.Equal(105.41, pin1.XMillimeters, 2);
+        Assert.Equal(59.69, pin1.YMillimeters, 2);
+        Assert.Contains("PIN_1", pin1.Nets);
+        var pin20 = Assert.Single(symbol.Pins, pin => pin.Pin == "20");
+        Assert.Equal(118.11, pin20.XMillimeters, 2);
+        Assert.Equal(82.55, pin20.YMillimeters, 2);
+    }
+
+    [Fact]
     public void ConnectPins_Resolves_Lm358_Power_Pins_To_Their_Displayed_Positions()
     {
         using var fixture = CopyBlankFixture();
