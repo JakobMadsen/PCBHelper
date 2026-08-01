@@ -4,6 +4,8 @@ All notable changes will be documented here. PCBHelper uses semantic versioning 
 
 ## Unreleased
 
+- Added hash-bound Layout Constraints V1 proofs and bounded content-addressed workflow artifact inspection while preserving the existing release audit as the sole disposition authority.
+- Consolidated the remaining branch-only KiCad fixes: KiCad 10 named routing and pad-net preservation, rotated rectangular-pad clearance, mounting-hole routing rejection, and validated atomic zone refill with retained evidence.
 - Added a project-policy-driven release audit with CLI and workflow MCP surfaces, blocking evidence checks, and JSON/Markdown reports.
 
 ### Added

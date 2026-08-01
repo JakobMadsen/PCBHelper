@@ -96,6 +96,104 @@ public sealed class RoutingServiceTests
         Assert.Contains("track", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void ValidateTrackClearance_Rejects_Unnetted_Npth_Mounting_Hole()
+    {
+        using var fixture = CopyRoutingFixture();
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var mountingHole = """
+          (footprint "MountingHole:MountingHole_3.2mm_M3"
+            (layer "F.Cu")
+            (at 20 20)
+            (property "Reference" "H1" (at 0 -3 0) (layer "F.SilkS"))
+            (property "Value" "MountingHole" (at 0 3 0) (layer "F.Fab"))
+            (pad "" np_thru_hole circle
+              (at 0 0)
+              (size 3.2 3.2)
+              (drill 3.2)
+              (layers "*.Cu" "*.Mask")
+            )
+          )
+        """;
+        File.WriteAllText(
+            boardFile,
+            File.ReadAllText(boardFile).Replace(
+                "(embedded_fonts no)",
+                mountingHole + Environment.NewLine + "  (embedded_fonts no)",
+                StringComparison.Ordinal));
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var result = service.ValidateTrackClearance(fixture.Path, "A", "10,20;30,20", "F.Cu", 0.2);
+
+        Assert.False(result.Success);
+        Assert.Equal("ROUTING_CLEARANCE_VIOLATION", result.Error?.Code);
+        Assert.Contains("H1.", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without an assigned net", result.Error?.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AddTrackAndVia_Use_Named_Net_References_For_KiCad10_Boards()
+    {
+        using var fixture = CopyRoutingFixture();
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var lines = File.ReadAllLines(boardFile)
+            .Where(static line => !line.StartsWith("  (net ", StringComparison.Ordinal))
+            .ToArray();
+        var boardText = string.Join(Environment.NewLine, lines)
+            .Replace("(version 20250114)", "(version 20260206)", StringComparison.Ordinal)
+            .Replace("(net 1 \"A\")", "(net \"A\")", StringComparison.Ordinal)
+            .Replace("(net 2 \"B\")", "(net \"B\")", StringComparison.Ordinal);
+        File.WriteAllText(boardFile, boardText);
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var track = service.AddTrackPolyline(fixture.Path, "A", "10,10;10,5;30,5;30,10", "F.Cu", 0.25, dryRun: true);
+        var via = service.AddVia(fixture.Path, "A", 15, 20, 0.8, 0.4, "F.Cu,B.Cu", dryRun: true);
+
+        Assert.True(track.Success, track.Error?.Message);
+        Assert.True(via.Success, via.Error?.Message);
+        Assert.Contains("(net \"A\")", track.Data!.Item.AfterText, StringComparison.Ordinal);
+        Assert.Contains("(net \"A\")", via.Data!.Item.AfterText, StringComparison.Ordinal);
+        Assert.DoesNotContain("(net 1)", track.Data.Item.AfterText, StringComparison.Ordinal);
+        Assert.DoesNotContain("(net 1)", via.Data.Item.AfterText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateTrackClearance_Allows_Route_Between_Rotated_Rectangular_Pads()
+    {
+        using var fixture = CopyRoutingFixture();
+        var boardFile = Path.Combine(fixture.Path, "routing-primitives.kicad_pcb");
+        var footprint = """
+          (footprint "Resistor_SMD:R_0805_2012Metric"
+            (layer "F.Cu")
+            (at 20 20 90)
+            (property "Reference" "R99" (at 0 -2 90) (layer "F.SilkS"))
+            (property "Value" "0R" (at 0 2 90) (layer "F.Fab"))
+            (pad "1" smd roundrect
+              (at -0.9125 0)
+              (size 1.025 1.4)
+              (layers "F.Cu" "F.Mask" "F.Paste")
+              (roundrect_rratio 0.243902)
+              (net 2 "B")
+            )
+            (pad "2" smd roundrect
+              (at 0.9125 0)
+              (size 1.025 1.4)
+              (layers "F.Cu" "F.Mask" "F.Paste")
+              (roundrect_rratio 0.243902)
+              (net 2 "B")
+            )
+          )
+        """;
+        File.WriteAllText(
+            boardFile,
+            File.ReadAllText(boardFile).Replace("(embedded_fonts no)", footprint + Environment.NewLine + "  (embedded_fonts no)", StringComparison.Ordinal));
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var result = service.ValidateTrackClearance(fixture.Path, "A", "15,20;25,20", "F.Cu", 0.2);
+
+        Assert.True(result.Success, result.Error?.Message);
+    }
+
     private static string LedConnectionPoints(RoutingService service, string projectPath)
     {
         var routing = service.GetNetRouting(projectPath, "LED_A").Data!;

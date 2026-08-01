@@ -15,6 +15,10 @@ Design Intent adds two read-only workflow tools: `analyze_design_intent` runs de
 
 The workflow profile also exposes two deterministic read-only presentation tools. `analyze_schematic_readability(projectPath)` returns `readability-v2`, including text-box count, box overlap, wire/box boundary crossings and visual dispersion. `analyze_board_readability(projectPath)` returns `board-readability-v1`, the exact board SHA-256, severity totals and evidence-backed findings. Neither tool changes the project.
 
+Layout constraints use the project-scoped `.pcbhelper/constraints-v1.json` document. `validate_layout_constraints` validates the document without claiming success. `run_layout_constraint_proofs` measures it against the current board, writes a hash-bound report, and returns `passed`, `failed`, or `unavailable` per constraint. Missing nets, missing routed segments, and unfilled zones are `unavailable` and never pass.
+
+`get_workflow_status` reads transaction state and the latest existing release-audit artifact without running another audit. `list_artifacts` and `get_artifact` expose content-addressed files below `.pcbhelper`; lock directories and reparse points are excluded, binary content is not inlined, and text is limited to 256 KiB.
+
 `run_release_audit` evaluates the project-scoped release policy, writes JSON and
 Markdown evidence reports, and returns `READY`, `PROTOTYPE-ONLY`, or `BLOCKED`.
 The audit is read-only with respect to KiCad sources.

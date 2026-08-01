@@ -49,6 +49,8 @@ The project sits between four domains:
 - Schematic readability: deterministic presentation metrics that never infer electrical meaning from geometric grouping.
 - Board readability: deterministic evidence about functional labels, orientation marks, silkscreen collisions, and incomplete geometry.
 - Diagnostic disposition: a project policy decision that classifies an exact diagnostic code and optional exact subjects as informational, warning, or blocking.
+- Layout constraint proof: a hash-bound deterministic measurement of declared board geometry or routing limits; unavailable evidence never counts as passing.
+- Workflow artifact: a project-scoped, content-addressed evidence file below `.pcbhelper` that can be listed or read without changing the design or recomputing release disposition.
 
 ## V1 Boundary
 

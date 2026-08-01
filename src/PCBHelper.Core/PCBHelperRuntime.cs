@@ -25,6 +25,7 @@ public sealed class PCBHelperRuntime
         BoardSummary = new BoardSummaryService(Projects);
         BoardInspection = new BoardInspectionService(Projects);
         BoardReadability = new BoardReadabilityService(Projects);
+        Constraints = new ConstraintProofService(Projects);
         Routing = new RoutingService(Projects);
         DesignIntent = new DesignIntentService(Projects, BoardInspection);
         SchematicPresentation = new SchematicPresentationService(Projects);
@@ -36,9 +37,10 @@ public sealed class PCBHelperRuntime
             Routing,
             new SchematicAuthoringService(Projects),
             TestSpecs);
-        BoardFinishing = new BoardFinishingService(Projects);
+        BoardFinishing = new BoardFinishingService(Projects, locator, runner);
         Gui = new GuiReviewService(locator, new KiCadExecutableLocator(locator), runner);
         TransactionStore = new ProjectTransactionStore(Projects);
+        WorkflowArtifacts = new WorkflowArtifactService(Projects, TransactionStore);
         Transactions = new ProjectTransactionService(Projects, TransactionStore, new AtomicProjectFileWriter(), () => DateTimeOffset.UtcNow);
         Gates = new EngineeringGateService(CheckSummary, Assembly, Simulations, DesignIntent);
         AutorouteTransactions = new AutorouteTransactionService(Projects, Transactions, Gates, locator, new FreeRoutingLocator(), runner);
@@ -76,6 +78,7 @@ public sealed class PCBHelperRuntime
     public BoardSummaryService BoardSummary { get; }
     public BoardInspectionService BoardInspection { get; }
     public BoardReadabilityService BoardReadability { get; }
+    public ConstraintProofService Constraints { get; }
     public RoutingService Routing { get; }
     public DesignIntentService DesignIntent { get; }
     public SchematicPresentationService SchematicPresentation { get; }
@@ -83,6 +86,7 @@ public sealed class PCBHelperRuntime
     public BoardFinishingService BoardFinishing { get; }
     public GuiReviewService Gui { get; }
     public ProjectTransactionStore TransactionStore { get; }
+    public WorkflowArtifactService WorkflowArtifacts { get; }
     public ProjectTransactionService Transactions { get; }
     public EngineeringGateService Gates { get; }
     public AutorouteTransactionService AutorouteTransactions { get; }

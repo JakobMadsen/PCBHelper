@@ -664,7 +664,7 @@ public sealed class SchematicAuthoringService
             var existing = board.Footprints.FirstOrDefault(footprint => string.Equals(footprint.Reference, symbol.Reference, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
             {
-                existingFootprintUpdates.Add((existing, MergePadNets(padNets, PreserveExistingPadNets(existing))));
+                existingFootprintUpdates.Add((existing, MergePadNets(padNets, PreserveExistingPadNets(existing, nets))));
                 continue;
             }
 
@@ -735,7 +735,7 @@ public sealed class SchematicAuthoringService
         var value = symbol.Properties.TryGetValue("Value", out var valueProperty) ? valueProperty.Value : catalog.DefaultValue;
         var padNets = MergePadNets(
             AssignPadNets(reference, catalog, schematic.Data, board.Nets),
-            PreserveExistingPadNets(existing));
+            PreserveExistingPadNets(existing, board.Nets));
         var regenerated = SchematicFootprintTemplates.Format(
             footprint,
             reference,
@@ -918,18 +918,25 @@ public sealed class SchematicAuthoringService
         }
     }
 
-    private static IReadOnlyDictionary<string, KiCadNet> PreserveExistingPadNets(KiCadFootprint footprint)
+    private static IReadOnlyDictionary<string, KiCadNet> PreserveExistingPadNets(KiCadFootprint footprint, IReadOnlyList<KiCadNet> boardNets)
     {
         var result = new Dictionary<string, KiCadNet>(StringComparer.OrdinalIgnoreCase);
         foreach (var pad in footprint.Pads)
         {
-            if (pad.NetCode is null || string.IsNullOrWhiteSpace(pad.NetName))
+            if (string.IsNullOrWhiteSpace(pad.NetName))
+            {
+                continue;
+            }
+
+            var netCode = pad.NetCode
+                ?? boardNets.FirstOrDefault(net => string.Equals(net.Name, pad.NetName, StringComparison.OrdinalIgnoreCase))?.Code;
+            if (netCode is null)
             {
                 continue;
             }
 
             var key = string.IsNullOrWhiteSpace(pad.PinFunction) ? pad.Name : pad.PinFunction;
-            result[key] = new KiCadNet(pad.NetCode.Value, pad.NetName);
+            result[key] = new KiCadNet(netCode.Value, pad.NetName);
         }
 
         return result;

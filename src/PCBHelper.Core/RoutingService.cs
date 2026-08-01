@@ -214,6 +214,7 @@ public sealed class RoutingService
         }
 
         var board = KiCadBoardParser.Parse(validation.Data.BoardFile);
+        var useNamedNetReferences = UsesNamedNetReferences(board);
         var texts = new List<string>();
         var uuids = new List<string>();
         for (var index = 0; index < points.Count - 1; index++)
@@ -222,7 +223,17 @@ public sealed class RoutingService
             var end = points[index + 1];
             var uuid = Guid.NewGuid().ToString();
             uuids.Add(uuid);
-            texts.Add(FormatSegment(start.XMillimeters, start.YMillimeters, end.XMillimeters, end.YMillimeters, widthMillimeters, layer, validation.Data.Net.Code, uuid));
+            texts.Add(FormatSegment(
+                start.XMillimeters,
+                start.YMillimeters,
+                end.XMillimeters,
+                end.YMillimeters,
+                widthMillimeters,
+                layer,
+                validation.Data.Net.Code,
+                validation.Data.Net.Name,
+                useNamedNetReferences,
+                uuid));
         }
 
         var text = string.Concat(texts);
@@ -273,7 +284,17 @@ public sealed class RoutingService
         }
 
         var uuid = Guid.NewGuid().ToString();
-        var text = FormatSegment(startXMillimeters, startYMillimeters, endXMillimeters, endYMillimeters, widthMillimeters, layer, resolved.Data.Code, uuid);
+        var text = FormatSegment(
+            startXMillimeters,
+            startYMillimeters,
+            endXMillimeters,
+            endYMillimeters,
+            widthMillimeters,
+            layer,
+            resolved.Data.Code,
+            resolved.Data.Name,
+            UsesNamedNetReferences(board.Data),
+            uuid);
         if (!dryRun)
         {
             File.WriteAllText(board.Data.BoardFile, InsertRoutingObject(board.Data.Text, text));
@@ -357,7 +378,16 @@ public sealed class RoutingService
         }
 
         var uuid = Guid.NewGuid().ToString();
-        var text = FormatVia(xMillimeters, yMillimeters, sizeMillimeters, drillMillimeters, parsedLayers, resolved.Data.Code, uuid);
+        var text = FormatVia(
+            xMillimeters,
+            yMillimeters,
+            sizeMillimeters,
+            drillMillimeters,
+            parsedLayers,
+            resolved.Data.Code,
+            resolved.Data.Name,
+            UsesNamedNetReferences(board.Data),
+            uuid);
         if (!dryRun)
         {
             File.WriteAllText(board.Data.BoardFile, InsertRoutingObject(board.Data.Text, text));
@@ -697,7 +727,7 @@ public sealed class RoutingService
             {
                 var gap = obstacle.Kind == "track"
                     ? SegmentToSegmentDistance(start, end, obstacle.Start!.Value, obstacle.End!.Value) - proposedRadius - obstacle.RadiusMillimeters
-                    : PointToSegmentDistance(obstacle.Start!.Value, start, end) - proposedRadius - obstacle.RadiusMillimeters;
+                    : SegmentToObstacleDistance(start, end, obstacle) - proposedRadius;
                 if (gap < clearanceMillimeters - 0.000001)
                 {
                     violations.Add(new RoutingClearanceViolation(
@@ -707,7 +737,7 @@ public sealed class RoutingService
                         obstacle.NetName,
                         gap,
                         clearanceMillimeters,
-                        $"Proposed track segment {index + 1} is {FormatDistance(gap)} mm from {obstacle.Kind} {obstacle.Id} on net {obstacle.NetName}."));
+                        $"Proposed track segment {index + 1} is {FormatDistance(gap)} mm from {DescribeObstacle(obstacle)}."));
                 }
             }
         }
@@ -732,7 +762,7 @@ public sealed class RoutingService
         {
             var gap = obstacle.Kind == "track"
                 ? PointToSegmentDistance(proposed, obstacle.Start!.Value, obstacle.End!.Value) - proposedRadius - obstacle.RadiusMillimeters
-                : Distance(proposed.XMillimeters, proposed.YMillimeters, obstacle.Start!.Value.XMillimeters, obstacle.Start.Value.YMillimeters) - proposedRadius - obstacle.RadiusMillimeters;
+                : PointToObstacleDistance(proposed, obstacle) - proposedRadius;
             if (gap < clearanceMillimeters - 0.000001)
             {
                 violations.Add(new RoutingClearanceViolation(
@@ -742,7 +772,7 @@ public sealed class RoutingService
                     obstacle.NetName,
                     gap,
                     clearanceMillimeters,
-                    $"Proposed via is {FormatDistance(gap)} mm from {obstacle.Kind} {obstacle.Id} on net {obstacle.NetName}."));
+                    $"Proposed via is {FormatDistance(gap)} mm from {DescribeObstacle(obstacle)}."));
             }
         }
 
@@ -758,7 +788,7 @@ public sealed class RoutingService
             foreach (var pad in footprint.Pads.Where(pad => PadTouchesLayer(pad, layer)))
             {
                 var padNet = ResolveItemNet(board, pad.NetCode, pad.NetName);
-                if (padNet is null || (targetNet is not null && NetReferenceMatches(pad.NetCode, pad.NetName, targetNet)))
+                if (targetNet is not null && NetReferenceMatches(pad.NetCode, pad.NetName, targetNet))
                 {
                     continue;
                 }
@@ -769,15 +799,20 @@ public sealed class RoutingService
                     continue;
                 }
 
-                var radius = Math.Max(pad.SizeXMillimeters ?? 0.6, pad.SizeYMillimeters ?? 0.6) / 2;
+                var sizeX = pad.SizeXMillimeters ?? 0.6;
+                var sizeY = pad.SizeYMillimeters ?? 0.6;
+                var isRectangular = pad.Shape is "rect" or "roundrect";
                 obstacles.Add(new CopperObstacle(
                     "pad",
                     $"{footprint.Reference}.{pad.Name}",
-                    padNet.Code,
-                    padNet.Name,
+                    padNet?.Code,
+                    padNet?.Name,
                     new RoutingPoint(absolute.X.Value, absolute.Y.Value),
                     null,
-                    radius));
+                    isRectangular ? 0 : Math.Max(sizeX, sizeY) / 2,
+                    isRectangular ? sizeX / 2 : null,
+                    isRectangular ? sizeY / 2 : null,
+                    footprint.RotationDegrees ?? 0));
             }
         }
 
@@ -801,7 +836,10 @@ public sealed class RoutingService
                 net.Name,
                 new RoutingPoint(segment.StartXMillimeters.Value, segment.StartYMillimeters.Value),
                 new RoutingPoint(segment.EndXMillimeters.Value, segment.EndYMillimeters.Value),
-                (segment.WidthMillimeters ?? 0.25) / 2));
+                (segment.WidthMillimeters ?? 0.25) / 2,
+                null,
+                null,
+                0));
         }
 
         foreach (var via in board.Vias.Where(via => ViaTouchesLayer(via, layer)))
@@ -824,10 +862,91 @@ public sealed class RoutingService
                 net.Name,
                 new RoutingPoint(via.XMillimeters.Value, via.YMillimeters.Value),
                 null,
-                (via.SizeMillimeters ?? 0.8) / 2));
+                (via.SizeMillimeters ?? 0.8) / 2,
+                null,
+                null,
+                0));
         }
 
         return obstacles;
+    }
+
+    private static string DescribeObstacle(CopperObstacle obstacle)
+        => string.IsNullOrWhiteSpace(obstacle.NetName)
+            ? $"{obstacle.Kind} {obstacle.Id} without an assigned net"
+            : $"{obstacle.Kind} {obstacle.Id} on net {obstacle.NetName}";
+
+    private static double SegmentToObstacleDistance(RoutingPoint start, RoutingPoint end, CopperObstacle obstacle)
+    {
+        if (obstacle.HalfWidthMillimeters is null || obstacle.HalfHeightMillimeters is null)
+        {
+            return PointToSegmentDistance(obstacle.Start!.Value, start, end) - obstacle.RadiusMillimeters;
+        }
+
+        var localStart = RotateAround(start, obstacle.Start!.Value, -obstacle.RotationDegrees);
+        var localEnd = RotateAround(end, obstacle.Start.Value, -obstacle.RotationDegrees);
+        return SegmentToAxisAlignedRectangleDistance(
+            localStart,
+            localEnd,
+            obstacle.HalfWidthMillimeters.Value,
+            obstacle.HalfHeightMillimeters.Value);
+    }
+
+    private static double PointToObstacleDistance(RoutingPoint point, CopperObstacle obstacle)
+    {
+        if (obstacle.HalfWidthMillimeters is null || obstacle.HalfHeightMillimeters is null)
+        {
+            return Distance(point.XMillimeters, point.YMillimeters, obstacle.Start!.Value.XMillimeters, obstacle.Start.Value.YMillimeters)
+                - obstacle.RadiusMillimeters;
+        }
+
+        var local = RotateAround(point, obstacle.Start!.Value, -obstacle.RotationDegrees);
+        var dx = Math.Max(Math.Abs(local.XMillimeters) - obstacle.HalfWidthMillimeters.Value, 0);
+        var dy = Math.Max(Math.Abs(local.YMillimeters) - obstacle.HalfHeightMillimeters.Value, 0);
+        return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static double SegmentToAxisAlignedRectangleDistance(
+        RoutingPoint start,
+        RoutingPoint end,
+        double halfWidth,
+        double halfHeight)
+    {
+        var corners = new[]
+        {
+            new RoutingPoint(-halfWidth, -halfHeight),
+            new RoutingPoint(halfWidth, -halfHeight),
+            new RoutingPoint(halfWidth, halfHeight),
+            new RoutingPoint(-halfWidth, halfHeight)
+        };
+
+        if (PointInsideRectangle(start, halfWidth, halfHeight) || PointInsideRectangle(end, halfWidth, halfHeight))
+        {
+            return 0;
+        }
+
+        var minimum = double.PositiveInfinity;
+        for (var index = 0; index < corners.Length; index++)
+        {
+            minimum = Math.Min(
+                minimum,
+                SegmentToSegmentDistance(start, end, corners[index], corners[(index + 1) % corners.Length]));
+        }
+
+        return minimum;
+    }
+
+    private static bool PointInsideRectangle(RoutingPoint point, double halfWidth, double halfHeight)
+        => Math.Abs(point.XMillimeters) <= halfWidth && Math.Abs(point.YMillimeters) <= halfHeight;
+
+    private static RoutingPoint RotateAround(RoutingPoint point, RoutingPoint origin, double rotationDegrees)
+    {
+        var radians = rotationDegrees * Math.PI / 180;
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var dx = point.XMillimeters - origin.XMillimeters;
+        var dy = point.YMillimeters - origin.YMillimeters;
+        return new RoutingPoint((dx * cos) - (dy * sin), (dx * sin) + (dy * cos));
     }
 
     private static bool PadTouchesLayer(KiCadPad pad, string layer)
@@ -1010,7 +1129,17 @@ public sealed class RoutingService
         return !double.IsNaN(value) && !double.IsInfinity(value);
     }
 
-    private static string FormatSegment(double startX, double startY, double endX, double endY, double width, string layer, int netCode, string uuid)
+    private static string FormatSegment(
+        double startX,
+        double startY,
+        double endX,
+        double endY,
+        double width,
+        string layer,
+        int netCode,
+        string netName,
+        bool useNamedNetReference,
+        string uuid)
     {
         return string.Join(Environment.NewLine, new[]
         {
@@ -1019,14 +1148,23 @@ public sealed class RoutingService
             $"    (end {KiCadBoardParser.FormatNumber(endX)} {KiCadBoardParser.FormatNumber(endY)})",
             $"    (width {KiCadBoardParser.FormatNumber(width)})",
             $"    (layer \"{layer}\")",
-            $"    (net {netCode})",
+            $"    (net {FormatNetReference(netCode, netName, useNamedNetReference)})",
             $"    (uuid \"{uuid}\")",
             "  )",
             string.Empty
         });
     }
 
-    private static string FormatVia(double x, double y, double size, double drill, IReadOnlyList<string> layers, int netCode, string uuid)
+    private static string FormatVia(
+        double x,
+        double y,
+        double size,
+        double drill,
+        IReadOnlyList<string> layers,
+        int netCode,
+        string netName,
+        bool useNamedNetReference,
+        string uuid)
     {
         return string.Join(Environment.NewLine, new[]
         {
@@ -1035,12 +1173,23 @@ public sealed class RoutingService
             $"    (size {KiCadBoardParser.FormatNumber(size)})",
             $"    (drill {KiCadBoardParser.FormatNumber(drill)})",
             $"    (layers \"{layers[0]}\" \"{layers[1]}\")",
-            $"    (net {netCode})",
+            $"    (net {FormatNetReference(netCode, netName, useNamedNetReference)})",
             $"    (uuid \"{uuid}\")",
             "  )",
             string.Empty
         });
     }
+
+    private static bool UsesNamedNetReferences(KiCadBoardDocument board)
+        => board.Footprints.SelectMany(static footprint => footprint.Pads)
+            .Any(static pad => pad.NetCode is null && !string.IsNullOrWhiteSpace(pad.NetName))
+            || board.Segments.Any(static segment => segment.NetCode is null && !string.IsNullOrWhiteSpace(segment.NetName))
+            || board.Vias.Any(static via => via.NetCode is null && !string.IsNullOrWhiteSpace(via.NetName));
+
+    private static string FormatNetReference(int netCode, string netName, bool useNamedNetReference)
+        => useNamedNetReference
+            ? $"\"{netName.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\""
+            : netCode.ToString(CultureInfo.InvariantCulture);
 
     private static string InsertRoutingObject(string boardText, string objectText)
     {
@@ -1183,7 +1332,10 @@ internal sealed record CopperObstacle(
     string? NetName,
     RoutingPoint? Start,
     RoutingPoint? End,
-    double RadiusMillimeters);
+    double RadiusMillimeters,
+    double? HalfWidthMillimeters,
+    double? HalfHeightMillimeters,
+    double RotationDegrees);
 
 internal sealed class DisjointSet
 {
