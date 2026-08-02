@@ -102,7 +102,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(39, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(40, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
@@ -146,7 +146,7 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G86");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G08");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:Arduino_UNO_R4_Shield" && item.DefaultFootprint == "Module:Arduino_UNO_R3");
-        Assert.Equal(13, capabilities.CapabilityVersion);
+        Assert.Equal(14, capabilities.CapabilityVersion);
         Assert.Contains(capabilities.Operations, item => item.Type == "mark-schematic-pin-no-connect");
         var moveReference = Assert.Single(capabilities.Operations, item => item.Type == "move-reference-text");
         Assert.Contains("footprint-local", moveReference.Description, StringComparison.Ordinal);
@@ -221,6 +221,40 @@ public sealed class DesignPlanServiceTests
               "id": "delete-wire",
               "type": "delete-schematic-wire-by-uuid",
               "uuid": "{{wire.Uuid}}"
+            }
+          ],
+          "engineeringGate": {
+            "erc": "skip",
+            "drc": "skip",
+            "manufacturingValidation": "skip"
+          }
+        }
+        """;
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file => file.RelativePath.EndsWith(".kicad_sch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DeleteSchematicNoConnect_Is_Available_As_A_Transactional_DesignPlan_Operation()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var authoring = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(authoring.CreateSymbol(fixture.Path, "Device:R", "R99", 50, 50, "0R", null, 1, dryRun: false).Success);
+        Assert.True(authoring.MarkPinNoConnect(fixture.Path, "R99.1", dryRun: false).Success);
+        var marker = Assert.Single(authoring.ListSymbols(fixture.Path).Data!.NoConnects);
+        var plan = $$"""
+        {
+          "version": 1,
+          "goal": "Remove one exact schematic no-connect marker",
+          "operations": [
+            {
+              "id": "delete-no-connect",
+              "type": "delete-schematic-no-connect-by-uuid",
+              "uuid": "{{marker.Uuid}}"
             }
           ],
           "engineeringGate": {

@@ -152,6 +152,27 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void DeleteSchematicNoConnectByUuid_Removes_Only_The_Targeted_Marker()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 70, 50, null, null, dryRun: false).Success);
+        Assert.True(service.MarkPinNoConnect(fixture.Path, "R1.1", dryRun: false).Success);
+        Assert.True(service.MarkPinNoConnect(fixture.Path, "R1.2", dryRun: false).Success);
+        var schematicPath = Path.Combine(fixture.Path, "blank-authoring.kicad_sch");
+        var markers = service.ListSymbols(fixture.Path).Data!.NoConnects.ToArray();
+        Assert.Equal(2, markers.Length);
+
+        var result = service.DeleteSchematicNoConnectByUuid(fixture.Path, markers[0].Uuid!, dryRun: false);
+        var after = File.ReadAllText(schematicPath);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.DoesNotContain(markers[0].Uuid!, after, StringComparison.Ordinal);
+        Assert.Contains(markers[1].Uuid!, after, StringComparison.Ordinal);
+        Assert.Single(service.ListSymbols(fixture.Path).Data!.NoConnects);
+    }
+
+    [Fact]
     public void MarkPinNoConnect_Rejects_An_Electrically_Connected_Pin()
     {
         using var fixture = CopyBlankFixture();

@@ -19,6 +19,7 @@ internal static partial class KiCadSchematicParser
             ParseSymbols(text),
             ParseWires(text),
             ParseLabels(text),
+            ParseNoConnects(text),
             ParseJunctions(text),
             ParseTextBoxes(text));
     }
@@ -130,6 +131,20 @@ internal static partial class KiCadSchematicParser
         }
 
         return labels;
+    }
+
+    private static IReadOnlyList<KiCadSchematicNoConnect> ParseNoConnects(string text)
+    {
+        return ParseBlocks(text, "no_connect")
+            .Select(item => (Item: item, Match: AtRegex().Match(item.BlockText)))
+            .Where(static item => item.Match.Success)
+            .Select(static item => new KiCadSchematicNoConnect(
+                double.Parse(item.Match.Groups["x"].Value, CultureInfo.InvariantCulture),
+                double.Parse(item.Match.Groups["y"].Value, CultureInfo.InvariantCulture),
+                ParseUuid(item.Item.BlockText),
+                item.Item.SourceStart,
+                item.Item.SourceLength))
+            .ToArray();
     }
 
     private static IReadOnlyList<KiCadSchematicJunction> ParseJunctions(string text)
@@ -340,6 +355,7 @@ internal sealed record KiCadSchematicDocument(
     IReadOnlyList<KiCadSchematicSymbol> Symbols,
     IReadOnlyList<KiCadSchematicWire> Wires,
     IReadOnlyList<KiCadSchematicLabel> Labels,
+    IReadOnlyList<KiCadSchematicNoConnect> NoConnects,
     IReadOnlyList<KiCadSchematicJunction> Junctions,
     IReadOnlyList<KiCadSchematicTextBox> TextBoxes);
 
@@ -372,5 +388,7 @@ internal sealed record KiCadSchematicSymbol(
 internal sealed record KiCadSchematicWire(double X1Millimeters, double Y1Millimeters, double X2Millimeters, double Y2Millimeters, string? Uuid, int SourceStart, int SourceLength);
 
 internal sealed record KiCadSchematicLabel(string Text, double XMillimeters, double YMillimeters, string? Uuid, int SourceStart, int SourceLength);
+
+internal sealed record KiCadSchematicNoConnect(double XMillimeters, double YMillimeters, string? Uuid, int SourceStart, int SourceLength);
 
 internal sealed record KiCadSchematicJunction(double XMillimeters, double YMillimeters, int SourceStart, int SourceLength);

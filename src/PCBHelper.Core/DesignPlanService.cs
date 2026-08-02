@@ -368,6 +368,7 @@ public sealed class DesignPlanService
             "hide-symbol-field" => Box(context.Schematic.HideSymbolField(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "field"), false)),
             "connect-schematic-pins" => Box(context.Schematic.ConnectPins(context.ProjectPath, RequiredString(p, "from"), RequiredString(p, "to"), OptionalString(p, "net"), false)),
             "mark-schematic-pin-no-connect" => Box(context.Schematic.MarkPinNoConnect(context.ProjectPath, RequiredString(p, "pin"), false)),
+            "delete-schematic-no-connect-by-uuid" => Box(context.Schematic.DeleteSchematicNoConnectByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
             "arrange-schematic" => Box(context.SchematicPresentation.Arrange(context.ProjectPath, false)),
             "delete-schematic-wire-by-uuid" => Box(context.Schematic.DeleteSchematicWireByUuid(context.ProjectPath, RequiredString(p, "uuid"), false)),
             "delete-schematic-wire" => Box(context.Schematic.DeleteSchematicWire(context.ProjectPath, RequiredDouble(p, "x1Mm"), RequiredDouble(p, "y1Mm"), RequiredDouble(p, "x2Mm"), RequiredDouble(p, "y2Mm"), RequiredDouble(p, "toleranceMm"), false)),

@@ -76,10 +76,24 @@ public sealed class SchematicAuthoringService
                 label.XMillimeters,
                 label.YMillimeters))
             .ToArray();
+        var noConnects = schematic.Data.NoConnects
+            .Select(static marker => new SchematicNoConnectSummary(
+                marker.Uuid,
+                marker.XMillimeters,
+                marker.YMillimeters))
+            .ToArray();
 
         return ToolResponse<SchematicSymbolListResult>.Ok(
             $"Found {symbols.Length} schematic symbol(s).",
-            new SchematicSymbolListResult(schematic.Data.SchematicFile, symbols, schematic.Data.Wires.Count, schematic.Data.Labels.Count, wires, labels));
+            new SchematicSymbolListResult(
+                schematic.Data.SchematicFile,
+                symbols,
+                schematic.Data.Wires.Count,
+                schematic.Data.Labels.Count,
+                schematic.Data.NoConnects.Count,
+                wires,
+                labels,
+                noConnects));
     }
 
     public ToolResponse<SchematicMutationResult> CreateSymbol(string projectPath, string symbol, string reference, double x, double y, string? value, string? footprint, bool dryRun)
@@ -609,6 +623,23 @@ public sealed class SchematicAuthoringService
         }
 
         return DeleteSchematicBlock(schematic.Data, "delete-net-label", label.Text, label.SourceStart, label.SourceLength, dryRun);
+    }
+
+    public ToolResponse<SchematicMutationResult> DeleteSchematicNoConnectByUuid(string projectPath, string uuid, bool dryRun)
+    {
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+        }
+
+        var marker = schematic.Data.NoConnects.FirstOrDefault(item => string.Equals(item.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+        if (marker is null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail($"Schematic no-connect marker not found: {uuid}", "SCHEMATIC_NO_CONNECT_NOT_FOUND");
+        }
+
+        return DeleteSchematicBlock(schematic.Data, "delete-schematic-no-connect", uuid, marker.SourceStart, marker.SourceLength, dryRun);
     }
 
     public ToolResponse<SchematicMutationResult> DeleteNetLabel(string projectPath, string net, double x, double y, double? toleranceMillimeters, bool dryRun)
@@ -2204,8 +2235,10 @@ public sealed record SchematicSymbolListResult(
     IReadOnlyList<SchematicSymbolSummary> Symbols,
     int WireCount,
     int LabelCount,
+    int NoConnectCount,
     IReadOnlyList<SchematicWireSummary> Wires,
-    IReadOnlyList<SchematicLabelSummary> Labels);
+    IReadOnlyList<SchematicLabelSummary> Labels,
+    IReadOnlyList<SchematicNoConnectSummary> NoConnects);
 
 public sealed record SchematicSymbolSummary(string Reference, string? SymbolId, int Unit, string? Value, string? Footprint, double? XMillimeters, double? YMillimeters, IReadOnlyList<SchematicFieldSummary> Fields, IReadOnlyList<SchematicPinSummary> Pins);
 
@@ -2216,6 +2249,8 @@ public sealed record SchematicFieldSummary(string Name, string Value);
 public sealed record SchematicWireSummary(string? Uuid, double X1Millimeters, double Y1Millimeters, double X2Millimeters, double Y2Millimeters);
 
 public sealed record SchematicLabelSummary(string? Uuid, string Text, double XMillimeters, double YMillimeters);
+
+public sealed record SchematicNoConnectSummary(string? Uuid, double XMillimeters, double YMillimeters);
 
 public sealed record SchematicMutationResult(
     string Operation,
