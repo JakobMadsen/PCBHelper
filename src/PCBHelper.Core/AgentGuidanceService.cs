@@ -6,7 +6,7 @@ namespace PCBHelper.Core;
 public sealed class AgentGuidanceService
 {
     public const int GuideVersion = 1;
-    public const int CapabilityVersion = 8;
+    public const int CapabilityVersion = 9;
     public const string GuideUri = "pcbhelper://agent-guide/v1";
     public const string DesignPlanSchemaUri = "pcbhelper://design-plan/v1/schema";
 

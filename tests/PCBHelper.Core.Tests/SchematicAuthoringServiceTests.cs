@@ -21,7 +21,7 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Switch:SW_SPDT", "SW1", 1)]
     [InlineData("74xx:74LS08", "U5", 1)]
     [InlineData("74xx:74LS08", "U5", 5)]
-    [InlineData("Power_Management:TPS2553-1", "U6", 1)]
+    [InlineData("PCBHelper:TPS2553-1", "U6", 1)]
     public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
     {
         using var fixture = CopyBlankFixture();
@@ -32,6 +32,21 @@ public sealed class SchematicAuthoringServiceTests
         Assert.True(created.Success, created.Error?.Message);
         Assert.Contains(service.ListSymbols(fixture.Path).Data!.Symbols,
             item => item.Reference == reference && item.SymbolId == symbol && item.Unit == unit);
+    }
+
+    [Fact]
+    public void CreateSymbol_Writes_Project_Local_Library_For_Custom_Tps2553()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        var created = service.CreateSymbol(fixture.Path, "PCBHelper:TPS2553-1", "U1", 80, 50, null, null, dryRun: false);
+
+        Assert.True(created.Success, created.Error?.Message);
+        var library = File.ReadAllText(Path.Combine(fixture.Path, "PCBHelper.kicad_sym"));
+        var table = File.ReadAllText(Path.Combine(fixture.Path, "sym-lib-table"));
+        Assert.Contains("(symbol \"TPS2553-1\"", library, StringComparison.Ordinal);
+        Assert.Contains("${KIPRJMOD}/PCBHelper.kicad_sym", table, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -124,12 +124,17 @@ public sealed class SchematicAuthoringService
         text = EnsureSymbolInstance(text, reference, unit, Path.GetFileNameWithoutExtension(schematic.Data.SchematicFile), FindRootSchematicUuid(schematic.Data.Text));
         var withLibrarySymbol = EnsureLibSymbolDefinition(schematic.Data.Text, catalog);
         var after = InsertBeforeSymbolInstances(withLibrarySymbol, text);
+        var snapshots = new List<ChangeFileSnapshot>
+        {
+            new(schematic.Data.SchematicFile, schematic.Data.Text, after)
+        };
+        snapshots.AddRange(EnsureProjectSymbolLibrary(schematic.Data.SchematicFile, catalog, dryRun));
         if (!dryRun)
         {
             File.WriteAllText(schematic.Data.SchematicFile, after);
         }
 
-        return Mutation("create-schematic-symbol", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) }, text);
+        return Mutation("create-schematic-symbol", reference, dryRun, snapshots, text);
     }
 
     public ToolResponse<SchematicMutationResult> SetSymbolField(string projectPath, string reference, string field, string value, bool dryRun)
@@ -262,8 +267,10 @@ public sealed class SchematicAuthoringService
             after = after.Remove(existing.SourceStart, existing.SourceLength).Insert(existing.SourceStart, replaced);
         }
         after = EnsureLibSymbolDefinition(after, target);
+        var snapshots = new List<ChangeFileSnapshot> { new(schematic.Data.SchematicFile, before, after) };
+        snapshots.AddRange(EnsureProjectSymbolLibrary(schematic.Data.SchematicFile, target, dryRun));
         if (!dryRun) File.WriteAllText(schematic.Data.SchematicFile, after);
-        return Mutation("replace-schematic-symbol", reference, dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, before, after) }, symbolId);
+        return Mutation("replace-schematic-symbol", reference, dryRun, snapshots, symbolId);
     }
 
     private static string FindRootSchematicUuid(string text)
@@ -1456,6 +1463,75 @@ public sealed class SchematicAuthoringService
         return text.Insert(libSymbolsEnd, definition);
     }
 
+    private static IReadOnlyList<ChangeFileSnapshot> EnsureProjectSymbolLibrary(
+        string schematicFile,
+        SchematicSymbolCatalogEntry catalog,
+        bool dryRun)
+    {
+        if (!catalog.ProjectLocalLibrary)
+            return Array.Empty<ChangeFileSnapshot>();
+
+        var projectRoot = Path.GetDirectoryName(schematicFile)!;
+        var libraryName = catalog.SymbolId.Split(':', 2)[0];
+        var symbolName = catalog.SymbolId.Split(':', 2)[1];
+        var libraryPath = Path.Combine(projectRoot, $"{libraryName}.kicad_sym");
+        var tablePath = Path.Combine(projectRoot, "sym-lib-table");
+        var libraryBefore = File.Exists(libraryPath) ? File.ReadAllText(libraryPath) : null;
+        var tableBefore = File.Exists(tablePath) ? File.ReadAllText(tablePath) : null;
+        var definition = FormatLibSymbolDefinition(catalog).Replace(
+            $"(symbol \"{catalog.SymbolId}\"",
+            $"(symbol \"{symbolName}\"",
+            StringComparison.Ordinal);
+        var libraryAfter = EnsureProjectLibraryDefinition(libraryBefore, symbolName, definition);
+        var tableAfter = EnsureProjectLibraryTable(tableBefore, libraryName);
+
+        if (!dryRun)
+        {
+            if (!string.Equals(libraryBefore, libraryAfter, StringComparison.Ordinal))
+                File.WriteAllText(libraryPath, libraryAfter);
+            if (!string.Equals(tableBefore, tableAfter, StringComparison.Ordinal))
+                File.WriteAllText(tablePath, tableAfter);
+        }
+
+        return new[]
+        {
+            new ChangeFileSnapshot(libraryPath, libraryBefore, libraryAfter),
+            new ChangeFileSnapshot(tablePath, tableBefore, tableAfter)
+        };
+    }
+
+    private static string EnsureProjectLibraryDefinition(string? before, string symbolName, string definition)
+    {
+        var text = before ?? string.Join(Environment.NewLine, new[]
+        {
+            "(kicad_symbol_lib",
+            "  (version 20251024)",
+            "  (generator \"pcbhelper\")",
+            "  (generator_version \"1.0\")",
+            ")",
+            string.Empty
+        });
+        if (text.Contains($"(symbol \"{symbolName}\"", StringComparison.Ordinal))
+            return text;
+        var end = text.LastIndexOf(')');
+        if (end < 0)
+            throw new InvalidOperationException("Project symbol library is malformed.");
+        return text.Insert(end, IndentBlock(definition.TrimEnd(), 2) + Environment.NewLine);
+    }
+
+    private static string EnsureProjectLibraryTable(string? before, string libraryName)
+    {
+        var entry = $"  (lib (name \"{libraryName}\")(type \"KiCad\")(uri \"${{KIPRJMOD}}/{libraryName}.kicad_sym\")(options \"\")(descr \"PCBHelper project symbols\"))";
+        if (before is null)
+            return $"(sym_lib_table{Environment.NewLine}  (version 7){Environment.NewLine}{entry}{Environment.NewLine}){Environment.NewLine}";
+        if (Regex.IsMatch(before, $@"\(name\s+\""{Regex.Escape(libraryName)}\""\)"))
+            return before;
+        var end = before.LastIndexOf(')');
+        if (end < 0)
+            throw new InvalidOperationException("Project symbol library table is malformed.");
+        return before.Insert(end, entry + Environment.NewLine);
+    }
+
     private static string FormatSymbol(SchematicSymbolCatalogEntry catalog, string reference, string value, string footprint, double x, double y, int unit)
     {
         var uuid = Guid.NewGuid().ToString();
@@ -2340,7 +2416,8 @@ internal sealed record SchematicSymbolCatalogEntry(
     string DefaultFootprint,
     double DefaultBoardY,
     IReadOnlyList<SchematicPinDefinition> Pins,
-    string Source = "KiCad 10 standard library")
+    string Source = "KiCad 10 standard library",
+    bool ProjectLocalLibrary = false)
 {
     public IReadOnlyList<int> Units { get; } = Pins.Select(static pin => pin.Unit).Distinct().OrderBy(static unit => unit).ToArray();
 }
@@ -2400,7 +2477,7 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("11", 7.62, 0, 4), new SchematicPinDefinition("12", -7.62, 2.54, 4), new SchematicPinDefinition("13", -7.62, -2.54, 4),
             new SchematicPinDefinition("7", 0, -12.7, 5), new SchematicPinDefinition("14", 0, 12.7, 5)
         }, "KiCad 10 74LS08 pin-compatible graphical representation for TI SN74HCS08; pin map verified against TI SN74HCS08 Rev. C"),
-        new("Power_Management:TPS2553-1", "TPS2553-1", "Package_TO_SOT_SMD:SOT-23-6", 50, new[]
+        new("PCBHelper:TPS2553-1", "TPS2553-1", "Package_TO_SOT_SMD:SOT-23-6", 50, new[]
         {
             new SchematicPinDefinition("1", -7.62, 2.54),
             new SchematicPinDefinition("2", 0, -7.62),
@@ -2408,7 +2485,7 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("4", 7.62, -2.54),
             new SchematicPinDefinition("5", 0, 7.62),
             new SchematicPinDefinition("6", 7.62, 2.54)
-        }, "Texas Instruments TPS255x datasheet SLVS841F; TPS2553-1 DBV pin map and latch-off behavior"),
+        }, "PCBHelper project-local symbol based on Texas Instruments TPS255x datasheet SLVS841F; TPS2553-1 DBV pin map and latch-off behavior", true),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)

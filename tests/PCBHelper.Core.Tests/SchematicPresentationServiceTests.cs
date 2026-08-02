@@ -186,8 +186,8 @@ public sealed class SchematicPresentationServiceTests
         Assert.True(authoring.CreateSymbol(projectPath, "74xx:74LS08", "U1", 75, 115, "SN74HCS08", null, 1, dryRun: false).Success);
         Assert.True(authoring.CreateSymbol(projectPath, "74xx:74LS08", "U1", 75, 135, "SN74HCS08", null, 2, dryRun: false).Success);
         Assert.True(authoring.CreateSymbol(projectPath, "74xx:74LS08", "U1", 75, 150, "SN74HCS08", null, 5, dryRun: false).Success);
-        Assert.True(authoring.CreateSymbol(projectPath, "Power_Management:TPS2553-1", "U2", 110, 115, null, null, dryRun: false).Success);
-        Assert.True(authoring.CreateSymbol(projectPath, "Power_Management:TPS2553-1", "U3", 110, 140, null, null, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "PCBHelper:TPS2553-1", "U2", 110, 115, null, null, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "PCBHelper:TPS2553-1", "U3", 110, 140, null, null, dryRun: false).Success);
         foreach (var (reference, x, y, value) in new[]
                  {
                      ("R1", 125d, 120d, "66.5k"), ("R2", 125d, 145d, "66.5k"),

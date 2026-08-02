@@ -425,8 +425,10 @@ public sealed class DesignPlanService
     private static Dictionary<string, string> CaptureDesignFiles(string root)
     {
         var files = Directory.GetFiles(root, "*.kicad_*", SearchOption.TopDirectoryOnly)
-            .Where(path => Path.GetExtension(path) is ".kicad_pro" or ".kicad_sch" or ".kicad_pcb")
+            .Where(path => Path.GetExtension(path) is ".kicad_pro" or ".kicad_sch" or ".kicad_pcb" or ".kicad_sym")
             .ToDictionary(path => Path.GetRelativePath(root, path), File.ReadAllText, StringComparer.OrdinalIgnoreCase);
+        var symbolTable = Path.Combine(root, "sym-lib-table");
+        if (File.Exists(symbolTable)) files[Path.GetRelativePath(root, symbolTable)] = File.ReadAllText(symbolTable);
         var intent = Path.Combine(root, ".pcbhelper", "design-intent.json");
         if (File.Exists(intent)) files[Path.GetRelativePath(root, intent)] = File.ReadAllText(intent);
         CaptureProjectFiles(root, files, Path.Combine(".pcbhelper", "tests"), "*.json");
