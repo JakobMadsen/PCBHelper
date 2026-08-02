@@ -219,8 +219,23 @@ internal sealed class SchematicPresentationModel
         var conflictingPin = logical.Pins.FirstOrDefault(static pin => pin.HasNetConflict);
         if (conflictingPin is not null)
         {
+            var conflictingNames = logical.Connectivity.NetNamesAtPoint(conflictingPin.X, conflictingPin.Y)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase);
+            var colocatedPins = logical.Pins
+                .Where(pin => Math.Abs(pin.X - conflictingPin.X) < 0.001 && Math.Abs(pin.Y - conflictingPin.Y) < 0.001)
+                .Select(pin => $"{pin.Reference}.{pin.Pin}")
+                .Order(StringComparer.OrdinalIgnoreCase);
+            var colocatedReferences = logical.Pins
+                .Where(pin => Math.Abs(pin.X - conflictingPin.X) < 0.001 && Math.Abs(pin.Y - conflictingPin.Y) < 0.001)
+                .Select(static pin => pin.Reference)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var symbolPlacements = document.Symbols
+                .Where(symbol => symbol.Reference is not null && colocatedReferences.Contains(symbol.Reference))
+                .Select(symbol => $"{symbol.Reference}.u{symbol.Unit}@({symbol.XMillimeters:0.###};{symbol.YMillimeters:0.###})")
+                .Order(StringComparer.OrdinalIgnoreCase);
             return ToolResponse<SchematicPresentationModel>.Fail(
-                $"Pin {conflictingPin.Reference}.{conflictingPin.Pin} resolves to multiple net names.",
+                $"Pin {conflictingPin.Reference}.{conflictingPin.Pin} at ({conflictingPin.X:0.###}; {conflictingPin.Y:0.###}) resolves to multiple net names: {string.Join(", ", conflictingNames)}. Colocated pins: {string.Join(", ", colocatedPins)}. Symbols: {string.Join(", ", symbolPlacements)}.",
                 "SCHEMATIC_NET_CONFLICT");
         }
 
@@ -420,8 +435,8 @@ internal sealed class SchematicLogicalModel
 internal static class SchematicPresentationPlanner
 {
     private const double Grid = 1.27;
-    private const int ColumnPitch = 24;
-    private const int RowPitch = 14;
+    private const double ColumnGap = 12 * Grid;
+    private const double RowGap = 6 * Grid;
 
     public static ToolResponse<SchematicPresentationPlan> Plan(SchematicPresentationModel model)
     {
@@ -433,14 +448,47 @@ internal static class SchematicPresentationPlanner
         var locked = model.Presentation.LockedReferences.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var blockOrder = BuildBlockOrder(model);
         var placements = new List<SchematicPlannedSymbol>();
-        var rowByColumn = new Dictionary<int, int>();
         var baseX = 30.48;
         var baseY = 35.56;
-
-        foreach (var symbol in model.Symbols
+        var orderedSymbols = model.Symbols
                      .OrderBy(symbol => blockOrder.GetValueOrDefault(symbol.Reference))
                      .ThenBy(static symbol => symbol.Reference, StringComparer.OrdinalIgnoreCase)
-                     .ThenBy(static symbol => symbol.Unit))
+                     .ThenBy(static symbol => symbol.Unit)
+                     .ToArray();
+        var layoutItems = orderedSymbols
+            .Where(symbol => !locked.Contains(symbol.Reference))
+            .Select(symbol =>
+            {
+                var rotation = PreferredRotation(symbol);
+                var catalog = SchematicSymbolCatalog.Find(symbol.SymbolId)!;
+                var measuredSymbol = symbol.Source with
+                {
+                    XMillimeters = 0,
+                    YMillimeters = 0,
+                    RotationDegrees = rotation
+                };
+                var bounds = SchematicGeometry.Bounds(measuredSymbol, catalog);
+                return new
+                {
+                    Symbol = symbol,
+                    Column = blockOrder.GetValueOrDefault(symbol.Reference),
+                    Rotation = rotation,
+                    Width = Math.Max(Grid, bounds.Right - bounds.Left),
+                    Height = Math.Max(Grid, bounds.Bottom - bounds.Top)
+                };
+            })
+            .ToArray();
+        var xByColumn = new Dictionary<int, double>();
+        var nextX = baseX;
+        foreach (var column in layoutItems.Select(static item => item.Column).Distinct().Order())
+        {
+            var width = layoutItems.Where(item => item.Column == column).Max(static item => item.Width);
+            xByColumn[column] = Snap(nextX + (width / 2));
+            nextX += width + ColumnGap;
+        }
+        var nextYByColumn = new Dictionary<int, double>();
+
+        foreach (var symbol in orderedSymbols)
         {
             if (locked.Contains(symbol.Reference))
             {
@@ -453,16 +501,18 @@ internal static class SchematicPresentationPlanner
                 continue;
             }
 
-            var column = blockOrder.GetValueOrDefault(symbol.Reference);
-            var row = rowByColumn.GetValueOrDefault(column);
-            rowByColumn[column] = row + 1;
-            var rotation = PreferredRotation(symbol);
+            var item = layoutItems.Single(candidate =>
+                string.Equals(candidate.Symbol.Reference, symbol.Reference, StringComparison.OrdinalIgnoreCase)
+                && candidate.Symbol.Unit == symbol.Unit);
+            var nextY = nextYByColumn.GetValueOrDefault(item.Column, baseY);
+            var centerY = Snap(nextY + (item.Height / 2));
+            nextYByColumn[item.Column] = centerY + (item.Height / 2) + RowGap;
             placements.Add(new SchematicPlannedSymbol(
                 symbol.Reference,
                 symbol.Unit,
-                Snap(baseX + (column * ColumnPitch * Grid)),
-                Snap(baseY + (row * RowPitch * Grid)),
-                rotation));
+                xByColumn[item.Column],
+                centerY,
+                item.Rotation));
         }
 
         var placedSymbols = ApplyPlacements(model.Symbols, placements);
@@ -625,11 +675,13 @@ internal static class SchematicPresentationPlanner
 internal static class SchematicOrthogonalRouter
 {
     private const double Grid = 1.27;
+    private const int DefaultMaxExpandedStatesPerConnection = 10_000;
 
     public static ToolResponse<SchematicRoutingPlan> Route(
         IReadOnlyList<SchematicPresentationNet> originalNets,
         IReadOnlyList<SchematicPresentationSymbol> symbols,
-        DesignIntentPresentation presentation)
+        DesignIntentPresentation presentation,
+        int maxExpandedStatesPerConnection = DefaultMaxExpandedStatesPerConnection)
     {
         var pinsByKey = symbols.SelectMany(static symbol => symbol.Pins).ToDictionary(static pin => pin.Key, StringComparer.OrdinalIgnoreCase);
         var nets = originalNets.Select(net => new SchematicPresentationNet(
@@ -645,10 +697,15 @@ internal static class SchematicOrthogonalRouter
         {
             if (net.Pins.Count == 0)
                 continue;
-            var useLabels = net.Pins.Count == 1 || IsGlobalNet(net.Name) || net.Pins.Count > 4;
+            var span = (net.Pins.Max(static pin => pin.X) - net.Pins.Min(static pin => pin.X))
+                + (net.Pins.Max(static pin => pin.Y) - net.Pins.Min(static pin => pin.Y));
+            var useLabels = net.Pins.Count == 1
+                || IsGlobalNet(net.Name)
+                || net.Pins.Count > 4
+                || span > 12 * Grid;
             if (useLabels)
             {
-                AddLabelStubs(net, wires, labels, occupied);
+                AddLabelStubs(net, wires, labels, occupied, obstacles);
                 continue;
             }
 
@@ -666,7 +723,8 @@ internal static class SchematicOrthogonalRouter
                     obstacles,
                     occupied,
                     net.Name,
-                    preferFeedback: feedback.Contains(net.Name));
+                    preferFeedback: feedback.Contains(net.Name),
+                    maxExpandedStates: maxExpandedStatesPerConnection);
                 if (path is null)
                 {
                     fallBackToLabels = true;
@@ -691,7 +749,7 @@ internal static class SchematicOrthogonalRouter
                 wires.RemoveRange(wireStart, wires.Count - wireStart);
                 labels.RemoveRange(labelStart, labels.Count - labelStart);
                 occupied.RemoveRange(occupiedStart, occupied.Count - occupiedStart);
-                AddLabelStubs(net, wires, labels, occupied);
+                AddLabelStubs(net, wires, labels, occupied, obstacles);
                 continue;
             }
             var firstWire = wires.FirstOrDefault(wire => string.Equals(wire.Net, net.Name, StringComparison.OrdinalIgnoreCase));
@@ -721,7 +779,8 @@ internal static class SchematicOrthogonalRouter
         SchematicPresentationNet net,
         List<SchematicPlannedWire> wires,
         List<SchematicPlannedLabel> labels,
-        List<SchematicPlannedWire> occupied)
+        List<SchematicPlannedWire> occupied,
+        IReadOnlySet<(int X, int Y)> obstacles)
     {
         foreach (var pin in net.Pins.OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase))
         {
@@ -729,13 +788,37 @@ internal static class SchematicOrthogonalRouter
             var directionY = pin.DirectionY;
             if (directionX == 0 && directionY == 0)
                 directionX = 1;
-            var end = (
-                X: Snap(pin.X + (directionX * Grid)),
-                Y: Snap(pin.Y + (directionY * Grid)));
-            var wire = new SchematicPlannedWire(net.Name, pin.X, pin.Y, end.X, end.Y);
-            wires.Add(wire);
-            occupied.Add(wire);
-            labels.Add(new SchematicPlannedLabel(net.Name, end.X, end.Y));
+            var directions = new[]
+            {
+                (X: directionX, Y: directionY),
+                (X: -directionX, Y: -directionY),
+                (X: -directionY, Y: directionX),
+                (X: directionY, Y: -directionX)
+            }.Distinct().ToArray();
+            SchematicPlannedWire? stub = null;
+            foreach (var direction in directions)
+            {
+                var end = (
+                    X: Snap(pin.X + (direction.X * Grid)),
+                    Y: Snap(pin.Y + (direction.Y * Grid)));
+                if (obstacles.Contains(ToGrid(end.X, end.Y)))
+                    continue;
+                var candidate = new SchematicPlannedWire(net.Name, pin.X, pin.Y, end.X, end.Y);
+                if (occupied.Any(wire => ClassifyInteraction(
+                        candidate.X1, candidate.Y1, candidate.X2, candidate.Y2,
+                        wire.X1, wire.Y1, wire.X2, wire.Y2) != SegmentInteraction.None))
+                    continue;
+                stub = candidate;
+                break;
+            }
+            if (stub is null)
+            {
+                labels.Add(new SchematicPlannedLabel(net.Name, pin.X, pin.Y));
+                continue;
+            }
+            wires.Add(stub);
+            occupied.Add(stub);
+            labels.Add(new SchematicPlannedLabel(net.Name, stub.X2, stub.Y2));
         }
     }
 
@@ -761,7 +844,8 @@ internal static class SchematicOrthogonalRouter
         IReadOnlySet<(int X, int Y)> obstacles,
         IReadOnlyList<SchematicPlannedWire> occupied,
         string net,
-        bool preferFeedback)
+        bool preferFeedback,
+        int maxExpandedStates)
     {
         var targetList = targets.ToArray();
         var minX = Math.Min(start.X, targetList.Min(static point => point.X)) - 30;
@@ -777,8 +861,11 @@ internal static class SchematicOrthogonalRouter
         queue.Enqueue(initial, (0, tie++));
 
         RouteState? found = null;
+        var expandedStates = 0;
         while (queue.TryDequeue(out var current, out _))
         {
+            if (++expandedStates > maxExpandedStates)
+                return null;
             if (targets.Contains((current.X, current.Y)))
             {
                 found = current;

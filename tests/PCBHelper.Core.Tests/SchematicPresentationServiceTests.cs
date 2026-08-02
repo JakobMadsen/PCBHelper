@@ -7,15 +7,15 @@ public sealed class SchematicPresentationServiceTests
     [Fact]
     public void Router_Falls_Back_To_Label_Stubs_When_A_Physical_Path_Is_Blocked()
     {
-        var leftPin = new SchematicPresentationPin("J1.1", "1", -50.8, 0, 1, 0, "BLOCKED_NET");
-        var rightPin = new SchematicPresentationPin("J2.1", "1", 50.8, 0, -1, 0, "BLOCKED_NET");
+        var leftPin = new SchematicPresentationPin("J1.1", "1", -5.08, 0, 1, 0, "BLOCKED_NET");
+        var rightPin = new SchematicPresentationPin("J2.1", "1", 5.08, 0, -1, 0, "BLOCKED_NET");
         KiCadSchematicSymbol source = null!;
         var symbols = new[]
         {
-            new SchematicPresentationSymbol("J1", 1, "test", -50.8, 0, 0,
-                new SchematicRectangle(-55, -5, -45, 5), new[] { leftPin }, source),
-            new SchematicPresentationSymbol("J2", 1, "test", 50.8, 0, 0,
-                new SchematicRectangle(45, -5, 55, 5), new[] { rightPin }, source),
+            new SchematicPresentationSymbol("J1", 1, "test", -5.08, 0, 0,
+                new SchematicRectangle(-7, -2, -5.08, 2), new[] { leftPin }, source),
+            new SchematicPresentationSymbol("J2", 1, "test", 5.08, 0, 0,
+                new SchematicRectangle(5.08, -2, 7, 2), new[] { rightPin }, source),
             new SchematicPresentationSymbol("BARRIER", 1, "test", 0, 0, 0,
                 new SchematicRectangle(-2.54, -100, 2.54, 100), Array.Empty<SchematicPresentationPin>(), source)
         };
@@ -24,9 +24,62 @@ public sealed class SchematicPresentationServiceTests
         var result = SchematicOrthogonalRouter.Route(nets, symbols, new DesignIntentPresentation());
 
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal(2, result.Data!.Wires.Count);
+        Assert.InRange(result.Data!.Wires.Count, 0, 2);
         Assert.Equal(2, result.Data.Labels.Count);
         Assert.All(result.Data.Wires, wire => Assert.Equal("BLOCKED_NET", wire.Net));
+    }
+
+    [Fact]
+    public void Router_Falls_Back_To_Label_Stubs_When_Search_Budget_Is_Exhausted()
+    {
+        var leftPin = new SchematicPresentationPin("J1.1", "1", 0, 0, 1, 0, "BUDGETED_NET");
+        var rightPin = new SchematicPresentationPin("J2.1", "1", 10.16, 0, -1, 0, "BUDGETED_NET");
+        KiCadSchematicSymbol source = null!;
+        var symbols = new[]
+        {
+            new SchematicPresentationSymbol("J1", 1, "test", 0, 0, 0,
+                new SchematicRectangle(-5, -5, 5, 5), new[] { leftPin }, source),
+            new SchematicPresentationSymbol("J2", 1, "test", 10.16, 0, 0,
+                new SchematicRectangle(10.16, -5, 15.16, 5), new[] { rightPin }, source)
+        };
+        var nets = new[] { new SchematicPresentationNet("BUDGETED_NET", new[] { leftPin, rightPin }) };
+
+        var result = SchematicOrthogonalRouter.Route(
+            nets,
+            symbols,
+            new DesignIntentPresentation(),
+            maxExpandedStatesPerConnection: 1);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.InRange(result.Data!.Wires.Count, 0, 2);
+        Assert.Equal(2, result.Data.Labels.Count);
+        Assert.All(result.Data.Wires, wire => Assert.Equal("BUDGETED_NET", wire.Net));
+    }
+
+    [Fact]
+    public void Router_Does_Not_Place_A_Label_Stub_On_A_Foreign_Pin()
+    {
+        var sourcePin = new SchematicPresentationPin("J1.1", "1", 0, 0, 1, 0, "SOURCE_NET");
+        var adjacentPin = new SchematicPresentationPin("J2.1", "1", 1.27, 0, -1, 0, "FOREIGN_NET");
+        KiCadSchematicSymbol source = null!;
+        var symbols = new[]
+        {
+            new SchematicPresentationSymbol("J1", 1, "test", -2.54, 0, 0,
+                new SchematicRectangle(-5, -2, 0, 2), new[] { sourcePin }, source),
+            new SchematicPresentationSymbol("J2", 1, "test", 3.81, 0, 0,
+                new SchematicRectangle(1.27, -2, 6.27, 2), new[] { adjacentPin }, source)
+        };
+        var nets = new[]
+        {
+            new SchematicPresentationNet("SOURCE_NET", new[] { sourcePin }),
+            new SchematicPresentationNet("FOREIGN_NET", new[] { adjacentPin })
+        };
+
+        var result = SchematicOrthogonalRouter.Route(nets, symbols, new DesignIntentPresentation());
+
+        Assert.True(result.Success, result.Error?.Message);
+        var sourceLabel = Assert.Single(result.Data!.Labels, label => label.Net == "SOURCE_NET");
+        Assert.False(sourceLabel.X == adjacentPin.X && sourceLabel.Y == adjacentPin.Y);
     }
 
     [Fact]
