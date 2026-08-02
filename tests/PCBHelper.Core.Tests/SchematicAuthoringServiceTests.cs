@@ -20,6 +20,7 @@ public sealed class SchematicAuthoringServiceTests
         Assert.Contains("PCBHelper:TPSM861253_RDX_NoThermalVias", board, StringComparison.Ordinal);
         Assert.DoesNotContain("np_thru_hole", board, StringComparison.Ordinal);
         Assert.Contains("(pad \"1\" smd", board, StringComparison.Ordinal);
+        Assert.Equal(7, System.Text.RegularExpressions.Regex.Matches(board, @"\(clearance 0\.15\)").Count);
     }
 
     [Theory]

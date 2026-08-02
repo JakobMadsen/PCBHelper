@@ -2893,9 +2893,29 @@ internal static class SchematicFootprintTemplates
             const string source = "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP";
             var path = ResolveKiCadFootprintPath(source)
                 ?? throw new InvalidOperationException($"KiCad footprint '{source}' is unavailable.");
-            var definition = RemoveOptionalThermalVias(File.ReadAllText(path));
+            var definition = AddLocalClearanceToNumberedPads(RemoveOptionalThermalVias(File.ReadAllText(path)), 0.15);
             return Regex.Replace(definition, "^\\(footprint\\s+\"[^\"]+\"", "(footprint \"TPSM861253_RDX_NoThermalVias\"");
         }
+    }
+
+    internal static string AddLocalClearanceToNumberedPads(string footprintDefinition, double clearanceMillimeters)
+    {
+        var matches = Regex.Matches(footprintDefinition, "(?m)^\\t\\(pad \\\"[1-9][0-9]*\\\"");
+        var clearance = KiCadBoardParser.FormatNumber(clearanceMillimeters);
+        foreach (Match match in matches.Cast<Match>().Reverse())
+        {
+            var padEnd = KiCadSchematicParser.FindMatchingParenthesis(footprintDefinition, match.Index);
+            if (padEnd < 0)
+            {
+                throw new InvalidOperationException("The TPSM861253 source footprint contains an unterminated numbered pad.");
+            }
+
+            var closingLineStart = footprintDefinition.LastIndexOf('\n', padEnd);
+            closingLineStart = closingLineStart < 0 ? padEnd : closingLineStart + 1;
+            footprintDefinition = footprintDefinition.Insert(closingLineStart, $"\t\t(clearance {clearance}){Environment.NewLine}");
+        }
+
+        return footprintDefinition;
     }
 
     internal static string RemoveOptionalThermalVias(string footprintDefinition)
