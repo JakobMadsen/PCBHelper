@@ -23,6 +23,8 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("74xx:74LS08", "U5", 1)]
     [InlineData("74xx:74LS08", "U5", 5)]
     [InlineData("PCBHelper:TPS2553-1", "U6", 1)]
+    [InlineData("PCBHelper:TPS2113A", "U7", 1)]
+    [InlineData("PCBHelper:TPSM861253", "U8", 1)]
     public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
     {
         using var fixture = CopyBlankFixture();
@@ -48,6 +50,29 @@ public sealed class SchematicAuthoringServiceTests
         var table = File.ReadAllText(Path.Combine(fixture.Path, "sym-lib-table"));
         Assert.Contains("(symbol \"TPS2553-1\"", library, StringComparison.Ordinal);
         Assert.Contains("${KIPRJMOD}/PCBHelper.kicad_sym", table, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("PCBHelper:TPS2113A", "TPS2113A", "STAT", "8", "IN1")]
+    [InlineData("PCBHelper:TPSM861253", "TPSM861253", "VIN", "7", "VOS")]
+    public void CreateSymbol_Writes_Datasheet_Pin_Names_For_Project_Local_Power_Parts(
+        string symbolId,
+        string symbolName,
+        string firstPinName,
+        string lastPinNumber,
+        string lastPinName)
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        var created = service.CreateSymbol(fixture.Path, symbolId, "U1", 80, 50, null, null, dryRun: false);
+
+        Assert.True(created.Success, created.Error?.Message);
+        var library = File.ReadAllText(Path.Combine(fixture.Path, "PCBHelper.kicad_sym"));
+        Assert.Contains($"(symbol \"{symbolName}\"", library, StringComparison.Ordinal);
+        Assert.Contains($"(name \"{firstPinName}\"", library, StringComparison.Ordinal);
+        Assert.Contains($"(name \"{lastPinName}\"", library, StringComparison.Ordinal);
+        Assert.Contains($"(number \"{lastPinNumber}\"", library, StringComparison.Ordinal);
     }
 
     [Fact]

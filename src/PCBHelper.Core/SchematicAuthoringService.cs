@@ -1863,7 +1863,7 @@ public sealed class SchematicAuthoringService
             $"        (pin {electricalType} line",
             $"          (at {KiCadSchematicParser.FormatNumber(pinAtX)} {KiCadSchematicParser.FormatNumber(pinAtY)} {KiCadSchematicParser.FormatNumber(rotation)})",
             "          (length 2.54)",
-            $"          (name \"{pin.Name}\" (effects (font (size 1.27 1.27))))",
+            $"          (name \"{pin.DisplayName ?? pin.Name}\" (effects (font (size 1.27 1.27))))",
             $"          (number \"{pin.Name}\" (effects (font (size 1.27 1.27))))",
             "        )",
             string.Empty
@@ -2502,7 +2502,7 @@ internal sealed record SchematicSymbolCatalogEntry(
     public IReadOnlyList<int> Units { get; } = Pins.Select(static pin => pin.Unit).Distinct().OrderBy(static unit => unit).ToArray();
 }
 
-internal sealed record SchematicPinDefinition(string Name, double OffsetX, double OffsetY, int Unit = 1);
+internal sealed record SchematicPinDefinition(string Name, double OffsetX, double OffsetY, int Unit = 1, string? DisplayName = null);
 
 internal static class SchematicSymbolCatalog
 {
@@ -2572,6 +2572,27 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("6", 7.62, 2.54)
         }, "PCBHelper project-local symbol based on Texas Instruments TPS255x datasheet SLVS841F; TPS2553-1 DBV pin map and latch-off behavior", true,
             new[] { "Power_Management:TPS2553-1" }),
+        new("PCBHelper:TPS2113A", "TPS2113A", "Package_SO:TSSOP-8_3x3mm_P0.65mm", 50, new[]
+        {
+            new SchematicPinDefinition("1", -7.62, 5.08, DisplayName: "STAT"),
+            new SchematicPinDefinition("2", -7.62, 0, DisplayName: "EN"),
+            new SchematicPinDefinition("3", -7.62, -5.08, DisplayName: "VSNS"),
+            new SchematicPinDefinition("4", 0, -7.62, DisplayName: "ILIM"),
+            new SchematicPinDefinition("5", 0, 7.62, DisplayName: "GND"),
+            new SchematicPinDefinition("6", 7.62, -5.08, DisplayName: "IN2"),
+            new SchematicPinDefinition("7", 7.62, 0, DisplayName: "OUT"),
+            new SchematicPinDefinition("8", 7.62, 5.08, DisplayName: "IN1")
+        }, "PCBHelper project-local symbol based on Texas Instruments TPS2112A/TPS2113A datasheet SBVS045C; TPS2113APW TSSOP-8 terminal map", true),
+        new("PCBHelper:TPSM861253", "TPSM861253", "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP", 50, new[]
+        {
+            new SchematicPinDefinition("1", -7.62, 5.08, DisplayName: "VIN"),
+            new SchematicPinDefinition("2", 0, 7.62, DisplayName: "SW"),
+            new SchematicPinDefinition("3", 7.62, 5.08, DisplayName: "VOUT"),
+            new SchematicPinDefinition("4", 0, -7.62, DisplayName: "PGND"),
+            new SchematicPinDefinition("5", 7.62, -5.08, DisplayName: "PG"),
+            new SchematicPinDefinition("6", -7.62, -5.08, DisplayName: "EN"),
+            new SchematicPinDefinition("7", 7.62, 0, DisplayName: "VOS")
+        }, "PCBHelper project-local symbol based on Texas Instruments TPSM86125x datasheet SLUSFD2B; TPSM861253 RDX QFN-FCMOD-7 terminal map", true),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)

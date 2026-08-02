@@ -139,7 +139,9 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x10_Odd_Even");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Switch:SW_Push");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2553-1");
-        Assert.Equal(11, capabilities.CapabilityVersion);
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2113A" && item.DefaultFootprint == "Package_SO:TSSOP-8_3x3mm_P0.65mm");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPSM861253" && item.DefaultFootprint == "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP");
+        Assert.Equal(12, capabilities.CapabilityVersion);
         Assert.Contains(capabilities.Operations, item => item.Type == "mark-schematic-pin-no-connect");
         var moveReference = Assert.Single(capabilities.Operations, item => item.Type == "move-reference-text");
         Assert.Contains("footprint-local", moveReference.Description, StringComparison.Ordinal);
