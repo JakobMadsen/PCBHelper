@@ -639,6 +639,97 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ProjectLocalSymbol_VerticalPins_Preserve_Catalog_Nets_On_The_Board()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        var pads = new BoardInspectionService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:LSF0204", "U1", 80, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 55, 70, "0R", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R2", 105, 70, "0R", null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "U1.7", "R1.1", "LSF_GND", dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "U1.8", "R2.1", "LSF_ENABLE", dryRun: false).Success);
+
+        var update = service.UpdatePcbFromSchematic(fixture.Path, dryRun: false);
+        var lsfPads = pads.ListFootprintPads(fixture.Path, "U1");
+
+        Assert.True(update.Success, update.Error?.Message ?? update.Summary);
+        Assert.True(lsfPads.Success, lsfPads.Error?.Message ?? lsfPads.Summary);
+        Assert.Contains(lsfPads.Data!.Pads, pad => pad.Name == "7" && pad.NetName == "LSF_GND");
+        Assert.Contains(lsfPads.Data.Pads, pad => pad.Name == "8" && pad.NetName == "LSF_ENABLE");
+    }
+
+    [Fact]
+    public void ProjectLocalSymbol_Embeds_Vertical_Pins_At_The_Catalog_Y_Coordinate()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:LSF0204", "U1", 80, 50, null, null, dryRun: false).Success);
+
+        var schematic = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_sch"));
+        var definitionStart = schematic.IndexOf("(symbol \"PCBHelper:LSF0204\"", StringComparison.Ordinal);
+        var instance = System.Text.RegularExpressions.Regex.Match(
+            schematic,
+            @"\(symbol\s+\(lib_id ""PCBHelper:LSF0204""\)",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        Assert.True(instance.Success);
+        var definition = schematic.Substring(definitionStart, instance.Index - definitionStart);
+        Assert.Matches(
+            @"(?s)\(pin passive line\s+\(at 0 -12\.7 90\).*?\(number ""7""",
+            definition);
+        Assert.Matches(
+            @"(?s)\(pin passive line\s+\(at 5\.08 -12\.7 90\).*?\(number ""8""",
+            definition);
+    }
+
+    [Fact]
+    public void ReplaceSymbol_Refreshes_Stale_ProjectLocal_Library_Definitions()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:LSF0204", "U1", 80, 50, null, null, dryRun: false).Success);
+        var schematicPath = Path.Combine(fixture.Path, "blank-authoring.kicad_sch");
+        var libraryPath = Path.Combine(fixture.Path, "PCBHelper.kicad_sym");
+        File.WriteAllText(
+            schematicPath,
+            File.ReadAllText(schematicPath).Replace("(at 0 -12.7 90)", "(at 0 12.7 270)", StringComparison.Ordinal));
+        File.WriteAllText(
+            libraryPath,
+            File.ReadAllText(libraryPath).Replace("(at 0 -12.7 90)", "(at 0 12.7 270)", StringComparison.Ordinal));
+
+        var result = service.ReplaceSymbol(fixture.Path, "U1", "PCBHelper:LSF0204", dryRun: false);
+        var embedded = ExtractSymbolDefinition(File.ReadAllText(schematicPath), "PCBHelper:LSF0204");
+        var projectLocal = ExtractSymbolDefinition(File.ReadAllText(libraryPath), "LSF0204");
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Contains("(at 0 -12.7 90)", embedded, StringComparison.Ordinal);
+        Assert.DoesNotContain("(at 0 12.7 270)", embedded, StringComparison.Ordinal);
+        Assert.Contains("(at 0 -12.7 90)", projectLocal, StringComparison.Ordinal);
+        Assert.DoesNotContain("(at 0 12.7 270)", projectLocal, StringComparison.Ordinal);
+
+        static string ExtractSymbolDefinition(string text, string symbolId)
+        {
+            var start = text.IndexOf($"(symbol \"{symbolId}\"", StringComparison.Ordinal);
+            Assert.True(start >= 0);
+            var depth = 0;
+            var end = -1;
+            for (var index = start; index < text.Length; index++)
+            {
+                if (text[index] == '(') depth++;
+                else if (text[index] == ')' && --depth == 0)
+                {
+                    end = index;
+                    break;
+                }
+            }
+            Assert.True(end >= start);
+            return text.Substring(start, end - start + 1);
+        }
+    }
+
+    [Fact]
     public void ListSymbols_Uses_Embedded_KiCad_Pin_Geometry_For_74xGxx_SingleGate()
     {
         using var fixture = CopyBlankFixture();

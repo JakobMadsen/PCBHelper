@@ -1522,6 +1522,15 @@ public sealed class SchematicAuthoringService
             if (existingSymbolEnd >= existingSymbolStart)
             {
                 var existingDefinition = text.Substring(existingSymbolStart, existingSymbolEnd - existingSymbolStart + 1);
+                if (catalog.ProjectLocalLibrary)
+                {
+                    var currentDefinition = FormatLibSymbolDefinition(catalog).Trim();
+                    if (!string.Equals(existingDefinition, currentDefinition, StringComparison.Ordinal))
+                    {
+                        return text.Remove(existingSymbolStart, existingDefinition.Length)
+                            .Insert(existingSymbolStart, currentDefinition);
+                    }
+                }
                 if (existingDefinition.Contains("(extends ", StringComparison.Ordinal))
                 {
                     var selfContainedDefinition = TryFormatLibraryExactLibSymbolDefinition(catalog);
@@ -1594,8 +1603,19 @@ public sealed class SchematicAuthoringService
             ")",
             string.Empty
         });
-        if (text.Contains($"(symbol \"{symbolName}\"", StringComparison.Ordinal))
-            return text;
+        var symbolMarker = $"(symbol \"{symbolName}\"";
+        var symbolStart = text.IndexOf(symbolMarker, StringComparison.Ordinal);
+        if (symbolStart >= 0)
+        {
+            var symbolEnd = KiCadSchematicParser.FindMatchingParenthesis(text, symbolStart);
+            if (symbolEnd < symbolStart)
+                throw new InvalidOperationException($"Project symbol library definition is malformed: {symbolName}");
+            var existingDefinition = text.Substring(symbolStart, symbolEnd - symbolStart + 1);
+            var currentDefinition = definition.Trim();
+            return string.Equals(existingDefinition, currentDefinition, StringComparison.Ordinal)
+                ? text
+                : text.Remove(symbolStart, existingDefinition.Length).Insert(symbolStart, currentDefinition);
+        }
         var end = text.LastIndexOf(')');
         if (end < 0)
             throw new InvalidOperationException("Project symbol library is malformed.");
@@ -1884,7 +1904,7 @@ public sealed class SchematicAuthoringService
     private static string FormatLibSymbolPin(SchematicSymbolCatalogEntry catalog, SchematicPinDefinition pin)
     {
         var pinAtX = pin.OffsetX;
-        var pinAtY = Math.Abs(pin.OffsetY) > Math.Abs(pin.OffsetX) ? -pin.OffsetY : pin.OffsetY;
+        var pinAtY = pin.OffsetY;
         var rotation = PinRotation(pinAtX, pinAtY);
         var electricalType = catalog.SymbolId.StartsWith("Amplifier_Operational:", StringComparison.Ordinal)
             ? pin.Unit == 3
