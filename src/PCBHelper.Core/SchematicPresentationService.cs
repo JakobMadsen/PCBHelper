@@ -641,9 +641,11 @@ internal static class SchematicOrthogonalRouter
                 foreach (var pin in net.Pins.OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase))
                 {
                     var end = (
-                        X: Snap(pin.X + (pin.DirectionX * Grid * 2)),
-                        Y: Snap(pin.Y + (pin.DirectionY * Grid * 2)));
-                    wires.Add(new SchematicPlannedWire(net.Name, pin.X, pin.Y, end.X, end.Y));
+                        X: Snap(pin.X + (pin.DirectionX * Grid)),
+                        Y: Snap(pin.Y + (pin.DirectionY * Grid)));
+                    var wire = new SchematicPlannedWire(net.Name, pin.X, pin.Y, end.X, end.Y);
+                    wires.Add(wire);
+                    occupied.Add(wire);
                     labels.Add(new SchematicPlannedLabel(net.Name, end.X, end.Y));
                 }
                 continue;
@@ -658,6 +660,7 @@ internal static class SchematicOrthogonalRouter
                     connected,
                     obstacles,
                     occupied,
+                    net.Name,
                     preferFeedback: feedback.Contains(net.Name));
                 if (path is null)
                     return ToolResponse<SchematicRoutingPlan>.Fail(
@@ -712,7 +715,7 @@ internal static class SchematicOrthogonalRouter
                 result.Add((x, y));
         }
         foreach (var pin in symbols.SelectMany(static symbol => symbol.Pins))
-            result.Remove(ToGrid(pin.X, pin.Y));
+            result.Add(ToGrid(pin.X, pin.Y));
         return result;
     }
 
@@ -721,6 +724,7 @@ internal static class SchematicOrthogonalRouter
         IReadOnlySet<(int X, int Y)> targets,
         IReadOnlySet<(int X, int Y)> obstacles,
         IReadOnlyList<SchematicPlannedWire> occupied,
+        string net,
         bool preferFeedback)
     {
         var targetList = targets.ToArray();
@@ -732,7 +736,7 @@ internal static class SchematicOrthogonalRouter
         var best = new Dictionary<RouteState, int>();
         var previous = new Dictionary<RouteState, RouteState>();
         var tie = 0;
-        var initial = new RouteState(start.X, start.Y, 0, 0);
+        var initial = new RouteState(start.X, start.Y, 0, 0, false);
         best[initial] = 0;
         queue.Enqueue(initial, (0, tie++));
 
@@ -747,6 +751,9 @@ internal static class SchematicOrthogonalRouter
             var currentCost = best[current];
             foreach (var direction in new[] { (-1, 0), (1, 0), (0, -1), (0, 1) })
             {
+                if (current.MustContinueStraight
+                    && (current.DirectionX != direction.Item1 || current.DirectionY != direction.Item2))
+                    continue;
                 var nextPoint = (X: current.X + direction.Item1, Y: current.Y + direction.Item2);
                 if (nextPoint.X < minX || nextPoint.X > maxX || nextPoint.Y < minY || nextPoint.Y > maxY)
                     continue;
@@ -757,12 +764,34 @@ internal static class SchematicOrthogonalRouter
                     && (current.DirectionX != direction.Item1 || current.DirectionY != direction.Item2);
                 var segmentStart = FromGrid((current.X, current.Y));
                 var segmentEnd = FromGrid(nextPoint);
+                var blocked = false;
+                var mustContinueStraight = false;
+                foreach (var wire in occupied.Where(wire =>
+                             !string.Equals(wire.Net, net, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var interaction = ClassifyInteraction(
+                        segmentStart.X, segmentStart.Y, segmentEnd.X, segmentEnd.Y,
+                        wire.X1, wire.Y1, wire.X2, wire.Y2);
+                    if (interaction == SegmentInteraction.None)
+                        continue;
+                    if (interaction == SegmentInteraction.SharedConductorOrForeignEndpoint
+                        || (interaction == SegmentInteraction.CrossingAtStart && !current.MustContinueStraight)
+                        || (interaction == SegmentInteraction.CrossingAtEnd && targets.Contains(nextPoint)))
+                    {
+                        blocked = true;
+                        break;
+                    }
+                    if (interaction == SegmentInteraction.CrossingAtEnd)
+                        mustContinueStraight = true;
+                }
+                if (blocked)
+                    continue;
                 var crossings = occupied.Count(wire => SegmentsCross(
                     segmentStart.X, segmentStart.Y, segmentEnd.X, segmentEnd.Y,
                     wire.X1, wire.Y1, wire.X2, wire.Y2));
                 var reversePenalty = !preferFeedback && direction.Item1 < 0 ? 2 : 0;
                 var cost = currentCost + 10 + (bend ? 35 : 0) + (crossings * 250) + reversePenalty;
-                var next = new RouteState(nextPoint.X, nextPoint.Y, direction.Item1, direction.Item2);
+                var next = new RouteState(nextPoint.X, nextPoint.Y, direction.Item1, direction.Item2, mustContinueStraight);
                 if (best.TryGetValue(next, out var known) && known <= cost)
                     continue;
                 best[next] = cost;
@@ -839,6 +868,52 @@ internal static class SchematicOrthogonalRouter
             && hy < Math.Max(vy1, vy2) - 0.001;
     }
 
+    private static SegmentInteraction ClassifyInteraction(
+        double x1, double y1, double x2, double y2,
+        double x3, double y3, double x4, double y4)
+    {
+        var firstHorizontal = Math.Abs(y1 - y2) < 0.001;
+        var secondHorizontal = Math.Abs(y3 - y4) < 0.001;
+        if (firstHorizontal && secondHorizontal)
+            return Math.Abs(y1 - y3) < 0.001
+                && Math.Max(Math.Min(x1, x2), Math.Min(x3, x4))
+                <= Math.Min(Math.Max(x1, x2), Math.Max(x3, x4)) + 0.001
+                    ? SegmentInteraction.SharedConductorOrForeignEndpoint
+                    : SegmentInteraction.None;
+        if (!firstHorizontal && !secondHorizontal)
+            return Math.Abs(x1 - x3) < 0.001
+                && Math.Max(Math.Min(y1, y2), Math.Min(y3, y4))
+                <= Math.Min(Math.Max(y1, y2), Math.Max(y3, y4)) + 0.001
+                    ? SegmentInteraction.SharedConductorOrForeignEndpoint
+                    : SegmentInteraction.None;
+
+        var horizontalX1 = firstHorizontal ? x1 : x3;
+        var horizontalX2 = firstHorizontal ? x2 : x4;
+        var horizontalY = firstHorizontal ? y1 : y3;
+        var verticalX = firstHorizontal ? x3 : x1;
+        var verticalY1 = firstHorizontal ? y3 : y1;
+        var verticalY2 = firstHorizontal ? y4 : y2;
+        if (verticalX < Math.Min(horizontalX1, horizontalX2) - 0.001
+            || verticalX > Math.Max(horizontalX1, horizontalX2) + 0.001
+            || horizontalY < Math.Min(verticalY1, verticalY2) - 0.001
+            || horizontalY > Math.Max(verticalY1, verticalY2) + 0.001)
+            return SegmentInteraction.None;
+        if (SamePoint(verticalX, horizontalY, x3, y3)
+            || SamePoint(verticalX, horizontalY, x4, y4))
+            return SegmentInteraction.SharedConductorOrForeignEndpoint;
+        if (SamePoint(verticalX, horizontalY, x1, y1))
+            return SegmentInteraction.CrossingAtStart;
+        return SegmentInteraction.CrossingAtEnd;
+    }
+
+    private enum SegmentInteraction
+    {
+        None,
+        CrossingAtStart,
+        CrossingAtEnd,
+        SharedConductorOrForeignEndpoint
+    }
+
     private static (int X, int Y) ToGrid(double x, double y) =>
         ((int)Math.Round(x / Grid), (int)Math.Round(y / Grid));
     private static (double X, double Y) FromGrid((int X, int Y) point) =>
@@ -847,7 +922,7 @@ internal static class SchematicOrthogonalRouter
         Math.Round(value / Grid, MidpointRounding.AwayFromZero) * Grid;
     private static bool SamePoint(double x1, double y1, double x2, double y2) =>
         Math.Abs(x1 - x2) < 0.001 && Math.Abs(y1 - y2) < 0.001;
-    private readonly record struct RouteState(int X, int Y, int DirectionX, int DirectionY);
+    private readonly record struct RouteState(int X, int Y, int DirectionX, int DirectionY, bool MustContinueStraight);
 }
 
 internal static class SchematicPresentationWriter

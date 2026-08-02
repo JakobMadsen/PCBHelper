@@ -72,6 +72,21 @@ public sealed class SchematicPresentationServiceTests
     }
 
     [Fact]
+    public void Arrange_Does_Not_Merge_Interlock_Nets_Through_Foreign_Pins()
+    {
+        using var fixture = CopyBlankFixture();
+        var projects = new ProjectDiscoveryService();
+        var authoring = new SchematicAuthoringService(projects);
+        CreateInterlockCircuit(authoring, fixture.Path);
+
+        var result = new SchematicPresentationService(projects).Arrange(fixture.Path, dryRun: true);
+
+        Assert.True(result.Success, $"{result.Error?.Code}: {result.Error?.Message}");
+        Assert.True(result.Data!.Connectivity.Equivalent);
+        Assert.Equal(result.Data.Connectivity.BeforeSignature, result.Data.Connectivity.AfterSignature);
+    }
+
+    [Fact]
     public void DesignPlan_Preview_Exposes_Readability_And_Connectivity_Evidence()
     {
         using var fixture = CopyBlankFixture();
@@ -149,6 +164,58 @@ public sealed class SchematicPresentationServiceTests
         Assert.True(authoring.ConnectPins(projectPath, "BT1.+", "R1.1", "VCC", dryRun: false).Success);
         Assert.True(authoring.ConnectPins(projectPath, "R1.2", "D1.A", "LED_A", dryRun: false).Success);
         Assert.True(authoring.ConnectPins(projectPath, "D1.K", "BT1.-", "GND", dryRun: false).Success);
+    }
+
+    private static void CreateInterlockCircuit(SchematicAuthoringService authoring, string projectPath)
+    {
+        Assert.True(authoring.CreateSymbol(projectPath, "Connector_Generic:Conn_02x07_Odd_Even", "J1", 50, 70, "CORE-14", null, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "Connector_Generic:Conn_02x10_Odd_Even", "J2", 110, 70, "EXTENDED-20", null, dryRun: false).Success);
+        var connectorNets = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["J1"] = ["CORE_SCOPE_CH1", "GND", "CORE_SCOPE_CH2", "GND", "CORE_SCOPE_CH3", "GND", "CORE_SCOPE_CH4", "GND", "CORE_FLEX_IO1", "CORE_FLEX_IO2", "CORE_FLEX_IO3", "CORE_FLEX_IO4", "CORE_ANALOG_IO", "CORE_VTEST"],
+            ["J2"] = ["EXT_SCOPE_CH1", "GND", "EXT_SCOPE_CH2", "GND", "EXT_SCOPE_CH3", "GND", "EXT_SCOPE_CH4", "GND", "EXT_FLEX_IO1", "EXT_FLEX_IO2", "EXT_FLEX_IO3", "EXT_FLEX_IO4", "EXT_ANALOG_IO", "EXT_VTEST", "EXT_RESET_N", "EXT_DUT_ID", "EXT_DEBUG_DATA", "EXT_DEBUG_CLK", "EXT_ANALOG_IO2", "GND"]
+        };
+        foreach (var (reference, nets) in connectorNets)
+        {
+            var symbol = authoring.ListSymbols(projectPath).Data!.Symbols.Single(item => item.Reference == reference);
+            foreach (var pin in symbol.Pins)
+                Assert.True(authoring.AddNetLabel(projectPath, nets[int.Parse(pin.Pin) - 1], pin.XMillimeters, pin.YMillimeters, dryRun: false).Success);
+        }
+
+        Assert.True(authoring.CreateSymbol(projectPath, "Switch:SW_SPDT", "SW1", 45, 120, "PORT SELECT OFF/CORE/EXT", null, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "74xx:74LS08", "U1", 75, 115, "SN74HCS08", null, 1, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "74xx:74LS08", "U1", 75, 135, "SN74HCS08", null, 2, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "74xx:74LS08", "U1", 75, 150, "SN74HCS08", null, 5, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "Power_Management:TPS2553-1", "U2", 110, 115, null, null, dryRun: false).Success);
+        Assert.True(authoring.CreateSymbol(projectPath, "Power_Management:TPS2553-1", "U3", 110, 140, null, null, dryRun: false).Success);
+        foreach (var (reference, x, y, value) in new[]
+                 {
+                     ("R1", 125d, 120d, "66.5k"), ("R2", 125d, 145d, "66.5k"),
+                     ("R3", 95d, 125d, "100k"), ("R4", 95d, 150d, "100k"),
+                     ("R5", 55d, 110d, "100k"), ("R6", 55d, 135d, "100k"),
+                     ("R7", 70d, 125d, "100k"), ("R8", 125d, 132.5d, "10k")
+                 })
+            Assert.True(authoring.CreateSymbol(projectPath, "Device:R", reference, x, y, value, null, dryRun: false).Success);
+        foreach (var (reference, x, y) in new[] { ("C1", 85d, 150d), ("C2", 100d, 107.5d), ("C3", 100d, 157.5d) })
+            Assert.True(authoring.CreateSymbol(projectPath, "Device:C", reference, x, y, "100n", null, dryRun: false).Success);
+
+        foreach (var (from, to, net) in new[]
+                 {
+                     ("SW1.1", "U1.1", "CORE_SELECTED"), ("SW1.3", "U1.4", "EXT_SELECTED"),
+                     ("U1.2", "U1.5", "VTEST_ARM"), ("U1.3", "U2.3", "CORE_POWER_EN"),
+                     ("U1.6", "U3.3", "EXT_POWER_EN"), ("U2.1", "U3.1", "VTEST_SELECTED"),
+                     ("J1.14", "U2.6", "CORE_VTEST"), ("J2.14", "U3.6", "EXT_VTEST"),
+                     ("U2.4", "U3.4", "FAULT_N"), ("SW1.2", "U1.14", "LOGIC_3V3"),
+                     ("U1.14", "C1.1", "LOGIC_3V3"), ("U1.14", "R8.1", "LOGIC_3V3"),
+                     ("R8.2", "U2.4", "FAULT_N"), ("U2.5", "R1.1", "CORE_ILIM"),
+                     ("U3.5", "R2.1", "EXT_ILIM"), ("U2.3", "R3.1", "CORE_POWER_EN"),
+                     ("U3.3", "R4.1", "EXT_POWER_EN"), ("U1.1", "R5.1", "CORE_SELECTED"),
+                     ("U1.4", "R6.1", "EXT_SELECTED"), ("U1.2", "R7.1", "VTEST_ARM"),
+                     ("U2.1", "C2.1", "VTEST_SELECTED"), ("U3.1", "C3.1", "VTEST_SELECTED")
+                 })
+            Assert.True(authoring.ConnectPins(projectPath, from, to, net, dryRun: false).Success);
+        foreach (var pin in new[] { "U1.7", "U2.2", "U3.2", "R1.2", "R2.2", "R3.2", "R4.2", "R5.2", "R6.2", "R7.2", "C1.2", "C2.2", "C3.2" })
+            Assert.True(authoring.ConnectPins(projectPath, "J1.2", pin, "GND", dryRun: false).Success);
     }
 
     private static TempDirectory CopyBlankFixture() => CopyFixture("blank-authoring");
