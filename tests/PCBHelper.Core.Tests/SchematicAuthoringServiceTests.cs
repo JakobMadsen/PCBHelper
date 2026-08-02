@@ -19,6 +19,7 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("Connector_Generic:Conn_02x07_Odd_Even", "J4", 1)]
     [InlineData("Connector_Generic:Conn_02x10_Odd_Even", "J4", 1)]
     [InlineData("Switch:SW_SPDT", "SW1", 1)]
+    [InlineData("Switch:SW_Push", "SW2", 1)]
     [InlineData("74xx:74LS08", "U5", 1)]
     [InlineData("74xx:74LS08", "U5", 5)]
     [InlineData("PCBHelper:TPS2553-1", "U6", 1)]

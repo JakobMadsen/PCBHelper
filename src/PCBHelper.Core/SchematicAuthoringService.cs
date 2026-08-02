@@ -2549,6 +2549,11 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("2", -5.08, 0),
             new SchematicPinDefinition("3", 5.08, -2.54)
         }),
+        new("Switch:SW_Push", "SW_Push", "", 50, new[]
+        {
+            new SchematicPinDefinition("1", -5.08, 0),
+            new SchematicPinDefinition("2", 5.08, 0)
+        }),
         new("74xx:74LS08", "SN74HCS08", "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", 50, new[]
         {
             new SchematicPinDefinition("1", -7.62, 2.54, 1), new SchematicPinDefinition("2", -7.62, -2.54, 1), new SchematicPinDefinition("3", 7.62, 0, 1),
