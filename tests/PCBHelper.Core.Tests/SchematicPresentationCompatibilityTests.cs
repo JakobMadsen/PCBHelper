@@ -46,6 +46,9 @@ public sealed class SchematicPresentationCompatibilityTests
     public void Analyzer_Accepts_Text_Box_While_Arranger_Fails_Closed()
     {
         using var fixture = CopyBlankFixture();
+        var authoring = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(authoring.CreateSymbol(
+            fixture.Path, "Device:R", "R1", 20.32, 20.32, "1k", null, dryRun: false).Success);
         var schematicPath = Path.Combine(fixture.Path, "blank-authoring.kicad_sch");
         var original = File.ReadAllText(schematicPath);
         var insertion = """
@@ -86,6 +89,17 @@ public sealed class SchematicPresentationCompatibilityTests
         Assert.False(preview.Success);
         Assert.Equal("SCHEMATIC_TEXT_BOX_RELAYOUT_UNSUPPORTED", preview.Error?.Code);
         Assert.Equal(beforeAnalysis, File.ReadAllText(schematicPath));
+
+        var deleted = authoring.DeleteSchematicTextBoxByUuid(
+                fixture.Path,
+                "6667f9e3-01b2-4a66-bea8-d51e77ad79c1",
+                dryRun: false);
+        Assert.True(deleted.Success, deleted.Error?.Message);
+        Assert.DoesNotContain("6667f9e3-01b2-4a66-bea8-d51e77ad79c1", File.ReadAllText(schematicPath), StringComparison.Ordinal);
+
+        var arrangedAfterExplicitDeletion = service.Arrange(fixture.Path, dryRun: true);
+        Assert.True(arrangedAfterExplicitDeletion.Success, arrangedAfterExplicitDeletion.Error?.Message);
+        Assert.True(arrangedAfterExplicitDeletion.Data!.Connectivity.Equivalent);
     }
 
     [Fact]

@@ -691,6 +691,32 @@ public sealed class SchematicAuthoringService
         return DeleteSchematicBlock(schematic.Data, "delete-schematic-wire", uuid, wire.SourceStart, wire.SourceLength, dryRun);
     }
 
+    public ToolResponse<SchematicMutationResult> DeleteSchematicTextBoxByUuid(string projectPath, string uuid, bool dryRun)
+    {
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+        }
+
+        var textBox = schematic.Data.TextBoxes.FirstOrDefault(item =>
+            string.Equals(item.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+        if (textBox is null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail(
+                $"Schematic text box not found: {uuid}",
+                "SCHEMATIC_TEXT_BOX_NOT_FOUND");
+        }
+
+        return DeleteSchematicBlock(
+            schematic.Data,
+            "delete-schematic-text-box",
+            textBox.Text,
+            textBox.SourceStart,
+            textBox.SourceLength,
+            dryRun);
+    }
+
     public ToolResponse<SchematicMutationResult> DeleteSchematicWire(string projectPath, double x1, double y1, double x2, double y2, double? toleranceMillimeters, bool dryRun)
     {
         var schematic = LoadSchematic(projectPath);

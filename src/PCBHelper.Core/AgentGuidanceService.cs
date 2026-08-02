@@ -105,6 +105,7 @@ public static class DesignPlanOperationCatalog
         Op("mark-schematic-pin-no-connect", "Mark one resolved, electrically unconnected schematic pin as intentionally unused.", S("pin")),
         Op("delete-schematic-no-connect-by-uuid", "Delete one exact schematic no-connect marker by UUID.", S("uuid")),
         Op("arrange-schematic", "Deterministically arrange and route a complete supported schematic while preserving its canonical pin/net partition."),
+        Op("delete-schematic-text-box-by-uuid", "Delete one exact top-level schematic text box by UUID.", S("uuid")),
         Op("delete-schematic-wire-by-uuid", "Delete one exact schematic wire by UUID.", S("uuid")),
         Op("delete-schematic-wire", "Delete one exact schematic wire by endpoint coordinates.", N("x1Mm"), N("y1Mm"), N("x2Mm"), N("y2Mm"), N("toleranceMm")),
         Op("delete-net-label-by-uuid", "Delete one exact schematic net label by UUID.", S("uuid")),
