@@ -62,6 +62,7 @@ public sealed class FootprintLibraryTransactionService
             var run=await autorouter.RunKiCadPythonAsync(python,scriptPath,sandbox,"KiCad project footprint library synchronization",cancellationToken);
             if(run.ExitCode!=0)return ToolResponse<FootprintLibraryPreviewResult>.Fail("KiCad could not create the project footprint library.","FOOTPRINT_LIBRARY_SYNC_FAILED",run.StandardError);
             await File.WriteAllTextAsync(Path.Combine(pretty,"HB100_Module.kicad_mod"),SchematicFootprintTemplates.Hb100ModuleFootprintDefinition,cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(pretty,"TPSM861253_RDX_NoThermalVias.kicad_mod"),SchematicFootprintTemplates.Tpsm861253RdxNoThermalViasFootprintDefinition,cancellationToken);
             var tablePath=Path.Combine(sandbox,"fp-lib-table");
             var table=File.Exists(tablePath)?await File.ReadAllTextAsync(tablePath,cancellationToken):"(fp_lib_table\n)\n";
             await File.WriteAllTextAsync(tablePath,EnsurePcbHelperLibraryEntry(table),cancellationToken);

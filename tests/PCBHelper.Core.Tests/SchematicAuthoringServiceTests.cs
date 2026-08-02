@@ -6,6 +6,22 @@ public sealed class SchematicAuthoringServiceTests
 {
     private const double SchematicGridMillimeters = 1.27;
 
+    [Fact]
+    public void UpdatePcbFromSchematic_Omits_Optional_Tpsm861253_ThermalVias()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:TPSM861253", "U1", 80, 50, null, null, dryRun: false).Success);
+
+        var update = service.UpdatePcbFromSchematic(fixture.Path, dryRun: false);
+        var board = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_pcb"));
+
+        Assert.True(update.Success, update.Error?.Message);
+        Assert.Contains("PCBHelper:TPSM861253_RDX_NoThermalVias", board, StringComparison.Ordinal);
+        Assert.DoesNotContain("np_thru_hole", board, StringComparison.Ordinal);
+        Assert.Contains("(pad \"1\" smd", board, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 1)]
     [InlineData("Amplifier_Operational:OPA1612AxD", "U1", 2)]

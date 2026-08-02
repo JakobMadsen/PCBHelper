@@ -140,7 +140,7 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Switch:SW_Push");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2553-1");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2113A" && item.DefaultFootprint == "Package_SO:TSSOP-8_3x3mm_P0.65mm");
-        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPSM861253" && item.DefaultFootprint == "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPSM861253" && item.DefaultFootprint == "PCBHelper:TPSM861253_RDX_NoThermalVias");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:SN74CB3Q3257" && item.DefaultFootprint == "Package_SO:TSSOP-16_4.4x5mm_P0.65mm");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:LSF0204" && item.DefaultFootprint == "Package_SO:TSSOP-14_4.4x5mm_P0.65mm");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G86");

@@ -2640,7 +2640,7 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("7", 7.62, 0, DisplayName: "OUT"),
             new SchematicPinDefinition("8", 7.62, 5.08, DisplayName: "IN1")
         }, "PCBHelper project-local symbol based on Texas Instruments TPS2112A/TPS2113A datasheet SBVS045C; TPS2113APW TSSOP-8 terminal map", true),
-        new("PCBHelper:TPSM861253", "TPSM861253", "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP", 50, new[]
+        new("PCBHelper:TPSM861253", "TPSM861253", "PCBHelper:TPSM861253_RDX_NoThermalVias", 50, new[]
         {
             new SchematicPinDefinition("1", -7.62, 5.08, DisplayName: "VIN"),
             new SchematicPinDefinition("2", 0, 7.62, DisplayName: "SW"),
@@ -2855,7 +2855,7 @@ internal static class SchematicFootprintTemplates
     public static bool IsSupported(string footprint)
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
-            or Dip16 or "PCBHelper:HB100_Module"
+            or Dip16 or "PCBHelper:HB100_Module" or "PCBHelper:TPSM861253_RDX_NoThermalVias"
             || TryParseStandardVerticalPinHeader(footprint, out _, out _)
             || ResolveKiCadFootprintPath(footprint) is not null;
     }
@@ -2881,8 +2881,49 @@ internal static class SchematicFootprintTemplates
             "TO92_2N3904_EBC" => FormatTo92_2N3904(reference, value, x, y, rotationDegrees, padNets),
             Dip16 => FormatDip16(reference, value, x, y, rotationDegrees, padNets),
             "PCBHelper:HB100_Module" => FormatKiCadFootprintText(Hb100ModuleFootprintDefinition, footprint, reference, value, x, y, rotationDegrees, padNets),
+            "PCBHelper:TPSM861253_RDX_NoThermalVias" => FormatKiCadFootprintText(Tpsm861253RdxNoThermalViasFootprintDefinition, footprint, reference, value, x, y, rotationDegrees, padNets),
             _ => FormatKiCadLibraryFootprint(footprint, reference, value, x, y, rotationDegrees, padNets)
         };
+    }
+
+    internal static string Tpsm861253RdxNoThermalViasFootprintDefinition
+    {
+        get
+        {
+            const string source = "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP";
+            var path = ResolveKiCadFootprintPath(source)
+                ?? throw new InvalidOperationException($"KiCad footprint '{source}' is unavailable.");
+            var definition = RemoveOptionalThermalVias(File.ReadAllText(path));
+            return Regex.Replace(definition, "^\\(footprint\\s+\"[^\"]+\"", "(footprint \"TPSM861253_RDX_NoThermalVias\"");
+        }
+    }
+
+    internal static string RemoveOptionalThermalVias(string footprintDefinition)
+    {
+        const string marker = "(pad \"\" np_thru_hole";
+        var search = 0;
+        while (true)
+        {
+            var padStart = footprintDefinition.IndexOf(marker, search, StringComparison.Ordinal);
+            if (padStart < 0)
+            {
+                return footprintDefinition;
+            }
+
+            var padEnd = KiCadSchematicParser.FindMatchingParenthesis(footprintDefinition, padStart);
+            if (padEnd < 0)
+            {
+                throw new InvalidOperationException("The TPSM861253 source footprint contains an unterminated optional thermal via.");
+            }
+
+            var lineStart = footprintDefinition.LastIndexOf('\n', padStart);
+            lineStart = lineStart < 0 ? padStart : lineStart + 1;
+            var removeEnd = padEnd + 1;
+            if (removeEnd < footprintDefinition.Length && footprintDefinition[removeEnd] == '\r') removeEnd++;
+            if (removeEnd < footprintDefinition.Length && footprintDefinition[removeEnd] == '\n') removeEnd++;
+            footprintDefinition = footprintDefinition.Remove(lineStart, removeEnd - lineStart);
+            search = lineStart;
+        }
     }
 
     private static string FormatKiCadLibraryFootprint(string footprint, string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
