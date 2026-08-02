@@ -618,6 +618,28 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ListSymbols_Uses_Embedded_KiCad_Pin_Geometry_For_74xGxx_SingleGate()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "74xGxx:74LVC1G86", "U1", 110, 50, null, null, dryRun: false).Success);
+
+        var symbol = Assert.Single(service.ListSymbols(fixture.Path).Data!.Symbols);
+        var pins = symbol.Pins.ToDictionary(pin => pin.Pin);
+        Assert.Equal(symbol.XMillimeters!.Value - 15.24, pins["1"].XMillimeters, 2);
+        Assert.Equal(symbol.YMillimeters!.Value - 2.54, pins["1"].YMillimeters, 2);
+        Assert.Equal(symbol.XMillimeters.Value - 15.24, pins["2"].XMillimeters, 2);
+        Assert.Equal(symbol.YMillimeters.Value + 2.54, pins["2"].YMillimeters, 2);
+        Assert.Equal(symbol.XMillimeters.Value, pins["3"].XMillimeters, 2);
+        Assert.Equal(symbol.YMillimeters.Value + 10.16, pins["3"].YMillimeters, 2);
+        Assert.Equal(symbol.XMillimeters.Value + 12.70, pins["4"].XMillimeters, 2);
+        Assert.Equal(symbol.YMillimeters.Value, pins["4"].YMillimeters, 2);
+        Assert.Equal(symbol.XMillimeters.Value, pins["5"].XMillimeters, 2);
+        Assert.Equal(symbol.YMillimeters.Value - 10.16, pins["5"].YMillimeters, 2);
+    }
+
+    [Fact]
     public void ConnectPins_Mirrors_Library_Y_Offset_Into_Schematic_Coordinates()
     {
         using var fixture = CopyBlankFixture();

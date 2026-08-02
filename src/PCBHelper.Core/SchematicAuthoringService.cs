@@ -2731,11 +2731,11 @@ internal static class SchematicSymbolCatalog
 
     private static IReadOnlyList<SchematicPinDefinition> SingleGate(string inputA, string inputB, string output) => new[]
     {
-        new SchematicPinDefinition("1", -7.62, 2.54, DisplayName: inputA),
-        new SchematicPinDefinition("2", -7.62, -2.54, DisplayName: inputB),
-        new SchematicPinDefinition("3", 0, -7.62, DisplayName: "GND"),
-        new SchematicPinDefinition("4", 7.62, 0, DisplayName: output),
-        new SchematicPinDefinition("5", 0, 7.62, DisplayName: "VCC")
+        new SchematicPinDefinition("1", -15.24, 2.54, DisplayName: inputA),
+        new SchematicPinDefinition("2", -15.24, -2.54, DisplayName: inputB),
+        new SchematicPinDefinition("3", 0, -10.16, DisplayName: "GND"),
+        new SchematicPinDefinition("4", 12.70, 0, DisplayName: output),
+        new SchematicPinDefinition("5", 0, 10.16, DisplayName: "VCC")
     };
 
     private static IReadOnlyList<SchematicPinDefinition> ArduinoUnoShieldPins()
