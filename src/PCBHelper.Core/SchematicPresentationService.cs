@@ -648,19 +648,14 @@ internal static class SchematicOrthogonalRouter
             var useLabels = net.Pins.Count == 1 || IsGlobalNet(net.Name) || net.Pins.Count > 4;
             if (useLabels)
             {
-                foreach (var pin in net.Pins.OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase))
-                {
-                    var end = (
-                        X: Snap(pin.X + (pin.DirectionX * Grid)),
-                        Y: Snap(pin.Y + (pin.DirectionY * Grid)));
-                    var wire = new SchematicPlannedWire(net.Name, pin.X, pin.Y, end.X, end.Y);
-                    wires.Add(wire);
-                    occupied.Add(wire);
-                    labels.Add(new SchematicPlannedLabel(net.Name, end.X, end.Y));
-                }
+                AddLabelStubs(net, wires, labels, occupied);
                 continue;
             }
 
+            var wireStart = wires.Count;
+            var labelStart = labels.Count;
+            var occupiedStart = occupied.Count;
+            var fallBackToLabels = false;
             var connected = new HashSet<(int X, int Y)> { ToGrid(net.Pins[0].X, net.Pins[0].Y) };
             foreach (var pin in net.Pins.Skip(1).OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase))
             {
@@ -673,9 +668,10 @@ internal static class SchematicOrthogonalRouter
                     net.Name,
                     preferFeedback: feedback.Contains(net.Name));
                 if (path is null)
-                    return ToolResponse<SchematicRoutingPlan>.Fail(
-                        $"Could not route schematic net {net.Name}.",
-                        "SCHEMATIC_ROUTE_FAILED");
+                {
+                    fallBackToLabels = true;
+                    break;
+                }
                 foreach (var point in path)
                     connected.Add(point);
                 foreach (var segment in Compress(path).Zip(Compress(path).Skip(1)))
@@ -689,6 +685,14 @@ internal static class SchematicOrthogonalRouter
                         occupied.Add(wire);
                     }
                 }
+            }
+            if (fallBackToLabels)
+            {
+                wires.RemoveRange(wireStart, wires.Count - wireStart);
+                labels.RemoveRange(labelStart, labels.Count - labelStart);
+                occupied.RemoveRange(occupiedStart, occupied.Count - occupiedStart);
+                AddLabelStubs(net, wires, labels, occupied);
+                continue;
             }
             var firstWire = wires.FirstOrDefault(wire => string.Equals(wire.Net, net.Name, StringComparison.OrdinalIgnoreCase));
             if (firstWire is not null)
@@ -711,6 +715,28 @@ internal static class SchematicOrthogonalRouter
         return ToolResponse<SchematicRoutingPlan>.Ok(
             "Routed schematic nets.",
             new SchematicRoutingPlan(distinctWires, distinctLabels));
+    }
+
+    private static void AddLabelStubs(
+        SchematicPresentationNet net,
+        List<SchematicPlannedWire> wires,
+        List<SchematicPlannedLabel> labels,
+        List<SchematicPlannedWire> occupied)
+    {
+        foreach (var pin in net.Pins.OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var directionX = pin.DirectionX;
+            var directionY = pin.DirectionY;
+            if (directionX == 0 && directionY == 0)
+                directionX = 1;
+            var end = (
+                X: Snap(pin.X + (directionX * Grid)),
+                Y: Snap(pin.Y + (directionY * Grid)));
+            var wire = new SchematicPlannedWire(net.Name, pin.X, pin.Y, end.X, end.Y);
+            wires.Add(wire);
+            occupied.Add(wire);
+            labels.Add(new SchematicPlannedLabel(net.Name, end.X, end.Y));
+        }
     }
 
     private static IReadOnlySet<(int X, int Y)> BuildObstacles(IReadOnlyList<SchematicPresentationSymbol> symbols)

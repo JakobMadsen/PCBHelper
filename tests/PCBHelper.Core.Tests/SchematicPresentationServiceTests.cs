@@ -5,6 +5,31 @@ namespace PCBHelper.Core.Tests;
 public sealed class SchematicPresentationServiceTests
 {
     [Fact]
+    public void Router_Falls_Back_To_Label_Stubs_When_A_Physical_Path_Is_Blocked()
+    {
+        var leftPin = new SchematicPresentationPin("J1.1", "1", -50.8, 0, 1, 0, "BLOCKED_NET");
+        var rightPin = new SchematicPresentationPin("J2.1", "1", 50.8, 0, -1, 0, "BLOCKED_NET");
+        KiCadSchematicSymbol source = null!;
+        var symbols = new[]
+        {
+            new SchematicPresentationSymbol("J1", 1, "test", -50.8, 0, 0,
+                new SchematicRectangle(-55, -5, -45, 5), new[] { leftPin }, source),
+            new SchematicPresentationSymbol("J2", 1, "test", 50.8, 0, 0,
+                new SchematicRectangle(45, -5, 55, 5), new[] { rightPin }, source),
+            new SchematicPresentationSymbol("BARRIER", 1, "test", 0, 0, 0,
+                new SchematicRectangle(-2.54, -100, 2.54, 100), Array.Empty<SchematicPresentationPin>(), source)
+        };
+        var nets = new[] { new SchematicPresentationNet("BLOCKED_NET", new[] { leftPin, rightPin }) };
+
+        var result = SchematicOrthogonalRouter.Route(nets, symbols, new DesignIntentPresentation());
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(2, result.Data!.Wires.Count);
+        Assert.Equal(2, result.Data.Labels.Count);
+        Assert.All(result.Data.Wires, wire => Assert.Equal("BLOCKED_NET", wire.Net));
+    }
+
+    [Fact]
     public void Arrange_Is_Deterministic_And_Preserves_Connectivity()
     {
         using var fixture = CopyBlankFixture();
