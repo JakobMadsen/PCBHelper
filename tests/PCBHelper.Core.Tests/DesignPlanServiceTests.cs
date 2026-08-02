@@ -141,7 +141,12 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2553-1");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2113A" && item.DefaultFootprint == "Package_SO:TSSOP-8_3x3mm_P0.65mm");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPSM861253" && item.DefaultFootprint == "Package_DFN_QFN:Texas_RDX0007A_QFN-FCMOD-7-3.3x4mm-P0.5mm_4EP");
-        Assert.Equal(12, capabilities.CapabilityVersion);
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:SN74CB3Q3257" && item.DefaultFootprint == "Package_SO:TSSOP-16_4.4x5mm_P0.65mm");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:LSF0204" && item.DefaultFootprint == "Package_SO:TSSOP-14_4.4x5mm_P0.65mm");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G86");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G08");
+        Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:Arduino_UNO_R4_Shield" && item.DefaultFootprint == "Module:Arduino_UNO_R3");
+        Assert.Equal(13, capabilities.CapabilityVersion);
         Assert.Contains(capabilities.Operations, item => item.Type == "mark-schematic-pin-no-connect");
         var moveReference = Assert.Single(capabilities.Operations, item => item.Type == "move-reference-text");
         Assert.Contains("footprint-local", moveReference.Description, StringComparison.Ordinal);

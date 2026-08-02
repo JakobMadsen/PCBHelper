@@ -25,6 +25,11 @@ public sealed class SchematicAuthoringServiceTests
     [InlineData("PCBHelper:TPS2553-1", "U6", 1)]
     [InlineData("PCBHelper:TPS2113A", "U7", 1)]
     [InlineData("PCBHelper:TPSM861253", "U8", 1)]
+    [InlineData("PCBHelper:SN74CB3Q3257", "U9", 1)]
+    [InlineData("PCBHelper:LSF0204", "U10", 1)]
+    [InlineData("74xGxx:74LVC1G86", "U11", 1)]
+    [InlineData("74xGxx:74LVC1G08", "U12", 1)]
+    [InlineData("PCBHelper:Arduino_UNO_R4_Shield", "J7", 1)]
     public void CreateSymbol_Supports_Radar_Approved_Catalog(string symbol, string reference, int unit)
     {
         using var fixture = CopyBlankFixture();
@@ -55,6 +60,9 @@ public sealed class SchematicAuthoringServiceTests
     [Theory]
     [InlineData("PCBHelper:TPS2113A", "TPS2113A", "STAT", "8", "IN1")]
     [InlineData("PCBHelper:TPSM861253", "TPSM861253", "VIN", "7", "VOS")]
+    [InlineData("PCBHelper:SN74CB3Q3257", "SN74CB3Q3257", "S", "16", "VCC")]
+    [InlineData("PCBHelper:LSF0204", "LSF0204", "Vref_A", "14", "Vref_B")]
+    [InlineData("PCBHelper:Arduino_UNO_R4_Shield", "Arduino_UNO_R4_Shield", "NC", "32", "SCL")]
     public void CreateSymbol_Writes_Datasheet_Pin_Names_For_Project_Local_Power_Parts(
         string symbolId,
         string symbolName,
@@ -584,6 +592,29 @@ public sealed class SchematicAuthoringServiceTests
         var boardText = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_pcb"));
         Assert.Contains("(layer \"F.CrtYd\")", boardText, StringComparison.Ordinal);
         Assert.Contains("PinHeader_2x10_P2.54mm_Vertical.step", boardText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateSymbol_And_UpdateBoard_Supports_TestBoard_ProtectedSignalParts()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        var pads = new BoardInspectionService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:SN74CB3Q3257", "U1", 50, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:LSF0204", "U2", 80, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "74xGxx:74LVC1G86", "U3", 110, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "74xGxx:74LVC1G08", "U4", 130, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:Arduino_UNO_R4_Shield", "J1", 160, 80, null, null, dryRun: false).Success);
+
+        var update = service.UpdatePcbFromSchematic(fixture.Path, dryRun: false);
+
+        Assert.True(update.Success, update.Error?.Message ?? update.Summary);
+        Assert.Equal(16, pads.ListFootprintPads(fixture.Path, "U1").Data!.Pads.Count);
+        Assert.Equal(14, pads.ListFootprintPads(fixture.Path, "U2").Data!.Pads.Count);
+        Assert.Equal(5, pads.ListFootprintPads(fixture.Path, "U3").Data!.Pads.Count);
+        Assert.Equal(5, pads.ListFootprintPads(fixture.Path, "U4").Data!.Pads.Count);
+        Assert.Equal(32, pads.ListFootprintPads(fixture.Path, "J1").Data!.Pads.Count);
     }
 
     [Fact]

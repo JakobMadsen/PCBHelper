@@ -2595,6 +2595,48 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("6", -7.62, -5.08, DisplayName: "EN"),
             new SchematicPinDefinition("7", 7.62, 0, DisplayName: "VOS")
         }, "PCBHelper project-local symbol based on Texas Instruments TPSM86125x datasheet SLUSFD2B; TPSM861253 RDX QFN-FCMOD-7 terminal map", true),
+        new("PCBHelper:SN74CB3Q3257", "SN74CB3Q3257", "Package_SO:TSSOP-16_4.4x5mm_P0.65mm", 50, new[]
+        {
+            new SchematicPinDefinition("1", -12.7, -12.7, DisplayName: "S"),
+            new SchematicPinDefinition("2", -12.7, 10.16, DisplayName: "1B1"),
+            new SchematicPinDefinition("3", -12.7, 7.62, DisplayName: "1B2"),
+            new SchematicPinDefinition("4", 12.7, 8.89, DisplayName: "1A"),
+            new SchematicPinDefinition("5", -12.7, 3.81, DisplayName: "2B1"),
+            new SchematicPinDefinition("6", -12.7, 1.27, DisplayName: "2B2"),
+            new SchematicPinDefinition("7", 12.7, 2.54, DisplayName: "2A"),
+            new SchematicPinDefinition("8", 0, -15.24, DisplayName: "GND"),
+            new SchematicPinDefinition("9", 12.7, -2.54, DisplayName: "3A"),
+            new SchematicPinDefinition("10", -12.7, -1.27, DisplayName: "3B2"),
+            new SchematicPinDefinition("11", -12.7, -3.81, DisplayName: "3B1"),
+            new SchematicPinDefinition("12", 12.7, -8.89, DisplayName: "4A"),
+            new SchematicPinDefinition("13", -12.7, -7.62, DisplayName: "4B2"),
+            new SchematicPinDefinition("14", -12.7, -10.16, DisplayName: "4B1"),
+            new SchematicPinDefinition("15", 12.7, -12.7, DisplayName: "OE"),
+            new SchematicPinDefinition("16", 0, 15.24, DisplayName: "VCC")
+        }, "PCBHelper project-local symbol based on Texas Instruments SN74CB3Q3257 datasheet SCDS135E; PW TSSOP-16 terminal map", true),
+        new("PCBHelper:LSF0204", "LSF0204", "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", 50, new[]
+        {
+            new SchematicPinDefinition("1", -12.7, 12.7, DisplayName: "Vref_A"),
+            new SchematicPinDefinition("2", -12.7, 7.62, DisplayName: "A1"),
+            new SchematicPinDefinition("3", -12.7, 2.54, DisplayName: "A2"),
+            new SchematicPinDefinition("4", -12.7, -2.54, DisplayName: "A3"),
+            new SchematicPinDefinition("5", -12.7, -7.62, DisplayName: "A4"),
+            new SchematicPinDefinition("6", -5.08, -12.7, DisplayName: "NC"),
+            new SchematicPinDefinition("7", 0, -12.7, DisplayName: "GND"),
+            new SchematicPinDefinition("8", 5.08, -12.7, DisplayName: "EN"),
+            new SchematicPinDefinition("9", 10.16, -12.7, DisplayName: "NC"),
+            new SchematicPinDefinition("10", 12.7, -7.62, DisplayName: "B4"),
+            new SchematicPinDefinition("11", 12.7, -2.54, DisplayName: "B3"),
+            new SchematicPinDefinition("12", 12.7, 2.54, DisplayName: "B2"),
+            new SchematicPinDefinition("13", 12.7, 7.62, DisplayName: "B1"),
+            new SchematicPinDefinition("14", 12.7, 12.7, DisplayName: "Vref_B")
+        }, "PCBHelper project-local symbol based on Texas Instruments LSF0204 datasheet SLVSCP5H; PW TSSOP-14 terminal map", true),
+        new("74xGxx:74LVC1G86", "74LVC1G86", "Package_TO_SOT_SMD:SOT-23-5", 50, SingleGate("1A", "1B", "1Y"),
+            "KiCad 10 74LVC1G86 symbol; DBV SOT-23-5 pin map verified against Texas Instruments SN74LVC1G86 datasheet"),
+        new("74xGxx:74LVC1G08", "74LVC1G08", "Package_TO_SOT_SMD:SOT-23-5", 50, SingleGate("1A", "1B", "1Y"),
+            "KiCad 10 74LVC1G08 symbol; DBV SOT-23-5 pin map verified against Texas Instruments SN74LVC1G08 datasheet"),
+        new("PCBHelper:Arduino_UNO_R4_Shield", "Arduino_UNO_R4_Shield", "Module:Arduino_UNO_R3", 50, ArduinoUnoShieldPins(),
+            "PCBHelper project-local shield connector based on Arduino UNO R4 WiFi ABX00087 pinout and the mechanically compatible KiCad Arduino_UNO_R3 32-pad footprint", true),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)
@@ -2686,6 +2728,32 @@ internal static class SchematicSymbolCatalog
         new SchematicPinDefinition("1", 0, 3.81),
         new SchematicPinDefinition("2", 0, -3.81)
     };
+
+    private static IReadOnlyList<SchematicPinDefinition> SingleGate(string inputA, string inputB, string output) => new[]
+    {
+        new SchematicPinDefinition("1", -7.62, 2.54, DisplayName: inputA),
+        new SchematicPinDefinition("2", -7.62, -2.54, DisplayName: inputB),
+        new SchematicPinDefinition("3", 0, -7.62, DisplayName: "GND"),
+        new SchematicPinDefinition("4", 7.62, 0, DisplayName: output),
+        new SchematicPinDefinition("5", 0, 7.62, DisplayName: "VCC")
+    };
+
+    private static IReadOnlyList<SchematicPinDefinition> ArduinoUnoShieldPins()
+    {
+        var names = new[]
+        {
+            "NC", "IOREF", "RESET", "3V3", "5V", "GND", "GND", "VIN",
+            "A0", "A1", "A2", "A3", "A4/SDA", "A5/SCL", "D0/RX", "D1/TX",
+            "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9",
+            "D10", "D11", "D12", "D13", "GND", "AREF", "SDA", "SCL"
+        };
+
+        return Enumerable.Range(1, names.Length)
+            .Select(pin => pin <= 16
+                ? new SchematicPinDefinition(pin.ToString(CultureInfo.InvariantCulture), -15.24, 19.05 - ((pin - 1) * 2.54), DisplayName: names[pin - 1])
+                : new SchematicPinDefinition(pin.ToString(CultureInfo.InvariantCulture), 15.24, 19.05 - ((pin - 17) * 2.54), DisplayName: names[pin - 1]))
+            .ToArray();
+    }
 
     private static SchematicSymbolCatalogEntry DualOpAmp(string symbolId, string value, string footprint = "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm") => new(
         symbolId,
