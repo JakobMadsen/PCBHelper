@@ -72,6 +72,24 @@ public sealed class SchematicPresentationServiceTests
     }
 
     [Fact]
+    public void Analyze_Accepts_NoConnect_While_Arrange_Fails_Closed()
+    {
+        using var fixture = CopyBlankFixture();
+        var projects = new ProjectDiscoveryService();
+        var authoring = new SchematicAuthoringService(projects);
+        Assert.True(authoring.CreateSymbol(fixture.Path, "Device:R", "R1", 70, 50, null, null, dryRun: false).Success);
+        Assert.True(authoring.MarkPinNoConnect(fixture.Path, "R1.1", dryRun: false).Success);
+        var presentation = new SchematicPresentationService(projects);
+
+        var analyzed = presentation.Analyze(fixture.Path);
+        var arranged = presentation.Arrange(fixture.Path, dryRun: true);
+
+        Assert.True(analyzed.Success, $"{analyzed.Error?.Code}: {analyzed.Error?.Message}");
+        Assert.False(arranged.Success);
+        Assert.Equal("SCHEMATIC_PRESENTATION_UNSUPPORTED", arranged.Error?.Code);
+    }
+
+    [Fact]
     public void Arrange_Does_Not_Merge_Interlock_Nets_Through_Foreign_Pins()
     {
         using var fixture = CopyBlankFixture();

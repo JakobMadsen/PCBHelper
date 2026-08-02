@@ -57,7 +57,10 @@ public sealed class SchematicPresentationService
                 "SCHEMATIC_TEXT_BOX_RELAYOUT_UNSUPPORTED",
                 $"Found {loaded.Data.Document.TextBoxes.Count} top-level text box(es); no project file was changed.");
 
-        var beforeModel = SchematicPresentationModel.Create(loaded.Data.Document, loaded.Data.Presentation);
+        var beforeModel = SchematicPresentationModel.Create(
+            loaded.Data.Document,
+            loaded.Data.Presentation,
+            requireRelayoutSafeTopLevel: true);
         if (!beforeModel.Success || beforeModel.Data is null)
             return ToolResponse<SchematicPresentationMutationResult>.Fail(
                 beforeModel.Summary,
@@ -74,7 +77,10 @@ public sealed class SchematicPresentationService
 
         var afterText = SchematicPresentationWriter.Rewrite(beforeModel.Data, planned.Data);
         var afterDocument = KiCadSchematicParser.ParseText(loaded.Data.Document.SchematicFile, afterText);
-        var afterModel = SchematicPresentationModel.Create(afterDocument, loaded.Data.Presentation);
+        var afterModel = SchematicPresentationModel.Create(
+            afterDocument,
+            loaded.Data.Presentation,
+            requireRelayoutSafeTopLevel: true);
         if (!afterModel.Success || afterModel.Data is null)
             return ToolResponse<SchematicPresentationMutationResult>.Fail(
                 "The planned schematic could not be parsed into the presentation model.",
@@ -189,14 +195,18 @@ internal sealed class SchematicPresentationModel
 
     public static ToolResponse<SchematicPresentationModel> Create(
         KiCadSchematicDocument document,
-        DesignIntentPresentation presentation)
+        DesignIntentPresentation presentation,
+        bool requireRelayoutSafeTopLevel = false)
     {
-        var unsupportedKeyword = FindUnsupportedTopLevelKeyword(document.Text);
-        if (unsupportedKeyword is not null)
+        if (requireRelayoutSafeTopLevel)
         {
-            return ToolResponse<SchematicPresentationModel>.Fail(
-                $"Schematic relayout does not support top-level {unsupportedKeyword} constructs.",
-                "SCHEMATIC_PRESENTATION_UNSUPPORTED");
+            var unsupportedKeyword = FindUnsupportedTopLevelKeyword(document.Text);
+            if (unsupportedKeyword is not null)
+            {
+                return ToolResponse<SchematicPresentationModel>.Fail(
+                    $"Schematic relayout does not support top-level {unsupportedKeyword} constructs.",
+                    "SCHEMATIC_PRESENTATION_UNSUPPORTED");
+            }
         }
 
         var logical = SchematicLogicalModel.Build(document);
