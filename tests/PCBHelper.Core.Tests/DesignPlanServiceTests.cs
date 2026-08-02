@@ -34,6 +34,22 @@ public sealed class DesignPlanServiceTests
     }
 
     [Fact]
+    public void MarkSchematicPinNoConnect_Is_Prepared_Transactionally_After_Placement()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var plan = """{"version":1,"goal":"Place an intentionally unused resistor","operations":[{"id":"place","type":"create-schematic-symbol","symbol":"Device:R","reference":"R99","xMm":90,"yMm":90},{"id":"unused","type":"mark-schematic-pin-no-connect","pin":"R99.1"}]}""";
+        var schematicPath = Directory.GetFiles(fixture.Path, "*.kicad_sch").Single();
+        var before = File.ReadAllText(schematicPath);
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file => file.RelativePath.EndsWith(".kicad_sch", StringComparison.Ordinal));
+        Assert.Equal(before, File.ReadAllText(schematicPath));
+    }
+
+    [Fact]
     public async Task SetDesignIntent_Applies_And_Restores_Through_Transaction_Engine()
     {
         using var fixture = CopyTutorialFixture();
@@ -86,7 +102,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(38, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(39, DesignPlanOperationCatalog.All.Count);
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
@@ -122,6 +138,8 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x07_Odd_Even");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "Connector_Generic:Conn_02x10_Odd_Even");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:TPS2553-1");
+        Assert.Equal(10, capabilities.CapabilityVersion);
+        Assert.Contains(capabilities.Operations, item => item.Type == "mark-schematic-pin-no-connect");
         var moveReference = Assert.Single(capabilities.Operations, item => item.Type == "move-reference-text");
         Assert.Contains("footprint-local", moveReference.Description, StringComparison.Ordinal);
         Assert.All(AgentPolicyRules.All, rule => Assert.Contains(rule.Id, guide.Markdown, StringComparison.Ordinal));

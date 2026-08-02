@@ -340,6 +340,15 @@ public sealed class SchematicAuthoringService
             return ToolResponse<SchematicMutationResult>.Fail(toPin.Summary, toPin.Error?.Code ?? "SCHEMATIC_PIN_NOT_FOUND", toPin.Error?.Message);
         }
 
+        var noConnectPin = new[] { fromPin.Data, toPin.Data }
+            .FirstOrDefault(pin => HasNoConnectAtPoint(schematic.Data.Text, pin.X, pin.Y));
+        if (noConnectPin is not null)
+        {
+            return ToolResponse<SchematicMutationResult>.Fail(
+                $"Schematic pin {noConnectPin.Reference}.{noConnectPin.Pin} is marked no-connect.",
+                "SCHEMATIC_PIN_NO_CONNECT");
+        }
+
         if (string.IsNullOrWhiteSpace(net))
         {
             return ToolResponse<SchematicMutationResult>.Fail("A net name is required to connect schematic pins.", "SCHEMATIC_NET_REQUIRED");
@@ -431,6 +440,47 @@ public sealed class SchematicAuthoringService
         }
 
         return Mutation("connect-schematic-pins", $"{from}-{to}", dryRun, new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) }, addition);
+    }
+
+    public ToolResponse<SchematicMutationResult> MarkPinNoConnect(string projectPath, string pinReference, bool dryRun)
+    {
+        var schematic = LoadSchematic(projectPath);
+        if (!schematic.Success || schematic.Data is null)
+            return ToolResponse<SchematicMutationResult>.Fail(schematic.Summary, schematic.Error?.Code ?? "SCHEMATIC_LOAD_FAILED", schematic.Error?.Message);
+
+        var pin = ResolvePin(schematic.Data, pinReference);
+        if (!pin.Success || pin.Data is null)
+            return ToolResponse<SchematicMutationResult>.Fail(pin.Summary, pin.Error?.Code ?? "SCHEMATIC_PIN_NOT_FOUND", pin.Error?.Message);
+
+        var connectivity = SchematicConnectivity.Build(schematic.Data);
+        if (connectivity.HasConductorAtPoint(pin.Data.X, pin.Data.Y))
+        {
+            return ToolResponse<SchematicMutationResult>.Fail(
+                $"Schematic pin {pinReference} is electrically connected and cannot be marked no-connect.",
+                "SCHEMATIC_PIN_CONNECTED");
+        }
+
+        if (HasNoConnectAtPoint(schematic.Data.Text, pin.Data.X, pin.Data.Y))
+        {
+            return Mutation(
+                "mark-schematic-pin-no-connect",
+                pinReference,
+                dryRun,
+                new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, schematic.Data.Text) },
+                string.Empty);
+        }
+
+        var addition = FormatNoConnect(pin.Data.X, pin.Data.Y);
+        var after = InsertBeforeSymbolInstances(schematic.Data.Text, addition);
+        if (!dryRun)
+            File.WriteAllText(schematic.Data.SchematicFile, after);
+
+        return Mutation(
+            "mark-schematic-pin-no-connect",
+            pinReference,
+            dryRun,
+            new[] { new ChangeFileSnapshot(schematic.Data.SchematicFile, schematic.Data.Text, after) },
+            addition);
     }
 
     public ToolResponse<SchematicMutationResult> AddNetLabel(string projectPath, string net, double x, double y, bool dryRun)
@@ -1898,6 +1948,29 @@ public sealed class SchematicAuthoringService
         });
     }
 
+    private static string FormatNoConnect(double x, double y)
+    {
+        var snappedX = SnapToSchematicGrid(x);
+        var snappedY = SnapToSchematicGrid(y);
+        return string.Join(Environment.NewLine, new[]
+        {
+            $"  (no_connect (at {KiCadSchematicParser.FormatNumber(snappedX)} {KiCadSchematicParser.FormatNumber(snappedY)}) (uuid \"{Guid.NewGuid()}\"))",
+            string.Empty
+        });
+    }
+
+    private static bool HasNoConnectAtPoint(string text, double x, double y)
+    {
+        foreach (Match match in Regex.Matches(text, @"\(no_connect\s+\(at\s+([-+]?\d+(?:\.\d+)?)\s+([-+]?\d+(?:\.\d+)?)\)"))
+        {
+            if (double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var markerX)
+                && double.TryParse(match.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var markerY)
+                && SameSchematicPoint(markerX, markerY, x, y))
+                return true;
+        }
+        return false;
+    }
+
     private static string FormatSchematicBlockBox(string title, double x, double y, double width, double height)
     {
         var snappedX = SnapToSchematicGrid(x);
@@ -2246,6 +2319,12 @@ internal sealed class SchematicConnectivity
         }
 
         return names.ToArray();
+    }
+
+    public bool HasConductorAtPoint(double x, double y)
+    {
+        return _schematic.Wires.Any(wire => PointOnSegment(x, y, wire))
+            || _schematic.Labels.Any(label => SamePoint(label.XMillimeters, label.YMillimeters, x, y));
     }
 
     public bool SegmentTouchesConductorAfterStart(double x1, double y1, double x2, double y2)

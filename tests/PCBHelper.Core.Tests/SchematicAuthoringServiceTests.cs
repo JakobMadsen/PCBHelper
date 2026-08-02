@@ -97,6 +97,57 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void MarkPinNoConnect_Adds_An_Idempotent_Marker_At_The_Resolved_Pin()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "74xx:74LS08", "U1", 80, 50, null, null, unit: 3, dryRun: false).Success);
+
+        var first = service.MarkPinNoConnect(fixture.Path, "U1.8", dryRun: false);
+        var second = service.MarkPinNoConnect(fixture.Path, "U1.8", dryRun: false);
+        var schematic = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_sch"));
+        var pin = Assert.Single(Assert.Single(service.ListSymbols(fixture.Path).Data!.Symbols).Pins, item => item.Pin == "8");
+        var marker = Assert.Single(System.Text.RegularExpressions.Regex.Matches(
+            schematic,
+            @"\(no_connect\s+\(at\s+([-+]?\d+(?:\.\d+)?)\s+([-+]?\d+(?:\.\d+)?)\)").Cast<System.Text.RegularExpressions.Match>());
+
+        Assert.True(first.Success, first.Error?.Message);
+        Assert.True(second.Success, second.Error?.Message);
+        Assert.Equal(pin.XMillimeters, double.Parse(marker.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), 3);
+        Assert.Equal(pin.YMillimeters, double.Parse(marker.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture), 3);
+    }
+
+    [Fact]
+    public void MarkPinNoConnect_Rejects_An_Electrically_Connected_Pin()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 70, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R2", 90, 50, null, null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "R1.1", "R2.1", "CONNECTED", dryRun: false).Success);
+
+        var result = service.MarkPinNoConnect(fixture.Path, "R1.1", dryRun: false);
+
+        Assert.False(result.Success);
+        Assert.Equal("SCHEMATIC_PIN_CONNECTED", result.Error?.Code);
+    }
+
+    [Fact]
+    public void ConnectPins_Rejects_A_Pin_Marked_NoConnect()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 70, 50, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R2", 90, 50, null, null, dryRun: false).Success);
+        Assert.True(service.MarkPinNoConnect(fixture.Path, "R1.1", dryRun: false).Success);
+
+        var result = service.ConnectPins(fixture.Path, "R1.1", "R2.1", "INVALID", dryRun: false);
+
+        Assert.False(result.Success);
+        Assert.Equal("SCHEMATIC_PIN_NO_CONNECT", result.Error?.Code);
+    }
+
+    [Fact]
     public void CreateSymbol_Embeds_SelfContained_Graphics_For_Inherited_Lm358()
     {
         using var fixture = CopyBlankFixture();
