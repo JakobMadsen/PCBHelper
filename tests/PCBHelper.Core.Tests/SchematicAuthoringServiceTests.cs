@@ -152,6 +152,33 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void ReplaceSymbol_Migrates_A_Legacy_Symbol_Id_To_Its_Project_Local_Catalog_Entry()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+        Assert.True(service.CreateSymbol(fixture.Path, "PCBHelper:TPS2553-1", "U2", 110, 115, null, null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 130, 115, "66.5k", null, dryRun: false).Success);
+        Assert.True(service.ConnectPins(fixture.Path, "U2.5", "R1.1", "ILIM", dryRun: false).Success);
+
+        var schematicPath = Path.Combine(fixture.Path, "blank-authoring.kicad_sch");
+        var legacyText = File.ReadAllText(schematicPath).Replace(
+            "(lib_id \"PCBHelper:TPS2553-1\")",
+            "(lib_id \"Power_Management:TPS2553-1\")",
+            StringComparison.Ordinal);
+        File.WriteAllText(schematicPath, legacyText);
+        var before = service.ListSymbols(fixture.Path).Data!;
+
+        var replaced = service.ReplaceSymbol(fixture.Path, "U2", "PCBHelper:TPS2553-1", dryRun: false);
+        var after = service.ListSymbols(fixture.Path).Data!;
+
+        Assert.True(replaced.Success, replaced.Error?.Message);
+        var migrated = Assert.Single(after.Symbols, item => item.Reference == "U2");
+        Assert.Equal("PCBHelper:TPS2553-1", migrated.SymbolId);
+        Assert.Equal(before.WireCount, after.WireCount);
+        Assert.Contains("(lib_id \"PCBHelper:TPS2553-1\")", File.ReadAllText(schematicPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DeleteSymbol_Removes_Only_The_Selected_Symbol()
     {
         using var fixture = CopyBlankFixture();

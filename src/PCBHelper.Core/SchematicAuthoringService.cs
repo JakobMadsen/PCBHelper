@@ -2417,7 +2417,8 @@ internal sealed record SchematicSymbolCatalogEntry(
     double DefaultBoardY,
     IReadOnlyList<SchematicPinDefinition> Pins,
     string Source = "KiCad 10 standard library",
-    bool ProjectLocalLibrary = false)
+    bool ProjectLocalLibrary = false,
+    IReadOnlyList<string>? LegacySymbolIds = null)
 {
     public IReadOnlyList<int> Units { get; } = Pins.Select(static pin => pin.Unit).Distinct().OrderBy(static unit => unit).ToArray();
 }
@@ -2485,7 +2486,8 @@ internal static class SchematicSymbolCatalog
             new SchematicPinDefinition("4", 7.62, -2.54),
             new SchematicPinDefinition("5", 0, 7.62),
             new SchematicPinDefinition("6", 7.62, 2.54)
-        }, "PCBHelper project-local symbol based on Texas Instruments TPS255x datasheet SLVS841F; TPS2553-1 DBV pin map and latch-off behavior", true),
+        }, "PCBHelper project-local symbol based on Texas Instruments TPS255x datasheet SLVS841F; TPS2553-1 DBV pin map and latch-off behavior", true,
+            new[] { "Power_Management:TPS2553-1" }),
         new("Transistor_BJT:Q_NPN_BEC", "Q_NPN_BEC", "Package_TO_SOT_SMD:SOT-23", 50, new[]
         {
             new SchematicPinDefinition("1", -5.08, 0), new SchematicPinDefinition("2", 2.54, 5.08), new SchematicPinDefinition("3", 2.54, -5.08)
@@ -2547,7 +2549,9 @@ internal static class SchematicSymbolCatalog
 
     public static SchematicSymbolCatalogEntry? Find(string symbolId)
     {
-        return Entries.FirstOrDefault(entry => string.Equals(entry.SymbolId, symbolId, StringComparison.OrdinalIgnoreCase));
+        return Entries.FirstOrDefault(entry =>
+            string.Equals(entry.SymbolId, symbolId, StringComparison.OrdinalIgnoreCase)
+            || (entry.LegacySymbolIds?.Contains(symbolId, StringComparer.OrdinalIgnoreCase) ?? false));
     }
 
     private static IReadOnlyList<SchematicPinDefinition> OneRowConnector(int count)
