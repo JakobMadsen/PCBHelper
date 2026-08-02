@@ -735,7 +735,8 @@ public sealed class SchematicAuthoringService
             var footprint = symbol.Properties.TryGetValue("Footprint", out var footprintProperty) ? footprintProperty.Value : catalog.DefaultFootprint;
             if (!SchematicFootprintTemplates.IsSupported(footprint))
             {
-                return ToolResponse<SchematicMutationResult>.Fail($"Missing footprint template: {footprint}", "FOOTPRINT_TEMPLATE_NOT_FOUND");
+                var footprintName = string.IsNullOrWhiteSpace(footprint) ? "<empty>" : footprint;
+                return ToolResponse<SchematicMutationResult>.Fail($"Missing footprint template for {symbol.Reference}: {footprintName}", "FOOTPRINT_TEMPLATE_NOT_FOUND");
             }
 
             var value = symbol.Properties.TryGetValue("Value", out var valueProperty) ? valueProperty.Value : catalog.DefaultValue;
@@ -808,7 +809,8 @@ public sealed class SchematicAuthoringService
         var footprint = symbol.Properties.TryGetValue("Footprint", out var footprintProperty) ? footprintProperty.Value : catalog.DefaultFootprint;
         if (!SchematicFootprintTemplates.IsSupported(footprint))
         {
-            return ToolResponse<SchematicMutationResult>.Fail($"Missing footprint template: {footprint}", "FOOTPRINT_TEMPLATE_NOT_FOUND");
+            var footprintName = string.IsNullOrWhiteSpace(footprint) ? "<empty>" : footprint;
+            return ToolResponse<SchematicMutationResult>.Fail($"Missing footprint template for {reference}: {footprintName}", "FOOTPRINT_TEMPLATE_NOT_FOUND");
         }
 
         var value = symbol.Properties.TryGetValue("Value", out var valueProperty) ? valueProperty.Value : catalog.DefaultValue;

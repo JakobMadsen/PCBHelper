@@ -1258,6 +1258,22 @@ public sealed class SchematicAuthoringServiceTests
         Assert.Equal("FOOTPRINT_TEMPLATE_NOT_FOUND", missingFootprint.Error?.Code);
     }
 
+    [Fact]
+    public void UpdatePcbFromSchematic_MissingFootprint_IdentifiesReferenceAndEmptyValue()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Switch:SW_SPDT", "SW1", 50, 50, null, null, dryRun: false).Success);
+
+        var result = service.UpdatePcbFromSchematic(fixture.Path, dryRun: true);
+
+        Assert.False(result.Success);
+        Assert.Equal("FOOTPRINT_TEMPLATE_NOT_FOUND", result.Error?.Code);
+        Assert.Contains("SW1", result.Summary, StringComparison.Ordinal);
+        Assert.Contains("<empty>", result.Summary, StringComparison.Ordinal);
+    }
+
     private static CheckRunner CreateCheckRunner(ProjectDiscoveryService projectDiscovery)
     {
         using var fakeCli = new TempFile("kicad-cli.exe", deleteOnDispose: false);
