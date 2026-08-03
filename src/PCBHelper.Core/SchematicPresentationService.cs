@@ -1414,9 +1414,9 @@ internal static class SchematicGeometry
         var rotation = ((symbol.RotationDegrees ?? 0) % 360 + 360) % 360;
         var transformed = rotation switch
         {
-            >= 45 and < 135 => (-localY, localX),
+            >= 45 and < 135 => (localY, -localX),
             >= 135 and < 225 => (-localX, -localY),
-            >= 225 and < 315 => (localY, -localX),
+            >= 225 and < 315 => (-localY, localX),
             _ => (localX, localY)
         };
         var directionX = Math.Sign(transformed.Item1);

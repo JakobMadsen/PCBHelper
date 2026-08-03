@@ -4,9 +4,9 @@ public sealed class SchematicPresentationCompatibilityTests
 {
     [Theory]
     [InlineData(0, 54.61, 50.8)]
-    [InlineData(90, 50.8, 54.61)]
+    [InlineData(90, 50.8, 46.99)]
     [InlineData(180, 46.99, 50.8)]
-    [InlineData(270, 50.8, 46.99)]
+    [InlineData(270, 50.8, 54.61)]
     public void Potentiometer_Wiper_Uses_Rotation_Aware_Pin_Position(
         int rotationDegrees,
         double expectedX,
