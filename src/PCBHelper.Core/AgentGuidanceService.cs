@@ -130,6 +130,7 @@ public static class DesignPlanOperationCatalog
         ,Op("add-mounting-hole", "Add an NPTH mounting hole.", S("reference"), N("xMm"), N("yMm"), N("drillMm"), N("diameterMm"))
         ,Op("add-mechanical-keepout", "Add a copper/mechanical keep-out polygon.", S("layer"), S("points"))
         ,Op("add-module-keepout", "Reserve a module underside from vias and copper pours while allowing its pads, masked tracks, and footprint.", S("layer"), S("points"))
+        ,Op("add-mounting-hole-keepout", "Reserve copper clearance around a mounting hole while allowing its NPTH pad and footprint.", S("layer"), S("points"))
         ,Op("set-board-outline-rectangle", "Set the exact coordinates of a single rectangular Edge.Cuts outline.", N("leftMm"), N("topMm"), N("rightMm"), N("bottomMm"))
     };
 

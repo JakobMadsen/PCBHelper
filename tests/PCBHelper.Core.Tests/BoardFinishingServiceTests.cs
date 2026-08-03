@@ -130,6 +130,22 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
+    public void MountingHoleKeepout_Blocks_All_Copper_Routing_While_Allowing_The_Hole_Pad()
+    {
+        using var fixture=CopyTutorial();var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var result=service.AddMountingHoleKeepout(fixture.Path,"B.Cu","40,30;48,30;48,38;40,38",false);
+        var text=File.ReadAllText(Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single());
+
+        Assert.True(result.Success,result.Error?.Message);
+        Assert.Contains("(tracks not_allowed)",text);
+        Assert.Contains("(vias not_allowed)",text);
+        Assert.Contains("(pads allowed)",text);
+        Assert.Contains("(copperpour not_allowed)",text);
+        Assert.Contains("(footprints allowed)",text);
+    }
+
+    [Fact]
     public void SetBoardOutlineRectangle_Updates_The_Single_EdgeCuts_Rectangle()
     {
         using var fixture=CopyTutorial();

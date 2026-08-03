@@ -141,6 +141,20 @@ public sealed class BoardFinishingService
         return Insert(loaded.Data, "add-module-keepout", id, text, dryRun);
     }
 
+    public ToolResponse<BoardFinishingMutationResult> AddMountingHoleKeepout(string projectPath, string layer, string points, bool dryRun)
+    {
+        var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
+        if (layer is not ("F.Cu" or "B.Cu")) return Error("Only F.Cu and B.Cu keep-outs are supported.", "UNSUPPORTED_LAYER");
+        var polygon = ParsePoints(points); if (polygon is null || polygon.Count < 3) return Error("A keep-out requires at least three valid points.", "INVALID_MECHANICAL_GEOMETRY");
+        var id = Guid.NewGuid().ToString();
+        var text = FormatKeepoutZone(
+            layer,
+            id,
+            polygon,
+            "(tracks not_allowed) (vias not_allowed) (pads allowed) (copperpour not_allowed) (footprints allowed)");
+        return Insert(loaded.Data, "add-mounting-hole-keepout", id, text, dryRun);
+    }
+
     private static string FormatKeepoutZone(
         string layer,
         string id,

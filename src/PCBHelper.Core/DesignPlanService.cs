@@ -395,6 +395,7 @@ public sealed class DesignPlanService
             "add-mounting-hole" => Box(context.Finishing.AddMountingHole(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "drillMm"), RequiredDouble(p, "diameterMm"), false)),
             "add-mechanical-keepout" => Box(context.Finishing.AddMechanicalKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
             "add-module-keepout" => Box(context.Finishing.AddModuleKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
+            "add-mounting-hole-keepout" => Box(context.Finishing.AddMountingHoleKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
             "set-board-outline-rectangle" => Box(context.Finishing.SetBoardOutlineRectangle(context.ProjectPath, RequiredDouble(p, "leftMm"), RequiredDouble(p, "topMm"), RequiredDouble(p, "rightMm"), RequiredDouble(p, "bottomMm"), false)),
             _ => ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED")
         };

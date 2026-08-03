@@ -70,6 +70,34 @@ public sealed class DesignPlanServiceTests
     }
 
     [Fact]
+    public async Task MountingHoleKeepout_Is_Previewed_And_Applied_Transactionally()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var plan = """{"version":1,"goal":"Protect mounting-hole copper clearance","operations":[{"id":"keepout","type":"add-mounting-hole-keepout","layer":"B.Cu","points":"40,30;48,30;48,38;40,38"}],"engineeringGate":{"erc":"skip","drc":"skip","manufacturingValidation":"skip","simulationAssertions":"skip","designIntent":"skip"}}""";
+        var boardPath = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        var before = File.ReadAllText(boardPath);
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Contains(preview.Data!.ChangedFiles, file =>
+            file.RelativePath.EndsWith(".kicad_pcb", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(before, File.ReadAllText(boardPath));
+
+        var applied = await runtime.Plans.ApplyAsync(
+            fixture.Path,
+            plan,
+            preview.Data.PlanHash,
+            preview.Data.RequiredDecisions.Select(static decision => decision.DecisionId).ToArray());
+        var board = File.ReadAllText(boardPath);
+
+        Assert.True(applied.Success, applied.Error?.Message);
+        Assert.Equal(ProjectTransactionStatus.GatePassed, applied.Data!.Transaction.Transaction.Status);
+        Assert.Contains("(tracks not_allowed) (vias not_allowed) (pads allowed) (copperpour not_allowed) (footprints allowed)", board);
+    }
+
+    [Fact]
     public void Validate_Uses_Canonical_Hash_Independent_Of_Property_Order()
     {
         using var fixture = CopyTutorialFixture();
@@ -102,7 +130,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(41, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(42, DesignPlanOperationCatalog.All.Count);
         Assert.Contains(DesignPlanOperationCatalog.All, operation =>
             operation.Type == "delete-schematic-text-box-by-uuid");
         foreach (var operation in DesignPlanOperationCatalog.All)
