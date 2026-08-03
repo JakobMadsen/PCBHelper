@@ -85,7 +85,9 @@ public sealed class BoardFinishingServiceTests
         Assert.True(updated.Success,updated.Error?.Message);
         Assert.True(service.HideReferenceText(fixture.Path,"R1",false).Success);
         var text=File.ReadAllText(Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single());
-        Assert.Contains("(xy 41 31)",text);Assert.Contains("(layer \"F.SilkS\") (hide yes)",text);
+        Assert.Contains("(xy 41 31)",text);
+        Assert.Matches("""\(property\s+"Reference"[\s\S]*?\(effects[\s\S]*?\(hide\s+yes\)""",text);
+        Assert.DoesNotContain("(layer \"F.SilkS\") (hide yes)",text,StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,6 +104,24 @@ public sealed class BoardFinishingServiceTests
         var summary=new BoardSummaryService(new ProjectDiscoveryService()).GetSummary(fixture.Path);
         Assert.True(summary.Success,summary.Error?.Message);
         Assert.Contains(summary.Data!.Footprints,f=>f.Reference=="R1");
+    }
+
+    [Fact]
+    public void HideReferenceText_Repairs_Legacy_Top_Level_Hide()
+    {
+        using var fixture=CopyTutorial();
+        var board=Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single();
+        var text=new System.Text.RegularExpressions.Regex("\\(layer \\\"F\\.SilkS\\\"\\)").Replace(
+            File.ReadAllText(board),"(layer \"F.SilkS\") (hide yes)",1);
+        File.WriteAllText(board,text);
+        var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var result=service.HideReferenceText(fixture.Path,"R1",false);
+
+        Assert.True(result.Success,result.Error?.Message);
+        text=File.ReadAllText(board);
+        Assert.Matches("""\(property\s+"Reference"[\s\S]*?\(effects[\s\S]*?\(hide\s+yes\)""",text);
+        Assert.DoesNotContain("(layer \"F.SilkS\") (hide yes)",text,StringComparison.Ordinal);
     }
 
     [Fact]

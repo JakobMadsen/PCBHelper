@@ -329,8 +329,15 @@ public sealed class BoardFinishingService
         var next = Regex.Match(footprintBlock[(start.Index + start.Length)..], "\\n\\s*\\(property\\s+\"");
         var length = next.Success ? start.Length + next.Index : footprintBlock.Length - start.Index;
         var referenceBlock = footprintBlock.Substring(start.Index, length);
-        if (Regex.IsMatch(referenceBlock, """\(hide\s+yes\)""")) return footprintBlock;
-        var updated = ReplaceFirst(referenceBlock, """(\(layer\s+"[^"]+"\))""", "$1 (hide yes)");
+        var effects = Regex.Match(referenceBlock, @"\(effects(?=\s|\))");
+        if (!effects.Success) return footprintBlock;
+        var effectsEnd = FindEnd(referenceBlock, effects.Index);
+        if (effectsEnd < 0) return footprintBlock;
+        if (Regex.IsMatch(referenceBlock.Substring(effects.Index, effectsEnd-effects.Index+1), """\(hide\s+yes\)""")) return footprintBlock;
+        var updated = Regex.Replace(referenceBlock[..effects.Index], """\s*\(hide\s+yes\)""", string.Empty)+referenceBlock[effects.Index..];
+        effects = Regex.Match(updated, @"\(effects(?=\s|\))");
+        effectsEnd = FindEnd(updated, effects.Index);
+        updated = updated.Insert(effectsEnd, "\n\t\t\t(hide yes)\n\t\t");
         return updated == referenceBlock
             ? footprintBlock
             : footprintBlock.Remove(start.Index, length).Insert(start.Index, updated);
