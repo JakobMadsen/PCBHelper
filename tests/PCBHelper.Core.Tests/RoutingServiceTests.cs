@@ -406,6 +406,22 @@ public sealed class RoutingServiceTests
     }
 
     [Fact]
+    public void ListUnroutedConnections_Treats_Track_Endpoint_On_Segment_As_Connected()
+    {
+        using var fixture = CopyRoutingFixture();
+        var service = new RoutingService(new ProjectDiscoveryService());
+
+        var trunk = service.AddTrackPolyline(fixture.Path, "A", "10,10;10,5;30,5", "F.Cu", 0.25, dryRun: false);
+        var branch = service.AddTrackPolyline(fixture.Path, "A", "30,10;20,5", "F.Cu", 0.25, dryRun: false);
+        var after = service.ListUnroutedConnections(fixture.Path, "A");
+
+        Assert.True(trunk.Success);
+        Assert.True(branch.Success);
+        Assert.True(after.Success);
+        Assert.Empty(after.Data!.Nets);
+    }
+
+    [Fact]
     public void AddTrack_DryRun_Does_Not_Change_Board_File()
     {
         using var fixture = CopyTutorialFixture();

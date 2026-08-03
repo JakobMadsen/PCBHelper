@@ -614,6 +614,31 @@ public sealed class RoutingService
             AddPoint(via.XMillimeters.Value, via.YMillimeters.Value, null);
         }
 
+        // KiCad considers a pad, via, or track endpoint that lands on the interior of a
+        // same-net segment electrically connected. The endpoint-only graph above misses
+        // those T-junctions, so bind every known net point that lies on a segment.
+        const double connectivityToleranceMillimeters = 0.001;
+        foreach (var segment in board.Segments.Where(segment => NetReferenceMatches(segment.NetCode, segment.NetName, net)))
+        {
+            if (segment.StartXMillimeters is null || segment.StartYMillimeters is null || segment.EndXMillimeters is null || segment.EndYMillimeters is null)
+            {
+                continue;
+            }
+
+            var start = pointIndex[PointKey(segment.StartXMillimeters.Value, segment.StartYMillimeters.Value)];
+            var segmentStart = new RoutingPoint(segment.StartXMillimeters.Value, segment.StartYMillimeters.Value);
+            var segmentEnd = new RoutingPoint(segment.EndXMillimeters.Value, segment.EndYMillimeters.Value);
+            for (var index = 0; index < nodes.Count; index++)
+            {
+                var node = nodes[index];
+                var point = new RoutingPoint(node.XMillimeters, node.YMillimeters);
+                if (PointToSegmentDistance(point, segmentStart, segmentEnd) <= connectivityToleranceMillimeters)
+                {
+                    union.Union(start, index);
+                }
+            }
+        }
+
         var components = nodes
             .Select((node, index) => new { Root = union.Find(index), Node = node })
             .GroupBy(static item => item.Root)
