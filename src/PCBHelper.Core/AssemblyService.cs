@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace PCBHelper.Core;
 
@@ -366,6 +367,17 @@ public sealed class AssemblyService
     private static IReadOnlyList<AssemblyDiagnostic> Validate(LoadedAssembly loaded)
     {
         var diagnostics = new List<AssemblyDiagnostic>();
+        if (loaded.Project.BoardFile is not null && File.Exists(loaded.Project.BoardFile))
+        {
+            var boardText=File.ReadAllText(loaded.Project.BoardFile);
+            foreach(var duplicate in Regex.Matches(boardText,"\\(uuid\\s+\"?(?<uuid>[0-9a-fA-F-]{36})\"?\\)")
+                .GroupBy(match=>match.Groups["uuid"].Value,StringComparer.OrdinalIgnoreCase)
+                .Where(static group=>group.Count()>1))
+            {
+                diagnostics.Add(Error("DUPLICATE_BOARD_UUID",duplicate.Key,$"Board UUID {duplicate.Key} is defined {duplicate.Count()} times and must be repaired before manufacturing release."));
+            }
+        }
+
         foreach (var duplicate in loaded.Components
             .Where(static component => !string.IsNullOrWhiteSpace(component.Reference))
             .GroupBy(static component => component.Reference, StringComparer.OrdinalIgnoreCase)

@@ -110,6 +110,24 @@ public sealed class AssemblyServiceTests
     }
 
     [Fact]
+    public void ValidateAssemblyPackage_Fails_On_Duplicate_Board_Uuid()
+    {
+        using var fixture = CreateAssemblyFixture();
+        var boardFile=Path.Combine(fixture.Path,"assembly-board.kicad_pcb");
+        var board=File.ReadAllText(boardFile);
+        const string duplicateUuid="11111111-1111-4111-8111-111111111111";
+        board=board.Replace("(at 10 20 90)",$"(uuid \"{duplicateUuid}\")\n    (at 10 20 90)",StringComparison.Ordinal);
+        board=board.Replace("(at 20 20)",$"(uuid \"{duplicateUuid}\")\n    (at 20 20)",StringComparison.Ordinal);
+        File.WriteAllText(boardFile,board);
+
+        var result = CreateService().ValidateAssemblyPackage(fixture.Path);
+
+        Assert.True(result.Success);
+        Assert.False(result.Data!.Valid);
+        Assert.Contains(result.Data.Diagnostics, diagnostic => diagnostic.Code == "DUPLICATE_BOARD_UUID");
+    }
+
+    [Fact]
     public async Task CreatePcbWayAssemblyPackage_Includes_Manufacturing_Assembly_And_Validation_Files()
     {
         using var fixture = CreateAssemblyFixture();

@@ -70,6 +70,41 @@ public sealed class BoardFinishingService
     public ToolResponse<BoardFinishingMutationResult> HideReferenceText(string projectPath, string reference, bool dryRun) => EditReference(projectPath, reference, dryRun, block =>
         SetReferenceHidden(block), "hide-reference-text");
 
+    public ToolResponse<BoardFinishingMutationResult> RepairDuplicateBoardUuids(string projectPath, bool dryRun)
+    {
+        var loaded=Load(projectPath);if(!loaded.Success||loaded.Data is null)return Fail(loaded);
+        var matches=Regex.Matches(loaded.Data.Text,"\\(uuid\\s+\"?(?<uuid>[0-9a-fA-F-]{36})\"?\\)");
+        var definitions=matches.GroupBy(match=>match.Groups["uuid"].Value,StringComparer.OrdinalIgnoreCase).ToArray();
+        var duplicates=definitions.Where(static group=>group.Count()>1).ToArray();
+        if(duplicates.Length==0)return ToolResponse<BoardFinishingMutationResult>.Ok("Board UUIDs are already unique.",new("repair-duplicate-board-uuids","none",loaded.Data.File,true,loaded.Data.Text));
+        foreach(var duplicate in duplicates)
+        {
+            var totalOccurrences=Regex.Matches(loaded.Data.Text,Regex.Escape(duplicate.Key),RegexOptions.IgnoreCase).Count;
+            if(totalOccurrences!=duplicate.Count())return Error($"Duplicate UUID {duplicate.Key} is referenced outside UUID definitions.","DUPLICATE_UUID_REFERENCE_UNSUPPORTED");
+        }
+
+        var existing=definitions.Select(static group=>group.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var replacements=new List<(int Start,int Length,string Value)>();
+        foreach(var duplicate in duplicates)
+        {
+            var occurrence=0;
+            foreach(var match in duplicate)
+            {
+                occurrence++;
+                if(occurrence==1)continue;
+                var salt=0;
+                string replacement;
+                do replacement=DeterministicBoardUuid(duplicate.Key,occurrence,salt++); while(!existing.Add(replacement));
+                replacements.Add((match.Groups["uuid"].Index,match.Groups["uuid"].Length,replacement));
+            }
+        }
+
+        var repaired=loaded.Data.Text;
+        foreach(var replacement in replacements.OrderByDescending(static item=>item.Start))
+            repaired=repaired.Remove(replacement.Start,replacement.Length).Insert(replacement.Start,replacement.Value);
+        return Replace(loaded.Data,"repair-duplicate-board-uuids",$"{duplicates.Length} duplicate value(s)",0,loaded.Data.Text.Length,repaired,dryRun);
+    }
+
     public ToolResponse<BoardFinishingMutationResult> CleanupSilkscreen(string projectPath, double minimumSpacing, bool dryRun)
     {
         var loaded=Load(projectPath);if(!loaded.Success||loaded.Data is null)return Fail(loaded);if(minimumSpacing<=0)return Error("Minimum spacing must be positive.","INVALID_SILKSCREEN_GEOMETRY");
@@ -322,6 +357,14 @@ public sealed class BoardFinishingService
         return count;
     }
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    private static string DeterministicBoardUuid(string original,int occurrence,int salt)
+    {
+        var hash=SHA256.HashData(Encoding.UTF8.GetBytes($"pcbhelper-duplicate-board-uuid-v1|{original.ToLowerInvariant()}|{occurrence}|{salt}"));
+        var bytes=hash[..16];
+        bytes[6]=(byte)((bytes[6]&0x0f)|0x50);
+        bytes[8]=(byte)((bytes[8]&0x3f)|0x80);
+        return new Guid(bytes).ToString();
+    }
     private static string SetReferenceHidden(string footprintBlock)
     {
         var start = Regex.Match(footprintBlock, "\\(property\\s+\"Reference\"");

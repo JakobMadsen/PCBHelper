@@ -1113,6 +1113,26 @@ public sealed class SchematicAuthoringServiceTests
     }
 
     [Fact]
+    public void UpdatePcbFromSchematic_Assigns_Globally_Unique_Uuids_To_Repeated_Footprints()
+    {
+        using var fixture = CopyBlankFixture();
+        var service = new SchematicAuthoringService(new ProjectDiscoveryService());
+
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R1", 50, 50, "1k", null, dryRun: false).Success);
+        Assert.True(service.CreateSymbol(fixture.Path, "Device:R", "R2", 70, 50, "1k", null, dryRun: false).Success);
+        Assert.True(service.UpdatePcbFromSchematic(fixture.Path, dryRun: false).Success);
+
+        var board = File.ReadAllText(Path.Combine(fixture.Path, "blank-authoring.kicad_pcb"));
+        var duplicateUuids = System.Text.RegularExpressions.Regex.Matches(board, "\\(uuid\\s+\\\"?([0-9a-fA-F-]{36})\\\"?\\)")
+            .Select(match => match.Groups[1].Value)
+            .GroupBy(static uuid => uuid, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .ToArray();
+
+        Assert.Empty(duplicateUuids);
+    }
+
+    [Fact]
     public void RegenerateBoardFootprint_Replaces_Existing_Template_And_Preserves_Placement()
     {
         using var fixture = CopyBlankFixture();

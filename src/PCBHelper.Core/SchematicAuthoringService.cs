@@ -2986,6 +2986,7 @@ internal static class SchematicFootprintTemplates
     private static string FormatKiCadFootprintText(string text, string footprint, string reference, string value, double x, double y, double? rotationDegrees, IReadOnlyDictionary<string, KiCadNet> padNets)
     {
         var footprintName = footprint;
+        text = RemapFootprintUuidReferences(text);
         text = Regex.Replace(text, "^\\(footprint\\s+\"[^\"]+\"", $"(footprint \"{footprintName}\"");
         text = Regex.Replace(
             text,
@@ -3000,6 +3001,20 @@ internal static class SchematicFootprintTemplates
         text = ReplacePropertyValue(text, "Value", value);
         text = AddPadNets(text, padNets);
         return NormalizeIndentForBoard(text).TrimEnd() + Environment.NewLine;
+    }
+
+    private static string RemapFootprintUuidReferences(string text)
+    {
+        var uuids = Regex.Matches(text, "\\(uuid\\s+\"?(?<uuid>[0-9a-fA-F-]{36})\"?\\)")
+            .Select(static match => match.Groups["uuid"].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (var uuid in uuids)
+        {
+            text = text.Replace(uuid, Guid.NewGuid().ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        return text;
     }
 
     internal static string Hb100ModuleFootprintDefinition => """

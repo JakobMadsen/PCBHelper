@@ -33,7 +33,7 @@ Design Plan V1 is the default agent mutation boundary. An agent supplies declara
 
 `projectPath` is a separate CLI or MCP argument. Preview returns canonical JSON and a SHA-256 `planHash`; apply requires that hash as `expectedPlanHash`. Operation IDs must be unique.
 
-Supported operation types are `set-component-value`, `move-component`, `set-component-spacing`, `create-schematic-symbol`, `set-symbol-field`, `connect-schematic-pins`, `add-net-label`, `arrange-schematic`, `set-design-intent`, `set-simulation-fixture`, `update-pcb-from-schematic`, `regenerate-board-footprint`, `add-track`, `add-track-polyline`, `delete-track`, `add-via`, `delete-via`, and the advertised board-finishing operations.
+Supported operation types are `set-component-value`, `move-component`, `set-component-spacing`, `create-schematic-symbol`, `set-symbol-field`, `connect-schematic-pins`, `add-net-label`, `arrange-schematic`, `set-design-intent`, `set-simulation-fixture`, `update-pcb-from-schematic`, `regenerate-board-footprint`, `repair-duplicate-board-uuids`, `add-track`, `add-track-polyline`, `delete-track`, `add-via`, `delete-via`, and the advertised board-finishing operations. The UUID repair is deterministic, changes only duplicate definitions after their first occurrence, and fails closed when a duplicate UUID has an ambiguous external reference.
 
 `arrange-schematic` returns typed before/after readability evidence and a connectivity certificate. In V1 it fails closed with `SCHEMATIC_TEXT_BOX_RELAYOUT_UNSUPPORTED` when any top-level KiCad `text_box` is present; preview and apply preserve that error code and do not mutate the project.
 

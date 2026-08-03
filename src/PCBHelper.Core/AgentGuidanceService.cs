@@ -125,6 +125,7 @@ public static class DesignPlanOperationCatalog
         ,Op("update-copper-zone", "Update an existing copper zone by UUID.", S("zone"), S("net", false), S("layer", false), S("points", false))
         ,Op("move-reference-text", "Move footprint reference text to a footprint-local X/Y offset, not an absolute board coordinate.", S("reference"), N("xMm"), N("yMm"))
         ,Op("hide-reference-text", "Hide footprint reference text.", S("reference"))
+        ,Op("repair-duplicate-board-uuids", "Deterministically replace duplicate board UUID definitions while rejecting ambiguous external references.")
         ,Op("cleanup-silkscreen", "Hide reference anchors that overlap within a threshold.", N("minimumSpacingMm"))
         ,Op("add-testpoint", "Add a through-hole testpoint on a net.", S("reference"), S("net"), N("xMm"), N("yMm"), N("diameterMm"))
         ,Op("set-board-pad-net", "Restore or change one board pad net by footprint reference and pad name.", S("reference"), S("pad"), S("net"))

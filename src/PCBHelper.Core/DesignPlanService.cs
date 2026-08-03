@@ -390,6 +390,7 @@ public sealed class DesignPlanService
             "update-copper-zone" => Box(context.Finishing.UpdateCopperZone(context.ProjectPath, RequiredString(p, "zone"), OptionalString(p, "net"), OptionalString(p, "layer"), OptionalString(p, "points"), false)),
             "move-reference-text" => Box(context.Finishing.MoveReferenceText(context.ProjectPath, RequiredString(p, "reference"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), false)),
             "hide-reference-text" => Box(context.Finishing.HideReferenceText(context.ProjectPath, RequiredString(p, "reference"), false)),
+            "repair-duplicate-board-uuids" => Box(context.Finishing.RepairDuplicateBoardUuids(context.ProjectPath, false)),
             "cleanup-silkscreen" => Box(context.Finishing.CleanupSilkscreen(context.ProjectPath, RequiredDouble(p, "minimumSpacingMm"), false)),
             "add-testpoint" => Box(context.Finishing.AddTestPoint(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "diameterMm"), false)),
             "set-board-pad-net" => Box(context.Finishing.SetBoardPadNet(context.ProjectPath, RequiredString(p, "reference"), RequiredString(p, "pad"), RequiredString(p, "net"), false)),

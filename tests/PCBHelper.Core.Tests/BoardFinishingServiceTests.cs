@@ -183,6 +183,37 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
+    public void RepairDuplicateBoardUuids_Rewrites_Only_Duplicate_Definitions_Deterministically()
+    {
+        using var fixture=CopyTutorial();
+        var boardFile=Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single();
+        var original=File.ReadAllText(boardFile);
+        var matches=System.Text.RegularExpressions.Regex.Matches(original,"\\(uuid\\s+\\\"?([0-9a-fA-F-]{36})\\\"?\\)");
+        Assert.True(matches.Count>=2);
+        var first=matches[0].Groups[1].Value;
+        var second=matches[1].Groups[1].Value;
+        var duplicated=original.Replace($"(uuid \"{second}\")",$"(uuid \"{first}\")",StringComparison.Ordinal);
+        File.WriteAllText(boardFile,duplicated);
+        var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var preview=service.RepairDuplicateBoardUuids(fixture.Path,dryRun:true);
+        Assert.True(preview.Success,preview.Error?.Message);
+        Assert.Equal(duplicated,File.ReadAllText(boardFile));
+
+        var result=service.RepairDuplicateBoardUuids(fixture.Path,dryRun:false);
+        var repaired=File.ReadAllText(boardFile);
+        var duplicateUuids=System.Text.RegularExpressions.Regex.Matches(repaired,"\\(uuid\\s+\\\"?([0-9a-fA-F-]{36})\\\"?\\)")
+            .Select(match=>match.Groups[1].Value)
+            .GroupBy(static uuid=>uuid,StringComparer.OrdinalIgnoreCase)
+            .Where(static group=>group.Count()>1)
+            .ToArray();
+
+        Assert.True(result.Success,result.Error?.Message);
+        Assert.Empty(duplicateUuids);
+        Assert.Equal(preview.Data!.ProposedText,result.Data!.ProposedText);
+    }
+
+    [Fact]
     public void ReleaseRequirements_Block_Missing_Required_Testpoints()
     {
         using var fixture=CopyTutorial();File.WriteAllText(Path.Combine(fixture.Path,"requirements.md"),"Testpoints required.");

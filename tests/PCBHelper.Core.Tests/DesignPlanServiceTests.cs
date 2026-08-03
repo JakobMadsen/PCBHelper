@@ -169,9 +169,11 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(43, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(44, DesignPlanOperationCatalog.All.Count);
         Assert.Contains(DesignPlanOperationCatalog.All, operation =>
             operation.Type == "delete-schematic-text-box-by-uuid");
+        Assert.Contains(DesignPlanOperationCatalog.All, operation =>
+            operation.Type == "repair-duplicate-board-uuids");
         foreach (var operation in DesignPlanOperationCatalog.All)
             Assert.Contains(operation.Type, schema, StringComparison.Ordinal);
         Assert.Equal(AgentGuidanceService.DesignPlanSchemaUri, document.RootElement.GetProperty("$id").GetString());
