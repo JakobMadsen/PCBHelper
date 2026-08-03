@@ -98,6 +98,45 @@ public sealed class DesignPlanServiceTests
     }
 
     [Fact]
+    public async Task SetTrackWidth_Is_Previewed_And_Applied_Transactionally()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var track = runtime.Routing.ListTracks(fixture.Path).Data!.Tracks.First();
+        var requestedWidth = (track.WidthMillimeters ?? 0.25) + 0.1;
+        var plan = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = 1,
+            goal = "Widen one power segment",
+            operations = new[] { new { id = "width", type = "set-track-width", track = track.Id, widthMm = requestedWidth } },
+            engineeringGate = new
+            {
+                erc = "skip",
+                drc = "skip",
+                manufacturingValidation = "skip",
+                simulationAssertions = "skip",
+                designIntent = "skip"
+            }
+        });
+        var boardPath = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        var before = File.ReadAllText(boardPath);
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Equal(before, File.ReadAllText(boardPath));
+
+        var applied = await runtime.Plans.ApplyAsync(
+            fixture.Path,
+            plan,
+            preview.Data!.PlanHash,
+            preview.Data.RequiredDecisions.Select(static decision => decision.DecisionId).ToArray());
+
+        Assert.True(applied.Success, applied.Error?.Message);
+        Assert.Equal(requestedWidth, runtime.Routing.ListTracks(fixture.Path).Data!.Tracks.Single(item => item.Id == track.Id).WidthMillimeters);
+    }
+
+    [Fact]
     public void Validate_Uses_Canonical_Hash_Independent_Of_Property_Order()
     {
         using var fixture = CopyTutorialFixture();
@@ -130,7 +169,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(42, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(43, DesignPlanOperationCatalog.All.Count);
         Assert.Contains(DesignPlanOperationCatalog.All, operation =>
             operation.Type == "delete-schematic-text-box-by-uuid");
         foreach (var operation in DesignPlanOperationCatalog.All)

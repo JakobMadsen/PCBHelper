@@ -470,6 +470,46 @@ public sealed class RoutingServiceTests
     }
 
     [Fact]
+    public void SetTrackWidth_Is_Previewable_And_Changes_Only_The_Selected_Segment()
+    {
+        using var fixture = CopyTutorialFixture();
+        var service = new RoutingService(new ProjectDiscoveryService());
+        var before = service.ListTracks(fixture.Path).Data!.Tracks;
+        var selected = before.First();
+        var boardFile = Path.Combine(fixture.Path, "kicad-getting-started-led.kicad_pcb");
+        var originalText = File.ReadAllText(boardFile);
+
+        var preview = service.SetTrackWidth(fixture.Path, selected.Id, 0.5, dryRun: true);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Equal(originalText, File.ReadAllText(boardFile));
+        Assert.Contains("(width 0.5)", preview.Data!.Item.AfterText);
+
+        var applied = service.SetTrackWidth(fixture.Path, selected.Id, 0.5, dryRun: false);
+        var after = service.ListTracks(fixture.Path).Data!.Tracks;
+
+        Assert.True(applied.Success, applied.Error?.Message);
+        Assert.Equal(0.5, after.Single(item => item.Id == selected.Id).WidthMillimeters);
+        Assert.All(after.Where(item => item.Id != selected.Id), item =>
+            Assert.Equal(before.Single(previous => previous.Id == item.Id).WidthMillimeters, item.WidthMillimeters));
+    }
+
+    [Theory]
+    [InlineData("missing", 0.5, "ROUTING_ITEM_NOT_FOUND")]
+    [InlineData("existing", 0, "INVALID_ROUTING_GEOMETRY")]
+    public void SetTrackWidth_Returns_Stable_Errors(string track, double width, string code)
+    {
+        using var fixture = CopyTutorialFixture();
+        var service = new RoutingService(new ProjectDiscoveryService());
+        if (track == "existing") track = service.ListTracks(fixture.Path).Data!.Tracks.First().Id;
+
+        var result = service.SetTrackWidth(fixture.Path, track, width, dryRun: true);
+
+        Assert.False(result.Success);
+        Assert.Equal(code, result.Error?.Code);
+    }
+
+    [Fact]
     public void AddVia_And_DeleteVia_Work()
     {
         using var fixture = CopyTutorialFixture();

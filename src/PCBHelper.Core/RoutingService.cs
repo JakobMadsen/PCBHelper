@@ -331,6 +331,46 @@ public sealed class RoutingService
             new RoutingMutationResult("delete-track", dryRun, board.Data.BoardFile, item, null, null, Array.Empty<string>()));
     }
 
+    public ToolResponse<RoutingMutationResult> SetTrackWidth(string projectPath, string track, double widthMillimeters, bool dryRun)
+    {
+        if (!IsFinite(widthMillimeters) || widthMillimeters <= 0)
+        {
+            return ToolResponse<RoutingMutationResult>.Fail("Track width is invalid.", "INVALID_ROUTING_GEOMETRY");
+        }
+
+        var board = LoadBoard(projectPath);
+        if (!board.Success || board.Data is null)
+        {
+            return ToolResponse<RoutingMutationResult>.Fail(board.Summary, board.Error?.Code ?? "BOARD_LOAD_FAILED", board.Error?.Message);
+        }
+
+        var segment = FindSegment(board.Data, track);
+        if (segment is null)
+        {
+            return ToolResponse<RoutingMutationResult>.Fail($"Track not found: {track}", "ROUTING_ITEM_NOT_FOUND");
+        }
+
+        var width = Regex.Match(segment.SourceText, @"\(width\s+(?<value>-?[\d.]+)\)", RegexOptions.None, TimeSpan.FromSeconds(1));
+        if (!width.Success)
+        {
+            return ToolResponse<RoutingMutationResult>.Fail($"Track width was not found: {track}", "ROUTING_ITEM_INVALID");
+        }
+
+        var value = width.Groups["value"];
+        var after = segment.SourceText.Remove(value.Index, value.Length)
+            .Insert(value.Index, KiCadBoardParser.FormatNumber(widthMillimeters));
+        if (!dryRun)
+        {
+            var updated = board.Data.Text.Remove(segment.SourceStart, segment.SourceLength).Insert(segment.SourceStart, after);
+            File.WriteAllText(board.Data.BoardFile, updated);
+        }
+
+        var item = new RoutingItemChange("track", segment.Id, segment.SourceText, after);
+        return ToolResponse<RoutingMutationResult>.Ok(
+            $"{(dryRun ? "Previewed" : "Set")} track {segment.Id} width to {KiCadBoardParser.FormatNumber(widthMillimeters)} mm.",
+            new RoutingMutationResult("set-track-width", dryRun, board.Data.BoardFile, item, null, null, Array.Empty<string>()));
+    }
+
     public ToolResponse<RoutingMutationResult> AddVia(
         string projectPath,
         string net,

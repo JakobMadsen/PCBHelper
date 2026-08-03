@@ -382,6 +382,7 @@ public sealed class DesignPlanService
             "add-track" => Box(context.Routing.AddTrack(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "startXmm"), RequiredDouble(p, "startYmm"), RequiredDouble(p, "endXmm"), RequiredDouble(p, "endYmm"), RequiredString(p, "layer"), RequiredDouble(p, "widthMm"), false)),
             "add-track-polyline" => Box(context.Routing.AddTrackPolyline(context.ProjectPath, RequiredString(p, "net"), RequiredString(p, "points"), RequiredString(p, "layer"), RequiredDouble(p, "widthMm"), false)),
             "delete-track" => Box(context.Routing.DeleteTrack(context.ProjectPath, RequiredString(p, "track"), false)),
+            "set-track-width" => Box(context.Routing.SetTrackWidth(context.ProjectPath, RequiredString(p, "track"), RequiredDouble(p, "widthMm"), false)),
             "add-via" => Box(context.Routing.AddVia(context.ProjectPath, RequiredString(p, "net"), RequiredDouble(p, "xMm"), RequiredDouble(p, "yMm"), RequiredDouble(p, "sizeMm"), RequiredDouble(p, "drillMm"), String(p, "layers", "F.Cu,B.Cu"), false)),
             "delete-via" => Box(context.Routing.DeleteVia(context.ProjectPath, RequiredString(p, "via"), false)),
             "add-copper-zone" => Box(context.Finishing.AddCopperZone(context.ProjectPath, RequiredString(p, "net"), RequiredString(p, "layer"), RequiredString(p, "points"), RequiredDouble(p, "clearanceMm"), RequiredDouble(p, "minThicknessMm"), false)),

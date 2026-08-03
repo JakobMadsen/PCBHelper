@@ -117,6 +117,7 @@ public static class DesignPlanOperationCatalog
         Op("add-track", "Add one straight copper segment.", S("net"), N("startXmm"), N("startYmm"), N("endXmm"), N("endYmm"), S("layer"), N("widthMm")),
         Op("add-track-polyline", "Add straight segments along a point list.", S("net"), S("points"), S("layer"), N("widthMm")),
         Op("delete-track", "Delete one track by identifier.", S("track")),
+        Op("set-track-width", "Set one existing track segment width by identifier.", S("track"), N("widthMm")),
         Op("add-via", "Add one through via.", S("net"), N("xMm"), N("yMm"), N("sizeMm"), N("drillMm"), S("layers", false, "F.Cu,B.Cu")),
         Op("delete-via", "Delete one via by identifier.", S("via"))
         ,Op("add-copper-zone", "Add an unfilled copper zone polygon.", S("net"), S("layer"), S("points"), N("clearanceMm"), N("minThicknessMm"))
