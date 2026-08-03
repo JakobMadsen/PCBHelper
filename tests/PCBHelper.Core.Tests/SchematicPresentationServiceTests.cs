@@ -107,6 +107,57 @@ public sealed class SchematicPresentationServiceTests
     }
 
     [Fact]
+    public void Arrange_Packs_A_Large_Schematic_Inside_An_A2_Drawing_Area()
+    {
+        using var fixture = CopyBlankFixture();
+        var projects = new ProjectDiscoveryService();
+        var authoring = new SchematicAuthoringService(projects);
+        var references = Enumerable.Range(1, 40).Select(index => $"R{index}").ToArray();
+        for (var index = 0; index < references.Length; index++)
+        {
+            Assert.True(authoring.CreateSymbol(
+                fixture.Path,
+                "Device:R",
+                references[index],
+                20.32 + ((index % 10) * 12.7),
+                20.32 + ((index / 10) * 12.7),
+                "1k",
+                null,
+                dryRun: false).Success);
+        }
+        var intentJson = JsonSerializer.Serialize(new
+        {
+            version = 1,
+            signals = new[] { new { net = "TEST", role = "signal" } },
+            presentation = new
+            {
+                blocks = new[] { new { id = "dense", label = "Dense", references, order = 0 } }
+            }
+        });
+        using var intentDocument = JsonDocument.Parse(intentJson);
+        var intent = new DesignIntentService(projects, new BoardInspectionService(projects));
+        var intentResult = intent.SetIntent(fixture.Path, intentDocument.RootElement, dryRun: false);
+        Assert.True(intentResult.Success, $"{intentResult.Error?.Code}: {intentResult.Error?.Message}");
+
+        var result = new SchematicPresentationService(projects).Arrange(fixture.Path, dryRun: true);
+
+        Assert.True(result.Success, $"{result.Error?.Code}: {result.Error?.Message}");
+        var afterText = result.Data!.FileSnapshots.Single().AfterText!;
+        Assert.Contains("(paper \"A2\")", afterText, StringComparison.Ordinal);
+        var document = KiCadSchematicParser.ParseText("arranged.kicad_sch", afterText);
+        foreach (var symbol in document.Symbols.Where(symbol => references.Contains(symbol.Reference, StringComparer.OrdinalIgnoreCase)))
+        {
+            var catalog = SchematicSymbolCatalog.Find(symbol.LibId!);
+            Assert.NotNull(catalog);
+            var bounds = SchematicGeometry.Bounds(symbol, catalog!);
+            Assert.InRange(bounds.Left, 20.32, 570);
+            Assert.InRange(bounds.Right, 20.32, 570);
+            Assert.InRange(bounds.Top, 20.32, 380);
+            Assert.InRange(bounds.Bottom, 20.32, 380);
+        }
+    }
+
+    [Fact]
     public void Arrange_Respects_Explicit_Presentation_Locks()
     {
         using var fixture = CopyBlankFixture();

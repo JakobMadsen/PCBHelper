@@ -437,6 +437,10 @@ internal static class SchematicPresentationPlanner
     private const double Grid = 1.27;
     private const double ColumnGap = 12 * Grid;
     private const double RowGap = 6 * Grid;
+    private const double PageLeft = 20.32;
+    private const double PageTop = 20.32;
+    private const double PageRight = 570;
+    private const double PageBottom = 380;
 
     public static ToolResponse<SchematicPresentationPlan> Plan(SchematicPresentationModel model)
     {
@@ -448,8 +452,6 @@ internal static class SchematicPresentationPlanner
         var locked = model.Presentation.LockedReferences.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var blockOrder = BuildBlockOrder(model);
         var placements = new List<SchematicPlannedSymbol>();
-        var baseX = 30.48;
-        var baseY = 35.56;
         var orderedSymbols = model.Symbols
                      .OrderBy(symbol => blockOrder.GetValueOrDefault(symbol.Reference))
                      .ThenBy(static symbol => symbol.Reference, StringComparer.OrdinalIgnoreCase)
@@ -471,22 +473,49 @@ internal static class SchematicPresentationPlanner
                 return new
                 {
                     Symbol = symbol,
-                    Column = blockOrder.GetValueOrDefault(symbol.Reference),
                     Rotation = rotation,
                     Width = Math.Max(Grid, bounds.Right - bounds.Left),
                     Height = Math.Max(Grid, bounds.Bottom - bounds.Top)
                 };
             })
             .ToArray();
-        var xByColumn = new Dictionary<int, double>();
-        var nextX = baseX;
-        foreach (var column in layoutItems.Select(static item => item.Column).Distinct().Order())
+        var packedColumns = new List<List<int>> { new() };
+        var nextY = PageTop;
+        for (var index = 0; index < layoutItems.Length; index++)
         {
-            var width = layoutItems.Where(item => item.Column == column).Max(static item => item.Width);
-            xByColumn[column] = Snap(nextX + (width / 2));
+            var item = layoutItems[index];
+            if (item.Height > PageBottom - PageTop)
+                return ToolResponse<SchematicPresentationPlan>.Fail(
+                    $"Schematic symbol {item.Symbol.Reference} is taller than the A2 drawing area.",
+                    "SCHEMATIC_PAGE_OVERFLOW");
+            if (packedColumns[^1].Count > 0 && nextY + item.Height > PageBottom)
+            {
+                packedColumns.Add(new List<int>());
+                nextY = PageTop;
+            }
+            packedColumns[^1].Add(index);
+            nextY += item.Height + RowGap;
+        }
+        var packedPlacements = new Dictionary<string, (double X, double Y, double Rotation)>(StringComparer.OrdinalIgnoreCase);
+        var nextX = PageLeft;
+        foreach (var column in packedColumns.Where(static column => column.Count > 0))
+        {
+            var width = column.Max(index => layoutItems[index].Width);
+            if (nextX + width > PageRight)
+                return ToolResponse<SchematicPresentationPlan>.Fail(
+                    "The arranged schematic does not fit inside the A2 drawing area.",
+                    "SCHEMATIC_PAGE_OVERFLOW");
+            var centerX = Snap(nextX + (width / 2));
+            nextY = PageTop;
+            foreach (var index in column)
+            {
+                var item = layoutItems[index];
+                var centerY = Snap(nextY + (item.Height / 2));
+                packedPlacements[$"{item.Symbol.Reference}|{item.Symbol.Unit}"] = (centerX, centerY, item.Rotation);
+                nextY = centerY + (item.Height / 2) + RowGap;
+            }
             nextX += width + ColumnGap;
         }
-        var nextYByColumn = new Dictionary<int, double>();
 
         foreach (var symbol in orderedSymbols)
         {
@@ -501,18 +530,13 @@ internal static class SchematicPresentationPlanner
                 continue;
             }
 
-            var item = layoutItems.Single(candidate =>
-                string.Equals(candidate.Symbol.Reference, symbol.Reference, StringComparison.OrdinalIgnoreCase)
-                && candidate.Symbol.Unit == symbol.Unit);
-            var nextY = nextYByColumn.GetValueOrDefault(item.Column, baseY);
-            var centerY = Snap(nextY + (item.Height / 2));
-            nextYByColumn[item.Column] = centerY + (item.Height / 2) + RowGap;
+            var packed = packedPlacements[$"{symbol.Reference}|{symbol.Unit}"];
             placements.Add(new SchematicPlannedSymbol(
                 symbol.Reference,
                 symbol.Unit,
-                xByColumn[item.Column],
-                centerY,
-                item.Rotation));
+                packed.X,
+                packed.Y,
+                packed.Rotation));
         }
 
         var placedSymbols = ApplyPlacements(model.Symbols, placements);
@@ -1064,6 +1088,7 @@ internal static class SchematicPresentationWriter
                 .Insert(symbol.Source.SourceStart, rewritten);
         }
 
+        text = new Regex("\\(paper\\s+\"[^\"]+\"[^)]*\\)").Replace(text, "(paper \"A2\")", 1);
         text = RemoveBlocks(text, "wire", "label", "junction");
         var insertAt = FindRootClosingIndex(text);
         var additions = new StringBuilder();
