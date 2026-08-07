@@ -183,6 +183,35 @@ public sealed class BoardFinishingServiceTests
     }
 
     [Fact]
+    public void SetBoardOutlineCircle_Updates_The_Single_EdgeCuts_Circle()
+    {
+        using var fixture=CopyTutorial();
+        var boardFile=Directory.GetFiles(fixture.Path,"*.kicad_pcb").Single();
+        var boardBefore=File.ReadAllText(boardFile);
+        File.WriteAllText(boardFile,boardBefore.Insert(boardBefore.LastIndexOf(')'),"\n(gr_circle (center 50 50) (end 100 50) (stroke (width 0.1) (type default)) (fill no) (layer \"Edge.Cuts\"))\n"));
+        var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var result=service.SetBoardOutlineCircle(fixture.Path,75,80,120,false);
+        var text=File.ReadAllText(boardFile);
+
+        Assert.True(result.Success,result.Error?.Message);
+        Assert.Contains("(center 75 80)",text);
+        Assert.Contains("(end 135 80)",text);
+    }
+
+    [Fact]
+    public void SetBoardOutlineCircle_Rejects_NonPositive_Diameter()
+    {
+        using var fixture=CopyTutorial();
+        var service=new BoardFinishingService(new ProjectDiscoveryService());
+
+        var result=service.SetBoardOutlineCircle(fixture.Path,50,50,0,false);
+
+        Assert.False(result.Success);
+        Assert.Equal("INVALID_BOARD_OUTLINE",result.Error?.Code);
+    }
+
+    [Fact]
     public void RepairDuplicateBoardUuids_Rewrites_Only_Duplicate_Definitions_Deterministically()
     {
         using var fixture=CopyTutorial();
