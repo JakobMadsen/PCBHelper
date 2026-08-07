@@ -149,6 +149,8 @@ See [Design Intent Verification](docs/specs/design-intent-verification.md) and [
 
 Requirements: .NET 10 SDK. KiCad 10 and ngspice are needed for their respective E2E tests.
 
+PCBHelper resolves standard footprints from `PCBHELPER_KICAD_FOOTPRINT_ROOTS` (a platform path list), `KICAD10_FOOTPRINT_DIR`, and the normal KiCad 10 installation locations. CI installs a sparse, commit-pinned copy of the official KiCad 10 footprint library so Core tests do not depend on runner-specific KiCad installations.
+
 ```powershell
 dotnet build PCBHelper.slnx -c Release
 dotnet test tests/PCBHelper.Core.Tests/PCBHelper.Core.Tests.csproj -c Release
