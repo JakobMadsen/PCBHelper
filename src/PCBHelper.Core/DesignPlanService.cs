@@ -399,6 +399,7 @@ public sealed class DesignPlanService
             "add-module-keepout" => Box(context.Finishing.AddModuleKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
             "add-mounting-hole-keepout" => Box(context.Finishing.AddMountingHoleKeepout(context.ProjectPath, RequiredString(p, "layer"), RequiredString(p, "points"), false)),
             "set-board-outline-rectangle" => Box(context.Finishing.SetBoardOutlineRectangle(context.ProjectPath, RequiredDouble(p, "leftMm"), RequiredDouble(p, "topMm"), RequiredDouble(p, "rightMm"), RequiredDouble(p, "bottomMm"), false)),
+            "set-board-outline-circle" => Box(context.Finishing.SetBoardOutlineCircle(context.ProjectPath, RequiredDouble(p, "centerXmm"), RequiredDouble(p, "centerYmm"), RequiredDouble(p, "diameterMm"), false)),
             _ => ToolResponse<object>.Fail($"Unsupported operation: {operation.Type}", "PLAN_OPERATION_UNSUPPORTED")
         };
     }

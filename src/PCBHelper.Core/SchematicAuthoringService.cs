@@ -2872,12 +2872,6 @@ internal static class SchematicFootprintTemplates
     private const string Dip16 = "Package_DIP:DIP-16_W7.62mm";
     private const string PinHeaderLibrary = "Connector_PinHeader_2.54mm";
 
-    private static readonly string[] KiCadFootprintLibraryRoots =
-    {
-        @"D:\Program Files\KiCad\10.0\share\kicad\footprints",
-        @"C:\Program Files\KiCad\10.0\share\kicad\footprints"
-    };
-
     public static bool IsSupported(string footprint)
     {
         return footprint is "R_Axial_2Pad" or "C_Disc_2Pad" or "LED_2Pad" or "Photodiode_2Pad" or "BatteryHolder_2Pad_Back" or "DIP8_300mil" or "TO92_2N3904_EBC"
@@ -3156,24 +3150,7 @@ internal static class SchematicFootprintTemplates
 
     private static string? ResolveKiCadFootprintPath(string footprint)
     {
-        var separator = footprint.IndexOf(':', StringComparison.Ordinal);
-        if (separator <= 0 || separator == footprint.Length - 1)
-        {
-            return null;
-        }
-
-        var library = footprint[..separator];
-        var name = footprint[(separator + 1)..];
-        foreach (var root in KiCadFootprintLibraryRoots)
-        {
-            var candidate = Path.Combine(root, $"{library}.pretty", $"{name}.kicad_mod");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        return KiCadFootprintLibraryResolver.Resolve(footprint);
     }
 
     private static bool TryParseStandardVerticalPinHeader(string footprint, out int columns, out int rows)

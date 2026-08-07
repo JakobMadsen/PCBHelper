@@ -5,6 +5,7 @@ COPY . .
 RUN dotnet restore PCBHelper.slnx
 
 FROM source AS core-test
+ENV PCBHELPER_KICAD_FOOTPRINT_ROOTS=/src/.ci/kicad-footprints
 RUN dotnet build PCBHelper.slnx --configuration Release --no-restore
 RUN dotnet test tests/PCBHelper.Core.Tests/PCBHelper.Core.Tests.csproj --configuration Release --no-build --logger "console;verbosity=minimal"
 RUN dotnet test tests/PCBHelper.Contract.Tests/PCBHelper.Contract.Tests.csproj --configuration Release --no-build --logger "console;verbosity=minimal"

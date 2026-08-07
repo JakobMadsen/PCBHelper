@@ -6,7 +6,7 @@ namespace PCBHelper.Core;
 public sealed class AgentGuidanceService
 {
     public const int GuideVersion = 1;
-    public const int CapabilityVersion = 14;
+    public const int CapabilityVersion = 15;
     public const string GuideUri = "pcbhelper://agent-guide/v1";
     public const string DesignPlanSchemaUri = "pcbhelper://design-plan/v1/schema";
 
@@ -134,6 +134,7 @@ public static class DesignPlanOperationCatalog
         ,Op("add-module-keepout", "Reserve a module underside from vias and copper pours while allowing its pads, masked tracks, and footprint.", S("layer"), S("points"))
         ,Op("add-mounting-hole-keepout", "Reserve copper clearance around a mounting hole while allowing its NPTH pad and footprint.", S("layer"), S("points"))
         ,Op("set-board-outline-rectangle", "Set the exact coordinates of a single rectangular Edge.Cuts outline.", N("leftMm"), N("topMm"), N("rightMm"), N("bottomMm"))
+        ,Op("set-board-outline-circle", "Set the center and diameter of a single circular Edge.Cuts outline.", N("centerXmm"), N("centerYmm"), N("diameterMm"))
     };
 
     public static IReadOnlyDictionary<string, DesignPlanOperationDefinition> ByType { get; } = All.ToDictionary(static item => item.Type, StringComparer.Ordinal);

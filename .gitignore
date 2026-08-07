@@ -46,6 +46,7 @@ deliverables/
 **/.artifacts/
 *.code-workspace
 .vscode/tasks.json
+.ci/kicad-footprints/
 Third try.kicad_sch
 tools/
 .pcbhelper/*

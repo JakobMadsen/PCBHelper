@@ -98,6 +98,34 @@ public sealed class DesignPlanServiceTests
     }
 
     [Fact]
+    public async Task CircularBoardOutline_Is_Previewed_And_Applied_Transactionally()
+    {
+        using var fixture = CopyTutorialFixture();
+        var runtime = PCBHelperRuntime.ForCli();
+        var boardPath = Directory.GetFiles(fixture.Path, "*.kicad_pcb").Single();
+        var boardBefore = File.ReadAllText(boardPath);
+        File.WriteAllText(boardPath, boardBefore.Insert(boardBefore.LastIndexOf(')'), "\n(gr_circle (center 50 50) (end 100 50) (stroke (width 0.1) (type default)) (fill no) (layer \"Edge.Cuts\"))\n"));
+        var before = File.ReadAllText(boardPath);
+        var plan = """{"version":1,"goal":"Resize circular optical receiver","operations":[{"id":"outline","type":"set-board-outline-circle","centerXmm":75,"centerYmm":80,"diameterMm":120}],"engineeringGate":{"erc":"skip","drc":"skip","manufacturingValidation":"skip","simulationAssertions":"skip","designIntent":"skip"}}""";
+
+        var preview = runtime.Plans.Preview(fixture.Path, plan);
+
+        Assert.True(preview.Success, preview.Error?.Message);
+        Assert.Equal(before, File.ReadAllText(boardPath));
+
+        var applied = await runtime.Plans.ApplyAsync(
+            fixture.Path,
+            plan,
+            preview.Data!.PlanHash,
+            preview.Data.RequiredDecisions.Select(static decision => decision.DecisionId).ToArray());
+        var board = File.ReadAllText(boardPath);
+
+        Assert.True(applied.Success, applied.Error?.Message);
+        Assert.Contains("(center 75 80)", board);
+        Assert.Contains("(end 135 80)", board);
+    }
+
+    [Fact]
     public async Task SetTrackWidth_Is_Previewed_And_Applied_Transactionally()
     {
         using var fixture = CopyTutorialFixture();
@@ -169,7 +197,7 @@ public sealed class DesignPlanServiceTests
         var schema = DesignPlanOperationCatalog.CreateJsonSchema();
         using var document = System.Text.Json.JsonDocument.Parse(schema);
 
-        Assert.Equal(44, DesignPlanOperationCatalog.All.Count);
+        Assert.Equal(45, DesignPlanOperationCatalog.All.Count);
         Assert.Contains(DesignPlanOperationCatalog.All, operation =>
             operation.Type == "delete-schematic-text-box-by-uuid");
         Assert.Contains(DesignPlanOperationCatalog.All, operation =>
@@ -217,7 +245,8 @@ public sealed class DesignPlanServiceTests
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G86");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "74xGxx:74LVC1G08");
         Assert.Contains(capabilities.ApprovedSymbols, item => item.SymbolId == "PCBHelper:Arduino_UNO_R4_Shield" && item.DefaultFootprint == "Module:Arduino_UNO_R3");
-        Assert.Equal(14, capabilities.CapabilityVersion);
+        Assert.Equal(15, capabilities.CapabilityVersion);
+        Assert.Contains(capabilities.Operations, item => item.Type == "set-board-outline-circle");
         Assert.Contains(capabilities.Operations, item => item.Type == "mark-schematic-pin-no-connect");
         var moveReference = Assert.Single(capabilities.Operations, item => item.Type == "move-reference-text");
         Assert.Contains("footprint-local", moveReference.Description, StringComparison.Ordinal);

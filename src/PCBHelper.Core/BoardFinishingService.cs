@@ -248,6 +248,28 @@ public sealed class BoardFinishingService
         return Replace(loaded.Data, "set-board-outline-rectangle", "Edge.Cuts", selected.Start, selected.Length, updated, dryRun);
     }
 
+    public ToolResponse<BoardFinishingMutationResult> SetBoardOutlineCircle(string projectPath, double centerX, double centerY, double diameter, bool dryRun)
+    {
+        if (!double.IsFinite(centerX) || !double.IsFinite(centerY) || !double.IsFinite(diameter) || diameter <= 0)
+            return Error("Board circle requires finite coordinates and diameter > 0.", "INVALID_BOARD_OUTLINE");
+        var loaded = Load(projectPath); if (!loaded.Success || loaded.Data is null) return Fail(loaded);
+        var blocks = new List<(int Start, int Length, string Text)>();
+        var index = 0;
+        while ((index = loaded.Data.Text.IndexOf("(gr_circle", index, StringComparison.Ordinal)) >= 0)
+        {
+            var end = FindEnd(loaded.Data.Text, index);
+            if (end < 0) return Error("Board circle is invalid.", "BOARD_PARSE_FAILED");
+            var block = loaded.Data.Text.Substring(index, end - index + 1);
+            if (block.Contains("(layer \"Edge.Cuts\")", StringComparison.Ordinal)) blocks.Add((index, end - index + 1, block));
+            index = end + 1;
+        }
+        if (blocks.Count != 1) return Error($"Expected exactly one circular Edge.Cuts outline, found {blocks.Count}.", "BOARD_OUTLINE_UNSUPPORTED");
+        var selected = blocks[0];
+        var updated = new Regex(@"\(center\s+-?[\d.]+\s+-?[\d.]+\)").Replace(selected.Text, $"(center {F(centerX)} {F(centerY)})", 1);
+        updated = new Regex(@"\(end\s+-?[\d.]+\s+-?[\d.]+\)").Replace(updated, $"(end {F(centerX + diameter / 2)} {F(centerY)})", 1);
+        return Replace(loaded.Data, "set-board-outline-circle", "Edge.Cuts", selected.Start, selected.Length, updated, dryRun);
+    }
+
     public ToolResponse<BoardFinishingMutationResult> RefillZones(string projectPath) =>
         RefillZonesAsync(projectPath).GetAwaiter().GetResult();
 
